@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 3873539406984494692}
   - component: {fileID: 8779453652194630780}
   - component: {fileID: 8968147165437950240}
+  - component: {fileID: 5123984719234851234}
   m_Layer: 0
   m_Name: CarryablePackage
   m_TagString: Untagged
@@ -235,3 +236,20 @@ MonoBehaviour:
   _acceleration: 10
   _rotationSpeed: 180
   _carryGravity: -15
+--- !u!114 &5123984719234851234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2044480967349771524}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e31f858bbcb24304ad2c8521ab62ea95, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.CarryableOutline
+  _defaultColor: {r: 0.2, g: 1, b: 0.4, a: 0.95}
+  _defaultWidth: 3.5
+  _enablePulse: 0
+  _pulseSpeed: 3.5
+

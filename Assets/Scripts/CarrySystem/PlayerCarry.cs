@@ -69,11 +69,47 @@ namespace CoopGame.CarrySystem
         [Tooltip("Legacy reference for single marker backward compatibility")]
         [SerializeField] private Transform _persistentMarker;
 
+        [Header("Carryable Object Outline")]
+        [Tooltip("Outline color when aiming at an object that can be lifted")]
+        [SerializeField] private Color _aimOutlineColor = new Color(0.2f, 1.0f, 0.4f, 0.95f);
+
+        [Tooltip("Outline color while actively holding the object")]
+        [SerializeField] private Color _holdingOutlineColor = new Color(0.0f, 0.9f, 1.0f, 0.95f);
+
+        [Tooltip("Outline line thickness")]
+        [Range(1.0f, 10.0f)]
+        [SerializeField] private float _outlineWidth = 3.5f;
+
+        [Tooltip("Whether the outline should pulse gently when highlighted")]
+        [SerializeField] private bool _enableOutlinePulse = false;
+
+        [Header("Throwing Mechanics")]
+        [Tooltip("Minimum throw launch speed when tapped")]
+        [SerializeField] private float _minThrowSpeed = 4.5f;
+
+        [Tooltip("Maximum throw launch speed at full charge")]
+        [SerializeField] private float _maxThrowSpeed = 13.5f;
+
+        [Tooltip("Time in seconds to reach full throw charge")]
+        [SerializeField] private float _maxChargeTime = 1.0f;
+
+        [Tooltip("Upward arc angle factor for ballistic lobbing")]
+        [Range(0.1f, 0.8f)]
+        [SerializeField] private float _throwUpwardArc = 0.35f;
+
+        [Tooltip("Percentage of player character movement momentum transferred to throw")]
+        [Range(0.0f, 1.0f)]
+        [SerializeField] private float _momentumTransfer = 0.7f;
+
+        [Tooltip("Stamina cost when executing a full-power throw")]
+        [SerializeField] private float _maxThrowStaminaCost = 25.0f;
+
         // Cached components
         private PlayerInputReader _inputReader;
         private PlayerMovement _movement;
         private CharacterController _characterController;
         private PlayerCameraController _cameraController;
+        private PlayerStamina _stamina;
         private Collider[] _playerColliders;
         private Camera _cachedCamera;
 
@@ -109,11 +145,33 @@ namespace CoopGame.CarrySystem
         private float _carryLogTimer = 0f;
         private bool _wasAimingAtReachable = false;
 
+        // Outline tracking
+        private CarryableObject _currentlyHighlightedCarryable = null;
+
+        // Throwing state
+        private float _currentThrowCharge = 0.0f;
+        private bool _isChargingThrow = false;
+
         // Exposed properties
         public bool IsCarrying => _leftHandGripping || _rightHandGripping;
         public bool LeftHandGripping => _leftHandGripping;
         public bool RightHandGripping => _rightHandGripping;
         public CarryableObject CurrentCarryable => _currentCarryable;
+        public float CurrentThrowCharge => _currentThrowCharge;
+        public bool IsChargingThrow => _isChargingThrow;
+        public PlayerStamina Stamina => _stamina;
+
+        // Replicated Hand Gestures & Gripping state for Remote Player Proxies
+        // bit 0 = Left hand gripping
+        // bit 1 = Right hand gripping
+        // bit 2 = Left hand reaching
+        // bit 3 = Right hand reaching
+        // bit 4 = Charging throw
+        private readonly NetworkVariable<byte> _netHandState = new NetworkVariable<byte>(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Owner
+        );
 
         private void Awake()
         {
@@ -121,10 +179,38 @@ namespace CoopGame.CarrySystem
             _movement = GetComponent<PlayerMovement>();
             _characterController = GetComponent<CharacterController>();
             _cameraController = GetComponent<PlayerCameraController>();
+            _stamina = GetComponent<PlayerStamina>();
+            if (_stamina == null)
+            {
+                _stamina = gameObject.AddComponent<PlayerStamina>();
+            }
+
+            // In offline / singleplayer mode, add HUD directly
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+            {
+                if (GetComponent<PlayerStaminaUI>() == null)
+                {
+                    gameObject.AddComponent<PlayerStaminaUI>();
+                }
+            }
+
             _playerColliders = GetComponentsInChildren<Collider>(true);
 
             EnsureVisualHandsCreated();
             EnsureDualMarkersCreated();
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+
+            if (IsOwner)
+            {
+                if (GetComponent<PlayerStaminaUI>() == null)
+                {
+                    gameObject.AddComponent<PlayerStaminaUI>();
+                }
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -132,6 +218,7 @@ namespace CoopGame.CarrySystem
             base.OnNetworkDespawn();
 
             HideMarkers();
+            ClearOutlineHighlight();
 
             if (IsCarrying)
             {
@@ -139,10 +226,19 @@ namespace CoopGame.CarrySystem
             }
         }
 
+        private void OnDisable()
+        {
+            ClearOutlineHighlight();
+        }
+
         private void Update()
         {
             bool isLocalOwner = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening) ? IsOwner : true;
-            if (!isLocalOwner) return;
+            if (!isLocalOwner)
+            {
+                UpdateVisualHandsProxy();
+                return;
+            }
 
             // 1. Calculate dynamic lift height from camera pitch (Mouse Up / Down)
             float currentHoldHeight = _normalLiftHeight;
@@ -163,6 +259,9 @@ namespace CoopGame.CarrySystem
 
             // 3. Update Dual Aim Markers (Handles both free aiming & locked grip markers)
             UpdatePersistentAimMarker(out CarryableObject aimedCarryable, out bool canGrabAimed);
+
+            // 3.1 Update Outline Highlight on Aimed / Carried Object
+            UpdateCarryableOutline(aimedCarryable, canGrabAimed);
 
             // 4. Animate procedural hands to touch contact points or reach/rest
             UpdateVisualHands(currentHoldHeight);
@@ -218,17 +317,64 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            // 6. Handle active carrying state or complete drop
+            // 6. Handle active carrying state, stamina exertion, throw charging, or complete drop
             if (_leftHandGripping || _rightHandGripping)
             {
                 // Full 100% free movement like Human Fall Flat!
                 if (_movement != null)
                 {
-                    _movement.SpeedMultiplier = 1.0f;
+                    // If charging throw or exhausted, apply slight movement penalty
+                    if (_isChargingThrow)
+                    {
+                        _movement.SpeedMultiplier = 0.75f;
+                    }
+                    else if (_stamina != null && _stamina.IsExhausted)
+                    {
+                        _movement.SpeedMultiplier = 0.5f;
+                    }
+                    else
+                    {
+                        _movement.SpeedMultiplier = 1.0f;
+                    }
                 }
 
                 if (_currentCarryable != null)
                 {
+                    // 6.1 Continuous Stamina Drain & Exhaustion Slip
+                    if (_stamina != null)
+                    {
+                        bool isOneHanded = !(_leftHandGripping && _rightHandGripping);
+                        int carrierCount = _currentCarryable.CurrentCarrierCount;
+                        _stamina.DrainStaminaContinuous(isOneHanded, _currentCarryable.TotalMass, carrierCount);
+
+                        if (_stamina.IsExhausted)
+                        {
+                            Debug.Log($"[PlayerCarry] Client {OwnerClientId} EXHAUSTED! Hands slipped from '{_currentCarryable.name}'.");
+                            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
+                            {
+                                RequestDropServerRpc();
+                            }
+                            else
+                            {
+                                _currentCarryable.DetachCarrier(OwnerClientId);
+                                ReleaseCarryState();
+                            }
+                            return;
+                        }
+                    }
+
+                    // 6.2 Throw Charging & Execution
+                    bool throwHeld = _inputReader.ThrowHeld;
+                    if (throwHeld && (_stamina == null || !_stamina.IsExhausted))
+                    {
+                        _isChargingThrow = true;
+                        _currentThrowCharge = Mathf.Clamp01(_currentThrowCharge + Time.deltaTime / _maxChargeTime);
+                    }
+                    else if (_isChargingThrow)
+                    {
+                        ExecuteThrow(camForward, camRight);
+                    }
+
                     Vector2 input = _inputReader.MoveInput;
                     Vector3 desiredWorldDir = (camForward * input.y + camRight * input.x);
                     if (desiredWorldDir.sqrMagnitude > 1.0f)
@@ -253,12 +399,17 @@ namespace CoopGame.CarrySystem
                         Rigidbody rb = _currentCarryable.GetComponent<Rigidbody>();
                         Vector3 currentVel = (rb != null) ? rb.linearVelocity : Vector3.zero;
                         string handMode = (_leftHandGripping && _rightHandGripping) ? "BOTH HANDS" : (_leftHandGripping ? "LEFT HAND" : "RIGHT HAND");
-                        Debug.Log($"[PlayerCarry] Carrying '{_currentCarryable.name}' with {handMode} | LiftHeight: {currentHoldHeight:F2}m | Mass: {_currentCarryable.TotalMass:F1}kg | PhysX Gravity: ACTIVE | Velocity: {currentVel.magnitude:F2}m/s");
+                        int count = _currentCarryable.CurrentCarrierCount;
+                        string coopInfo = (count > 1) ? $" | Co-op Carriers: {count} (Stamina Drain Reduced by Co-op Synergy!)" : "";
+                        Debug.Log($"[PlayerCarry] Carrying '{_currentCarryable.name}' with {handMode} | LiftHeight: {currentHoldHeight:F2}m | Mass: {_currentCarryable.TotalMass:F1}kg{coopInfo} | PhysX Gravity: ACTIVE | Velocity: {currentVel.magnitude:F2}m/s");
                     }
                 }
             }
             else
             {
+                _isChargingThrow = false;
+                _currentThrowCharge = 0f;
+
                 // Both hands released: drop object completely
                 if (_currentCarryable != null)
                 {
@@ -273,11 +424,32 @@ namespace CoopGame.CarrySystem
                     }
                 }
             }
+
+            // 7. Replicate Hand Mask to Remote Clients
+            byte handMask = 0;
+            if (_leftHandGripping) handMask |= (1 << 0);
+            if (_rightHandGripping) handMask |= (1 << 1);
+            if (leftClick) handMask |= (1 << 2);
+            if (rightClick) handMask |= (1 << 3);
+            if (_isChargingThrow) handMask |= (1 << 4);
+
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
+            {
+                if (_netHandState.Value != handMask)
+                {
+                    _netHandState.Value = handMask;
+                }
+            }
         }
 
         private void GrabSingleHand(CarryableObject target, bool isLeft)
         {
             if (target == null) return;
+            if (_stamina != null && _stamina.IsExhausted)
+            {
+                Debug.Log($"[PlayerCarry] Client {OwnerClientId} is exhausted! Cannot grab until stamina recovers.");
+                return;
+            }
 
             if (isLeft)
             {
@@ -360,6 +532,8 @@ namespace CoopGame.CarrySystem
 
             if (_leftMarker == null || _rightMarker == null) return;
 
+            bool isExhausted = (_stamina != null && _stamina.IsExhausted);
+
             // Locate active player camera directly from PlayerCameraController
             if (_cameraController != null && _cameraController.PlayerCamera != null && _cameraController.PlayerCamera.isActiveAndEnabled)
             {
@@ -431,7 +605,7 @@ namespace CoopGame.CarrySystem
                     if (effectiveDist <= _grabContactDistance)
                     {
                         aimedCarryable = carryable;
-                        canGrabAimed = true;
+                        canGrabAimed = !isExhausted;
                         reachableHit = true;
 
                         Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
@@ -516,7 +690,55 @@ namespace CoopGame.CarrySystem
                 _rightMarker.gameObject.SetActive(false);
             }
 
-            SetMarkersColor(_colorLiftableGreen);
+            SetMarkersColor(isExhausted ? _colorNotLiftableRed : _colorLiftableGreen);
+        }
+
+        private void UpdateCarryableOutline(CarryableObject aimedCarryable, bool canGrabAimed)
+        {
+            CarryableObject targetToHighlight = null;
+            Color targetColor = _aimOutlineColor;
+
+            if ((_leftHandGripping || _rightHandGripping) && _currentCarryable != null)
+            {
+                // When holding an object, keep outline active around the held object
+                targetToHighlight = _currentCarryable;
+                targetColor = _holdingOutlineColor;
+            }
+            else if (canGrabAimed && aimedCarryable != null && aimedCarryable.CanBeCarried)
+            {
+                // When aiming at an object within reach that can be lifted
+                targetToHighlight = aimedCarryable;
+                targetColor = _aimOutlineColor;
+            }
+
+            if (_currentlyHighlightedCarryable != targetToHighlight)
+            {
+                if (_currentlyHighlightedCarryable != null)
+                {
+                    _currentlyHighlightedCarryable.SetOutline(false);
+                }
+
+                _currentlyHighlightedCarryable = targetToHighlight;
+
+                if (_currentlyHighlightedCarryable != null)
+                {
+                    _currentlyHighlightedCarryable.SetOutline(true, targetColor, _outlineWidth, _enableOutlinePulse);
+                }
+            }
+            else if (_currentlyHighlightedCarryable != null)
+            {
+                // Ensure active color and pulse state match current state (aimed vs held)
+                _currentlyHighlightedCarryable.SetOutline(true, targetColor, _outlineWidth, _enableOutlinePulse);
+            }
+        }
+
+        private void ClearOutlineHighlight()
+        {
+            if (_currentlyHighlightedCarryable != null)
+            {
+                _currentlyHighlightedCarryable.SetOutline(false);
+                _currentlyHighlightedCarryable = null;
+            }
         }
 
         private void HideMarkers()
@@ -652,8 +874,65 @@ namespace CoopGame.CarrySystem
                 targetRightPos = _rightHandRest;
             }
 
+            // Wind-up animation when charging a throw
+            if (_isChargingThrow)
+            {
+                float chargePull = _currentThrowCharge * 0.25f;
+                targetLeftPos += new Vector3(0f, -0.1f * _currentThrowCharge, -chargePull);
+                targetRightPos += new Vector3(0f, -0.1f * _currentThrowCharge, -chargePull);
+            }
+
             _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 30f);
             _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 30f);
+        }
+
+        /// <summary>
+        /// Animates procedural hands for remote proxy players across the network.
+        /// Replicates reaches, box grabbing, and throw wind-ups so everyone sees natural physics gestures.
+        /// </summary>
+        private void UpdateVisualHandsProxy()
+        {
+            if (_leftHand == null || _rightHand == null) return;
+
+            byte mask = _netHandState.Value;
+            bool leftGrip = (mask & (1 << 0)) != 0;
+            bool rightGrip = (mask & (1 << 1)) != 0;
+            bool leftReach = (mask & (1 << 2)) != 0;
+            bool rightReach = (mask & (1 << 3)) != 0;
+            bool chargingThrow = (mask & (1 << 4)) != 0;
+
+            Vector3 targetLeftPos;
+            Vector3 targetRightPos;
+
+            // If actively holding a carryable object, reach towards its position
+            if ((leftGrip || rightGrip) && _currentCarryable != null)
+            {
+                Vector3 objPos = _currentCarryable.transform.position;
+                Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
+                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.4f, 1.2f);
+                Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
+
+                targetLeftPos = leftGrip 
+                    ? (forwardNorm * reachDist + new Vector3(-0.25f, 0f, 0f)) 
+                    : _leftHandRest;
+                targetRightPos = rightGrip 
+                    ? (forwardNorm * reachDist + new Vector3(0.25f, 0f, 0f)) 
+                    : _rightHandRest;
+            }
+            else
+            {
+                targetLeftPos = (leftGrip || leftReach) ? new Vector3(-0.25f, 0.85f, 0.75f) : _leftHandRest;
+                targetRightPos = (rightGrip || rightReach) ? new Vector3(0.25f, 0.85f, 0.75f) : _rightHandRest;
+            }
+
+            if (chargingThrow)
+            {
+                targetLeftPos += new Vector3(0f, -0.08f, -0.2f);
+                targetRightPos += new Vector3(0f, -0.08f, -0.2f);
+            }
+
+            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 20f);
+            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 20f);
         }
 
         #region Server RPCs
@@ -697,6 +976,17 @@ namespace CoopGame.CarrySystem
             if (_currentCarryable != null)
             {
                 _currentCarryable.DetachCarrier(OwnerClientId);
+            }
+
+            NotifyDropClientRpc();
+        }
+
+        [ServerRpc]
+        private void RequestThrowServerRpc(Vector3 linearVelocity, Vector3 angularVelocity)
+        {
+            if (_currentCarryable != null)
+            {
+                _currentCarryable.ThrowObject(OwnerClientId, linearVelocity, angularVelocity);
             }
 
             NotifyDropClientRpc();
@@ -777,12 +1067,19 @@ namespace CoopGame.CarrySystem
             if (_currentCarryable != null)
             {
                 SetLocalCollisionIgnore(_currentCarryable, false);
+                if (_currentlyHighlightedCarryable == _currentCarryable)
+                {
+                    _currentCarryable.SetOutline(false);
+                    _currentlyHighlightedCarryable = null;
+                }
             }
 
             _leftHandGripping = false;
             _rightHandGripping = false;
             _currentCarryable = null;
             _assignedSocketIndex = -1;
+            _isChargingThrow = false;
+            _currentThrowCharge = 0f;
             _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.4f);
             _currentLocalContactRight = new Vector3(0.25f, 0f, -0.4f);
 
@@ -792,6 +1089,50 @@ namespace CoopGame.CarrySystem
             }
 
             Debug.Log($"[PlayerCarry] Client {OwnerClientId} released '{releasedName}'. Returning to free PhysX gravity & momentum.");
+        }
+
+        private void ExecuteThrow(Vector3 camForward, Vector3 camRight)
+        {
+            if (_currentCarryable == null)
+            {
+                _isChargingThrow = false;
+                _currentThrowCharge = 0f;
+                return;
+            }
+
+            CarryableObject thrownObject = _currentCarryable;
+            float charge = _currentThrowCharge;
+            _isChargingThrow = false;
+            _currentThrowCharge = 0f;
+
+            // Ballistic trajectory: forward + upward arc
+            Vector3 throwDir = (camForward + Vector3.up * _throwUpwardArc).normalized;
+            float throwSpeed = Mathf.Lerp(_minThrowSpeed, _maxThrowSpeed, charge);
+            Vector3 playerVel = (_movement != null) ? _movement.Velocity : Vector3.zero;
+            Vector3 finalVelocity = throwDir * throwSpeed + playerVel * _momentumTransfer;
+
+            // Natural rotational tumble
+            Vector3 angularImpulse = camRight * UnityEngine.Random.Range(3f, 6f) + UnityEngine.Random.insideUnitSphere * 1.5f;
+
+            // Consume stamina based on charge
+            if (_stamina != null)
+            {
+                float staminaCost = Mathf.Lerp(8f, _maxThrowStaminaCost, charge);
+                _stamina.ConsumeStamina(staminaCost);
+            }
+
+            Debug.Log($"[PlayerCarry] Client {OwnerClientId} THROWING '{thrownObject.name}' | Charge: {charge * 100f:F0}% | Speed: {finalVelocity.magnitude:F1} m/s");
+
+            bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned);
+            if (isNetworked)
+            {
+                RequestThrowServerRpc(finalVelocity, angularImpulse);
+            }
+            else
+            {
+                thrownObject.ThrowObject(OwnerClientId, finalVelocity, angularImpulse);
+                ReleaseCarryState();
+            }
         }
 
         private void EnsureVisualHandsCreated()

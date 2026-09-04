@@ -54,6 +54,7 @@ namespace CoopGame.Player
 
         // Cached components
         private CharacterController _characterController;
+        private PlayerStamina _stamina;
 
         // Current velocity vectors
         private Vector3 _horizontalVelocity;
@@ -83,9 +84,15 @@ namespace CoopGame.Player
         /// </summary>
         public float CurrentSpeed => _horizontalVelocity.magnitude;
 
+        /// <summary>
+        /// Total 3D movement velocity vector. Used to transfer momentum to thrown objects.
+        /// </summary>
+        public Vector3 Velocity => _horizontalVelocity + Vector3.up * _verticalVelocity;
+
         private void Awake()
         {
             _characterController = GetComponent<CharacterController>();
+            _stamina = GetComponent<PlayerStamina>();
         }
 
         /// <summary>
@@ -117,7 +124,9 @@ namespace CoopGame.Player
                 desiredMoveDirection.Normalize();
             }
 
-            float baseTargetSpeed = (isSprinting ? _sprintSpeed : _walkSpeed) * SpeedMultiplier;
+            // If exhausted, disable sprint speed boost
+            bool canSprint = isSprinting && (_stamina == null || !_stamina.IsExhausted);
+            float baseTargetSpeed = (canSprint ? _sprintSpeed : _walkSpeed) * SpeedMultiplier;
             Vector3 targetHorizontalVelocity = desiredMoveDirection * baseTargetSpeed;
 
             // 3. Smooth Acceleration / Deceleration

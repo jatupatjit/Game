@@ -49,6 +49,18 @@
     "com.unity.modules.vehicles": "1.0.0",
     "com.unity.modules.video": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
-    "com.unity.modules.xr": "1.0.0"
-  }
+    "com.unity.modules.xr": "1.0.0",
+    "com.coplaydev.unity-mcp": "10.2.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.community.netcode.transport.facepunch": "file:com.community.netcode.transport.facepunch"
+  },
+  "scopedRegistries": [
+    {
+      "name": "package.openupm.com",
+      "url": "https://package.openupm.com",
+      "scopes": [
+        "com.coplaydev"
+      ]
+    }
+  ]
 }

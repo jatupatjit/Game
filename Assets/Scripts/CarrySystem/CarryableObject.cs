@@ -45,6 +45,9 @@ namespace CoopGame.CarrySystem
         // Cached components
         private Rigidbody _rigidbody;
         private Collider[] _ownColliders;
+        private CarryableOutline _outline;
+
+        public CarryableOutline Outline => _outline;
 
         // Server-side Carrier Registry
         private class CarrierInfo
@@ -77,7 +80,9 @@ namespace CoopGame.CarrySystem
 
         // ICarryable implementation
         public bool CanBeCarried => _activeCarriers.Count < MaxCarriers;
-        public int CurrentCarrierCount => SyncedCarrierCount.Value;
+        public int CurrentCarrierCount => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+            ? Mathf.Max(1, SyncedCarrierCount.Value)
+            : Mathf.Max(1, _activeCarriers.Count);
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
         public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
 
@@ -87,9 +92,39 @@ namespace CoopGame.CarrySystem
             _rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
             _ownColliders = GetComponentsInChildren<Collider>(true);
 
+            _outline = GetComponent<CarryableOutline>();
+            if (_outline == null)
+            {
+                _outline = gameObject.AddComponent<CarryableOutline>();
+            }
+
             if (_sockets == null || _sockets.Length == 0)
             {
                 CreateFallbackSockets();
+            }
+        }
+
+        /// <summary>
+        /// Controls the visual outline highlight around this carryable object.
+        /// </summary>
+        /// <param name="active">Whether the outline is visible</param>
+        /// <param name="color">Optional custom outline color</param>
+        /// <param name="width">Optional custom outline thickness</param>
+        /// <param name="enablePulse">Optional pulse animation toggle</param>
+        public void SetOutline(bool active, Color? color = null, float? width = null, bool? enablePulse = null)
+        {
+            if (_outline == null)
+            {
+                _outline = GetComponent<CarryableOutline>();
+                if (_outline == null)
+                {
+                    _outline = gameObject.AddComponent<CarryableOutline>();
+                }
+            }
+
+            if (_outline != null)
+            {
+                _outline.SetHighlighted(active, color, width, enablePulse);
             }
         }
 
@@ -385,6 +420,30 @@ namespace CoopGame.CarrySystem
                 }
 
                 Debug.Log($"[CarryableObject] Client {clientId} detached. Remaining: {_activeCarriers.Count}");
+            }
+        }
+
+        /// <summary>
+        /// Detaches the carrier and applies launch velocity and angular tumbling impulse.
+        /// Server-authoritative physics execution.
+        /// </summary>
+        public void ThrowObject(ulong clientId, Vector3 linearVelocity, Vector3 angularVelocity)
+        {
+            bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
+            if (isNetworked && !IsServer) return;
+
+            DetachCarrier(clientId);
+
+            if (_rigidbody != null)
+            {
+                _rigidbody.isKinematic = false;
+                _rigidbody.useGravity = true;
+                _rigidbody.constraints = RigidbodyConstraints.None;
+                _rigidbody.linearVelocity = linearVelocity;
+                _rigidbody.angularVelocity = angularVelocity;
+                _rigidbody.WakeUp();
+
+                Debug.Log($"[CarryableObject] Client {clientId} threw '{name}' with Velocity: {linearVelocity} (Speed: {linearVelocity.magnitude:F1} m/s)");
             }
         }
 

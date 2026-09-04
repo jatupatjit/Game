@@ -31,6 +31,7 @@ namespace CoopGame.Player
         private InputAction _interactAction;
         private InputAction _grabLeftAction;
         private InputAction _grabRightAction;
+        private InputAction _throwAction;
 
         // Exposed properties for movement & camera controllers
         public Vector2 MoveInput { get; private set; }
@@ -42,6 +43,9 @@ namespace CoopGame.Player
         public bool GrabRightHeld { get; private set; }
         public bool InteractHeld { get; private set; }
 
+        // Throwing controls (Hold-to-charge, release-to-throw)
+        public bool ThrowHeld { get; private set; }
+
         /// <summary>
         /// True if ANY grab input is currently pressed (Left Hand, Right Hand, or 'E').
         /// </summary>
@@ -50,12 +54,15 @@ namespace CoopGame.Player
         // Single-frame triggers
         public bool JumpTriggered { get; private set; }
         public bool InteractTriggered { get; private set; }
+        public bool ThrowTriggered { get; private set; }
 
         // Events
         public event Action OnJumpPerformed;
         public event Action OnInteractPerformed;
         public event Action OnGrabStarted;
         public event Action OnGrabEnded;
+        public event Action OnThrowPerformed;
+        public event Action OnThrowReleased;
 
         private bool _wasGrabbing = false;
 
@@ -106,6 +113,11 @@ namespace CoopGame.Player
                 InteractHeld = _interactAction.IsPressed();
             }
 
+            if (_throwAction != null)
+            {
+                ThrowHeld = _throwAction.IsPressed();
+            }
+
             // Detect transition between Grabbing and Released
             bool currentlyGrabbing = IsGrabbing;
             if (currentlyGrabbing && !_wasGrabbing)
@@ -123,6 +135,7 @@ namespace CoopGame.Player
         {
             JumpTriggered = false;
             InteractTriggered = false;
+            ThrowTriggered = false;
         }
 
         private void InitializeInputActions()
@@ -201,8 +214,30 @@ namespace CoopGame.Player
                 _grabRightAction.AddBinding("<Gamepad>/rightTrigger");
             }
 
+            // Throw: 'F' key, Middle Mouse Button, or Gamepad Right Shoulder (RB)
+            if (_throwAction == null)
+            {
+                _throwAction = new InputAction("FallbackThrow", InputActionType.Button);
+                _throwAction.AddBinding("<Keyboard>/f");
+                _throwAction.AddBinding("<Mouse>/middleButton");
+                _throwAction.AddBinding("<Gamepad>/rightShoulder");
+            }
+
             _jumpAction.performed += OnJumpTriggered;
             _interactAction.performed += OnInteractTriggered;
+            _throwAction.performed += OnThrowPerformedCallback;
+            _throwAction.canceled += OnThrowCanceledCallback;
+        }
+
+        private void OnThrowPerformedCallback(InputAction.CallbackContext context)
+        {
+            ThrowTriggered = true;
+            OnThrowPerformed?.Invoke();
+        }
+
+        private void OnThrowCanceledCallback(InputAction.CallbackContext context)
+        {
+            OnThrowReleased?.Invoke();
         }
 
         private void OnJumpTriggered(InputAction.CallbackContext context)
@@ -227,6 +262,7 @@ namespace CoopGame.Player
             _interactAction?.Enable();
             _grabLeftAction?.Enable();
             _grabRightAction?.Enable();
+            _throwAction?.Enable();
         }
 
         public void DisableInput()
@@ -239,6 +275,7 @@ namespace CoopGame.Player
             _interactAction?.Disable();
             _grabLeftAction?.Disable();
             _grabRightAction?.Disable();
+            _throwAction?.Disable();
 
             MoveInput = Vector2.zero;
             LookInput = Vector2.zero;
@@ -246,14 +283,21 @@ namespace CoopGame.Player
             GrabLeftHeld = false;
             GrabRightHeld = false;
             InteractHeld = false;
+            ThrowHeld = false;
             JumpTriggered = false;
             InteractTriggered = false;
+            ThrowTriggered = false;
         }
 
         private void OnDestroy()
         {
             if (_jumpAction != null) _jumpAction.performed -= OnJumpTriggered;
             if (_interactAction != null) _interactAction.performed -= OnInteractTriggered;
+            if (_throwAction != null)
+            {
+                _throwAction.performed -= OnThrowPerformedCallback;
+                _throwAction.canceled -= OnThrowCanceledCallback;
+            }
         }
     }
 }

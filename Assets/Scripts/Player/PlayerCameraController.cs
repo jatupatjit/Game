@@ -163,6 +163,11 @@ namespace CoopGame.Player
             }
         }
 
+        // Cursor lock state
+        private bool _isCursorLocked = true;
+
+        public bool IsCursorLocked => _isCursorLocked;
+
         public void SetOwnershipState(bool isOwner)
         {
             if (_playerCamera != null)
@@ -183,13 +188,22 @@ namespace CoopGame.Player
 
             if (isOwner)
             {
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
+                SetCursorLock(true);
             }
+        }
+
+        public void SetCursorLock(bool locked)
+        {
+            _isCursorLocked = locked;
+            Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+            Cursor.visible = !locked;
         }
 
         public void UpdateLookInput(Vector2 lookDelta)
         {
+            // Do not rotate camera when cursor is unlocked to allow smooth UI clicking
+            if (!_isCursorLocked) return;
+
             _yaw += lookDelta.x * _sensitivity;
             _pitch -= lookDelta.y * _sensitivity;
             _pitch = Mathf.Clamp(_pitch, _minPitch, _maxPitch);
@@ -197,11 +211,24 @@ namespace CoopGame.Player
 
         private void Update()
         {
+            HandleCursorToggle();
             HandleZoomInput();
         }
 
         /// <summary>
-        /// Handles mouse wheel zooming and quick 1st/3rd person toggle ('V' key or Middle Click).
+        /// Press 'Escape' to toggle cursor unlock (for clicking HUD/menus) and lock.
+        /// </summary>
+        private void HandleCursorToggle()
+        {
+            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                SetCursorLock(!_isCursorLocked);
+            }
+        }
+
+        /// <summary>
+        /// Handles mouse wheel zooming and quick 1st/3rd person toggle ('V' key).
+        /// Note: Middle Mouse Button is dedicated to Throwing mechanics to prevent conflict.
         /// </summary>
         private void HandleZoomInput()
         {
@@ -220,18 +247,8 @@ namespace CoopGame.Player
                 _desiredDistance = Mathf.Clamp(_desiredDistance + delta, _firstPersonDistance, _maxZoomDistance);
             }
 
-            // 2. Quick Toggle Key ('V' or Middle Mouse Button)
-            bool toggleRequested = false;
+            // 2. Quick Toggle Key ('V' key)
             if (Keyboard.current != null && Keyboard.current.vKey.wasPressedThisFrame)
-            {
-                toggleRequested = true;
-            }
-            else if (Mouse.current != null && Mouse.current.middleButton.wasPressedThisFrame)
-            {
-                toggleRequested = true;
-            }
-
-            if (toggleRequested)
             {
                 // Toggle between 1st Person (0m) and 3rd Person (3.5m)
                 if (_desiredDistance < 1.0f)
