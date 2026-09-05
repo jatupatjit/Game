@@ -495,8 +495,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.PlayerStamina
   _maxStamina: 100
-  _twoHandDrainRate: 8
-  _oneHandDrainRate: 24
+  _twoHandDrainRate: 1.27
+  _oneHandDrainRate: 2.66
   _baseMass: 10
   _massDrainMultiplier: 0.05
   _recoveryRate: 32
@@ -515,9 +515,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 606db2e9b7a803d4486d0cab58a8caf8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Wallclimb
-  _climbStepSpeed: 13.43
-  _staminaCostPerPull: 3.15
-  _grabDistance: 0.98
+  ShowTopMostFoldoutHeaderGroup: 1
+  _handReachDistance: 2
+  _twoHandStaminaDrain: 1.26
+  _oneHandStaminaDrain: 2.14
   _wallLayers:
     serializedVersion: 2
     m_Bits: 8
+  _normalHangDistance: 0.95
+  _minHangDistance: 0.35
+  _maxHangDistance: 1.45
+  _bodyPullSpeed: 10
+  _jumpBoostUp: 10
+  _jumpBoostOut: 4.25
+  _jumpBoostStaminaCost: 8.8
+  _leftClimbMarker: {fileID: 0}
+  _rightClimbMarker: {fileID: 0}
+  _markerColorReady: {r: 1, g: 0.9327585, b: 0.10196078, a: 0.95}
+  _markerColorExhausted: {r: 1, g: 0.2, b: 0.2, a: 0.95}
+  _maxScanDistance: 2
+  _handLateralSpacing: 0.33
+  _pullUpDuration: 0.52
+  _jumpBoostCooldownDuration: 2.03
+  _handReleaseCooldown: 0.3

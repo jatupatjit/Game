@@ -75,6 +75,11 @@ namespace CoopGame.Player
         public float SpeedMultiplier { get; set; } = 1.0f;
 
         /// <summary>
+        /// When true, character is attached to and climbing a wall; disables downward gravity.
+        /// </summary>
+        public bool IsClimbing { get; set; } = false;
+
+        /// <summary>
         /// Exposes whether the character is currently touching the ground.
         /// </summary>
         public bool IsGrounded => _characterController != null && _characterController.isGrounded;
@@ -173,6 +178,12 @@ namespace CoopGame.Player
 
         private void ApplyVerticalPhysics(float deltaTime)
         {
+            if (IsClimbing)
+            {
+                _verticalVelocity = 0f;
+                return;
+            }
+
             if (_characterController.isGrounded)
             {
                 // While grounded, keep slight downward force to prevent bouncing on slopes
@@ -215,6 +226,15 @@ namespace CoopGame.Player
             _verticalVelocity = Mathf.Sqrt(2.0f * _jumpHeight * Mathf.Abs(_gravity));
             _jumpBufferTimer = 0f;
             _coyoteTimer = 0f;
+        }
+
+        /// <summary>
+        /// Applies an instantaneous 3D impulse vector (e.g. wall jump boost).
+        /// </summary>
+        public void ApplyImpulse(Vector3 impulse)
+        {
+            _horizontalVelocity = new Vector3(impulse.x, 0f, impulse.z);
+            _verticalVelocity = impulse.y;
         }
 
         /// <summary>

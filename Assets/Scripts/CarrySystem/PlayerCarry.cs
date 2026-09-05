@@ -112,6 +112,7 @@ namespace CoopGame.CarrySystem
         private PlayerStamina _stamina;
         private Collider[] _playerColliders;
         private Camera _cachedCamera;
+        private Wallclimb _wallClimb;
 
         // Marker renderers and materials
         private Renderer _leftMarkerRenderer;
@@ -160,6 +161,8 @@ namespace CoopGame.CarrySystem
         public float CurrentThrowCharge => _currentThrowCharge;
         public bool IsChargingThrow => _isChargingThrow;
         public PlayerStamina Stamina => _stamina;
+        public Transform LeftHand => _leftHand;
+        public Transform RightHand => _rightHand;
 
         // Replicated Hand Gestures & Gripping state for Remote Player Proxies
         // bit 0 = Left hand gripping
@@ -195,6 +198,7 @@ namespace CoopGame.CarrySystem
             }
 
             _playerColliders = GetComponentsInChildren<Collider>(true);
+            _wallClimb = GetComponent<Wallclimb>();
 
             EnsureVisualHandsCreated();
             EnsureDualMarkersCreated();
@@ -294,11 +298,15 @@ namespace CoopGame.CarrySystem
             // Grab with Left Hand if clicked and pointing at reachable object
             if (leftClick && !_leftHandGripping)
             {
-                if (canGrabAimed && aimedCarryable != null)
+                if (_wallClimb != null && _wallClimb.IsClimbing)
+                {
+                    // Wall climbing takes precedence over item grabbing
+                }
+                else if (canGrabAimed && aimedCarryable != null)
                 {
                     GrabSingleHand(aimedCarryable, isLeft: true);
                 }
-                else if (_currentCarryable == null)
+                else if (_currentCarryable == null && (_wallClimb == null || !_wallClimb.IsAimingAtWall))
                 {
                     TryGrabNearbyObjectSingleHand(isLeft: true);
                 }
@@ -307,11 +315,15 @@ namespace CoopGame.CarrySystem
             // Grab with Right Hand if clicked and pointing at reachable object
             if (rightClick && !_rightHandGripping)
             {
-                if (canGrabAimed && aimedCarryable != null)
+                if (_wallClimb != null && _wallClimb.IsClimbing)
+                {
+                    // Wall climbing takes precedence over item grabbing
+                }
+                else if (canGrabAimed && aimedCarryable != null)
                 {
                     GrabSingleHand(aimedCarryable, isLeft: false);
                 }
-                else if (_currentCarryable == null)
+                else if (_currentCarryable == null && (_wallClimb == null || !_wallClimb.IsAimingAtWall))
                 {
                     TryGrabNearbyObjectSingleHand(isLeft: false);
                 }
@@ -837,6 +849,7 @@ namespace CoopGame.CarrySystem
         private void UpdateVisualHands(float currentHeight)
         {
             if (_leftHand == null || _rightHand == null) return;
+            if (_wallClimb != null && _wallClimb.IsClimbing) return;
 
             bool leftClick = _inputReader.GrabLeftHeld || _inputReader.InteractHeld;
             bool rightClick = _inputReader.GrabRightHeld || _inputReader.InteractHeld;
@@ -1135,7 +1148,7 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        private void EnsureVisualHandsCreated()
+        public void EnsureVisualHandsCreated()
         {
             if (_leftHand == null)
             {
