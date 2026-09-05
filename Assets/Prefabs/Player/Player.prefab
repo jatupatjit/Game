@@ -157,6 +157,8 @@ GameObject:
   - component: {fileID: 6771487762085157900}
   - component: {fileID: 8488112399802155468}
   - component: {fileID: 6179148685174811548}
+  - component: {fileID: -2769086844988046791}
+  - component: {fileID: 5435337081771147573}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -304,7 +306,7 @@ MonoBehaviour:
   Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
-  m_InScenePlaced: 1
+  m_InScenePlaced: 0
   ActiveSceneSynchronization: 0
   SceneMigrationSynchronization: 0
   SpawnWithObservers: 1
@@ -409,11 +411,16 @@ MonoBehaviour:
   _playerCamera: {fileID: 0}
   _audioListener: {fileID: 0}
   _cameraPivot: {fileID: 0}
+  _playerBodyRenderer: {fileID: 0}
   _sensitivity: 0.2
   _minPitch: -35
   _maxPitch: 70
-  _defaultDistance: 4.5
-  _minDistance: 0.8
+  _firstPersonDistance: 0
+  _defaultThirdPersonDistance: 3.5
+  _maxZoomDistance: 6
+  _firstPersonThreshold: 0.35
+  _zoomSpeed: 8
+  _scrollSensitivity: 0.6
   _pivotHeightOffset: 1.5
   _collisionRadius: 0.25
   _obstacleLayers:
@@ -451,7 +458,66 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.PlayerCarry
   ShowTopMostFoldoutHeaderGroup: 1
-  _interactRadius: 2.5
-  _carryableLayer:
+  _grabContactDistance: 2.8
+  _maxScanDistance: 12
+  _minFacingDot: 0
+  _scanLayers:
     serializedVersion: 2
     m_Bits: 4294967295
+  _maxLiftHeight: 1.7
+  _normalLiftHeight: 0.85
+  _minLiftHeight: 0.25
+  _leftHand: {fileID: 0}
+  _rightHand: {fileID: 0}
+  _leftMarker: {fileID: 0}
+  _rightMarker: {fileID: 0}
+  _persistentMarker: {fileID: 0}
+  _aimOutlineColor: {r: 0.2, g: 1, b: 0.4, a: 0.95}
+  _holdingOutlineColor: {r: 0, g: 0.9, b: 1, a: 0.95}
+  _outlineWidth: 3.5
+  _enableOutlinePulse: 0
+  _minThrowSpeed: 4.5
+  _maxThrowSpeed: 13.5
+  _maxChargeTime: 1
+  _throwUpwardArc: 0.35
+  _momentumTransfer: 0.7
+  _maxThrowStaminaCost: 25
+--- !u!114 &-2769086844988046791
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8343822966637116645}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 564f949dd343449f93bbe60450551331, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.PlayerStamina
+  _maxStamina: 100
+  _twoHandDrainRate: 8
+  _oneHandDrainRate: 24
+  _baseMass: 10
+  _massDrainMultiplier: 0.05
+  _recoveryRate: 32
+  _recoveryDelay: 0.6
+  _exhaustionRecoveryPercent: 0.2
+  _coopSynergyMultiplier: 0.85
+--- !u!114 &5435337081771147573
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8343822966637116645}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 606db2e9b7a803d4486d0cab58a8caf8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Wallclimb
+  _climbStepSpeed: 13.43
+  _staminaCostPerPull: 3.15
+  _grabDistance: 0.98
+  _wallLayers:
+    serializedVersion: 2
+    m_Bits: 8
