@@ -20,7 +20,24 @@ namespace CoopGame.Network
         public static SteamLobbyManager Instance { get; private set; }
 
         public const uint AppId = 480; // Spacewar - Valve Public Free Test AppID
+        public const string RoomCodeKey = "RoomCode";
         private const string HostAddressKey = "HostAddress";
+
+        private static readonly char[] CodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".ToCharArray();
+
+        /// <summary>
+        /// Generates a clean, readable 5-6 character alphanumeric Room Code (excluding ambiguous 0/O, 1/I).
+        /// </summary>
+        public static string GenerateRoomCode(int length = 6)
+        {
+            var random = new System.Random();
+            char[] result = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                result[i] = CodeCharacters[random.Next(CodeCharacters.Length)];
+            }
+            return new string(result);
+        }
 
         [Header("Transport Settings")]
         [Tooltip("Active transport type for current network session")]
@@ -37,6 +54,7 @@ namespace CoopGame.Network
         public string SteamPlayerName => IsSteamInitialized ? SteamClient.Name : "Offline / No Steam";
         public ulong SteamPlayerId => IsSteamInitialized ? SteamClient.SteamId.Value : 0;
         public Lobby? CurrentLobby { get; private set; }
+        public string CurrentRoomCode { get; private set; } = "";
         public string StatusMessage { get; private set; } = "Ready";
 
         // Cached Transports
@@ -189,18 +207,27 @@ namespace CoopGame.Network
             CurrentLobby = lobby;
             lobby.SetPublic();
             lobby.SetJoinable(true);
-            lobby.SetData(HostAddressKey, SteamClient.SteamId.ToString());
-            lobby.SetData("name", $"{SteamClient.Name}'s Co-op Physics Lobby");
 
-            StatusMessage = $"Lobby Created! ID: {lobby.Id}";
-            Debug.Log($"[SteamLobbyManager] Lobby created successfully. LobbyId: {lobby.Id}");
+            // Generate 6-character room code and register in Steam Lobby metadata
+            CurrentRoomCode = GenerateRoomCode(6);
+            lobby.SetData(RoomCodeKey, CurrentRoomCode);
+            lobby.SetData(HostAddressKey, SteamClient.SteamId.ToString());
+            lobby.SetData("name", $"{SteamClient.Name}'s Lobby [{CurrentRoomCode}]");
+
+            StatusMessage = $"Room Created! Code: {CurrentRoomCode}";
+            Debug.Log($"[SteamLobbyManager] Room created successfully. RoomCode: {CurrentRoomCode} (LobbyId: {lobby.Id})");
         }
 
         private void OnLobbyEntered(Lobby lobby)
         {
             CurrentLobby = lobby;
-            StatusMessage = $"Entered Lobby: {lobby.Id} ({lobby.MemberCount} players)";
-            Debug.Log($"[SteamLobbyManager] Entered lobby {lobby.Id}. Member count: {lobby.MemberCount}");
+            string code = lobby.GetData(RoomCodeKey);
+            if (!string.IsNullOrEmpty(code))
+            {
+                CurrentRoomCode = code;
+            }
+            StatusMessage = $"Entered Room: {CurrentRoomCode} ({lobby.MemberCount} players)";
+            Debug.Log($"[SteamLobbyManager] Entered lobby {lobby.Id} with RoomCode: {CurrentRoomCode}. Member count: {lobby.MemberCount}");
 
             NetworkManager nm = NetworkManager.Singleton;
             if (nm == null) return;
@@ -303,15 +330,89 @@ namespace CoopGame.Network
         }
 
         /// <summary>
-        /// Copies current Steam Lobby ID to system clipboard for easy sharing.
+        /// Copies current short Room Code (or Steam Lobby ID fallback) to clipboard.
         /// </summary>
-        public void CopyLobbyIdToClipboard()
+        public void CopyRoomCodeToClipboard()
         {
-            if (CurrentLobby.HasValue)
+            if (!string.IsNullOrEmpty(CurrentRoomCode))
+            {
+                GUIUtility.systemCopyBuffer = CurrentRoomCode;
+                StatusMessage = $"Room Code '{CurrentRoomCode}' copied to clipboard!";
+                Debug.Log($"[SteamLobbyManager] Copied Room Code '{CurrentRoomCode}' to clipboard.");
+            }
+            else if (CurrentLobby.HasValue)
             {
                 GUIUtility.systemCopyBuffer = CurrentLobby.Value.Id.ToString();
                 StatusMessage = $"Lobby ID copied to clipboard: {CurrentLobby.Value.Id}";
-                Debug.Log($"[SteamLobbyManager] Copied Lobby ID {CurrentLobby.Value.Id} to clipboard.");
+            }
+        }
+
+        /// <summary>
+        /// Legacy method for backward compatibility.
+        /// </summary>
+        public void CopyLobbyIdToClipboard() => CopyRoomCodeToClipboard();
+
+        /// <summary>
+        /// Joins a Steam lobby by its 5-6 character Room Code.
+        /// Queries active Steam lobbies worldwide matching the RoomCode metadata.
+        /// </summary>
+        public async void JoinLobbyByCode(string roomCode)
+        {
+            if (string.IsNullOrWhiteSpace(roomCode))
+            {
+                StatusMessage = "Please enter a valid Room Code!";
+                return;
+            }
+
+            string cleanCode = roomCode.Trim().ToUpperInvariant();
+
+            if (!IsSteamInitialized)
+            {
+                StatusMessage = "Steam is not running or offline!";
+                return;
+            }
+
+            StatusMessage = $"Searching for Room: {cleanCode}...";
+            Debug.Log($"[SteamLobbyManager] Searching Steam for RoomCode: '{cleanCode}'");
+
+            try
+            {
+                Lobby[] lobbies = await SteamMatchmaking.LobbyList
+                    .FilterDistanceWorldwide()
+                    .WithKeyValue(RoomCodeKey, cleanCode)
+                    .WithSlotsAvailable(1)
+                    .WithMaxResults(25)
+                    .RequestAsync();
+
+                if (lobbies != null && lobbies.Length > 0)
+                {
+                    Lobby targetLobby = lobbies[0];
+                    StatusMessage = $"Connecting to Room {cleanCode}...";
+                    Debug.Log($"[SteamLobbyManager] Found matching Lobby ID: {targetLobby.Id} for RoomCode: {cleanCode}");
+
+                    RoomEnter result = await targetLobby.Join();
+                    if (result != RoomEnter.Success)
+                    {
+                        StatusMessage = $"Failed to join room: {result}";
+                        Debug.LogError($"[SteamLobbyManager] Failed to join lobby {targetLobby.Id}: {result}");
+                    }
+                    return;
+                }
+
+                // Fallback: If player typed raw 64-bit Steam Lobby ID, support it directly
+                if (ulong.TryParse(cleanCode, out ulong rawLobbyId))
+                {
+                    JoinLobbyById(rawLobbyId);
+                    return;
+                }
+
+                StatusMessage = $"Room '{cleanCode}' not found! Check code and try again.";
+                Debug.LogWarning($"[SteamLobbyManager] No active lobby found matching RoomCode: {cleanCode}");
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Search error: {ex.Message}";
+                Debug.LogError($"[SteamLobbyManager] Exception during JoinLobbyByCode: {ex}");
             }
         }
 
@@ -346,7 +447,8 @@ namespace CoopGame.Network
                 CurrentLobby.Value.Leave();
                 CurrentLobby = null;
             }
-            StatusMessage = "Left lobby";
+            CurrentRoomCode = "";
+            StatusMessage = "Left room";
         }
 
         #endregion
