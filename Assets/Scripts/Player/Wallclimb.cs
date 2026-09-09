@@ -336,17 +336,38 @@ public class Wallclimb : NetworkBehaviour
                 _movement.IsClimbing = true;
             }
 
-            // Check for Wall Jump Boost (Space bar)
+            // Detect if player is near top ledge/peak of the wall
+            bool nearTopLedge = DetectTopLedge(out RaycastHit ledgeHit, out Vector3 wallForward);
+
+            // Check for Jump (Space bar)
             if (_inputReader != null && _inputReader.JumpTriggered)
             {
-                ExecuteWallJumpBoost();
-                return;
+                if (nearTopLedge)
+                {
+                    // Near top/peak: Spacebar smoothly vaults the player up onto the top platform!
+                    StartPeakClimb(ledgeHit, wallForward);
+                    return;
+                }
+                else
+                {
+                    // In the middle of the wall: Spacebar executes Wall Jump Boost off the wall
+                    ExecuteWallJumpBoost();
+                    return;
+                }
             }
 
-            // Check for Top-of-Wall Pull-Up
-            if (CheckForTopLedgePullUp())
+            // Also allow smooth pull-up if pushing forward (W) or looking up at the peak
+            if (nearTopLedge)
             {
-                return;
+                float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
+                bool moveForward = (_inputReader != null && _inputReader.MoveInput.y > 0.2f);
+                bool lookingUp = (pitch < -10f);
+
+                if (lookingUp || moveForward)
+                {
+                    StartPeakClimb(ledgeHit, wallForward);
+                    return;
+                }
             }
 
             // Execute Human Fall Flat physics & pitch lifting
@@ -590,40 +611,45 @@ public class Wallclimb : NetworkBehaviour
     }
 
     /// <summary>
-    /// Checks if hands are at the top edge of the wall and player is looking up/pushing forward to pull up.
+    /// Detects if the player is currently near the top lip / peak of the climbable wall.
+    /// Probes multiple depths past the wall surface to find a walkable horizontal platform.
     /// </summary>
-    private bool CheckForTopLedgePullUp()
+    private bool DetectTopLedge(out RaycastHit ledgeHit, out Vector3 wallForward)
     {
+        ledgeHit = default;
         Vector3 wallNormal = (_leftHandGripping ? _leftGripNormal : _rightGripNormal);
-        Vector3 wallForward = -wallNormal;
+        wallForward = -wallNormal;
         wallForward.y = 0f;
         wallForward.Normalize();
 
-        // Downward raycast probe starting high above the player to find top flat ledge
-        float probeHighY = transform.position.y + 2.6f;
-        Vector3 probeOrigin = new Vector3(transform.position.x, probeHighY, transform.position.z) + wallForward * 0.40f;
+        Vector3 playerPos = transform.position;
+        float playerHeadY = playerPos.y + 1.0f;
+        float highestHandY = Mathf.Max(
+            _leftHandGripping ? _leftGripPoint.y : 0f,
+            _rightHandGripping ? _rightGripPoint.y : 0f
+        );
 
-        if (Physics.Raycast(probeOrigin, Vector3.down, out RaycastHit ledgeHit, 3.2f, _wallLayers | (1 << 0), QueryTriggerInteraction.Ignore))
+        // Probe downward across multiple forward depths into the wall
+        float[] forwardDepths = new float[] { 0.25f, 0.50f, 0.80f };
+        float probeHighY = Mathf.Max(playerHeadY, highestHandY) + 1.2f;
+
+        for (int i = 0; i < forwardDepths.Length; i++)
         {
-            if (Vector3.Angle(ledgeHit.normal, Vector3.up) <= 45f)
+            Vector3 probeOrigin = new Vector3(playerPos.x, probeHighY, playerPos.z) + wallForward * forwardDepths[i];
+
+            if (Physics.Raycast(probeOrigin, Vector3.down, out RaycastHit hit, 2.8f, _wallLayers | (1 << 0), QueryTriggerInteraction.Ignore))
             {
-                float ledgeHeight = ledgeHit.point.y;
-                float handHeight = Mathf.Max(
-                    _leftHandGripping ? _leftGripPoint.y : 0f,
-                    _rightHandGripping ? _rightGripPoint.y : 0f
-                );
-
-                // If hands are within 0.25m of ledge height or above it:
-                if (handHeight >= (ledgeHeight - 0.35f))
+                // Must be a walk-able top surface (slope <= 45 degrees)
+                if (Vector3.Angle(hit.normal, Vector3.up) <= 45f)
                 {
-                    float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
-                    bool moveForward = (_inputReader != null && _inputReader.MoveInput.y > 0.2f);
-                    bool lookingUp = (pitch < -12f);
+                    float ledgeY = hit.point.y;
 
-                    // If looking up or pressing forward, pull up onto the top!
-                    if (lookingUp || moveForward)
+                    // Near peak condition: ledge is between player waist level and head/hands reach
+                    bool isNearLedge = (ledgeY >= playerPos.y - 0.25f && ledgeY <= Mathf.Max(playerHeadY, highestHandY) + 0.65f);
+
+                    if (isNearLedge)
                     {
-                        StartPullUp(ledgeHit, wallForward);
+                        ledgeHit = hit;
                         return true;
                     }
                 }
@@ -633,7 +659,10 @@ public class Wallclimb : NetworkBehaviour
         return false;
     }
 
-    private void StartPullUp(RaycastHit ledgeHit, Vector3 wallForward)
+    /// <summary>
+    /// Initiates a smooth, athletic Peak Climb / mantle vault up onto the top surface.
+    /// </summary>
+    private void StartPeakClimb(RaycastHit ledgeHit, Vector3 wallForward)
     {
         _isPullingUp = true;
         _pullUpTimer = 0f;
@@ -641,36 +670,53 @@ public class Wallclimb : NetworkBehaviour
         _pullUpLedgePoint = ledgeHit.point;
 
         float radius = (_characterController != null) ? _characterController.radius : 0.5f;
-        Vector3 targetXZ = new Vector3(ledgeHit.point.x, 0f, ledgeHit.point.z) + wallForward * (radius + 0.20f);
-        _pullUpTargetPos = new Vector3(targetXZ.x, ledgeHit.point.y + 0.05f, targetXZ.z);
 
-        // Release physical wall grip points so hands can slide onto ground
+        // CharacterController standing height:
+        // Pivot is center of 2m capsule, so standing feet on surface requires ledgeY + 1.05m
+        float targetY = ledgeHit.point.y + 1.05f;
+        Vector3 targetXZ = new Vector3(ledgeHit.point.x, 0f, ledgeHit.point.z) + wallForward * (radius + 0.35f);
+        _pullUpTargetPos = new Vector3(targetXZ.x, targetY, targetXZ.z);
+
+        // Release physical wall grip points so hands can plant onto top of ledge
         _leftHandGripping = false;
         _rightHandGripping = false;
 
+        // Drain small realistic stamina for vaulting up if stamina system exists
+        if (_stamina != null)
+        {
+            _stamina.ConsumeStamina(6.0f);
+        }
+
         HideMarkers();
-        Debug.Log($"[Wallclimb] Client {OwnerClientId} PULLING UP onto top surface at Y={_pullUpTargetPos.y:F2}");
+        Debug.Log($"[Wallclimb] Client {OwnerClientId} PEAK CLIMB vaulting smoothly onto top surface at Y={_pullUpTargetPos.y:F2}");
     }
 
     private void UpdatePullUp()
     {
         _pullUpTimer += Time.deltaTime;
-        float t = Mathf.Clamp01(_pullUpTimer / Mathf.Max(0.01f, _pullUpDuration));
+        float progress = Mathf.Clamp01(_pullUpTimer / Mathf.Max(0.01f, _pullUpDuration));
 
-        Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
+        Vector3 wallForward = (_pullUpTargetPos - _pullUpStartPos);
+        wallForward.y = 0f;
+        if (wallForward.sqrMagnitude > 0.001f) wallForward.Normalize();
+        else wallForward = transform.forward;
+
         Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
 
-        // Vertical arc: rises smoothly above the ledge
-        float heightArc = Mathf.Sin(t * Mathf.PI) * 0.12f;
-        float currentY = Mathf.Lerp(_pullUpStartPos.y, _pullUpTargetPos.y, Mathf.SmoothStep(0f, 1f, Mathf.Min(1f, t * 1.25f))) + heightArc;
+        // 1. Smooth Vertical Lift Arc:
+        // Body vaults up, clears the lip of the ledge with a gentle crest, then settles down onto the platform
+        float vertT = Mathf.SmoothStep(0f, 1f, Mathf.Min(1f, progress * 1.15f));
+        float crestArc = Mathf.Sin(progress * Mathf.PI) * 0.16f;
+        float currentY = Mathf.Lerp(_pullUpStartPos.y, _pullUpTargetPos.y, vertT) + crestArc;
 
-        // Horizontal movement: slides forward onto the surface
-        float horizT = Mathf.SmoothStep(0f, 1f, Mathf.Max(0f, (t - 0.2f) / 0.8f));
-        Vector3 startHoriz = new Vector3(_pullUpStartPos.x, 0f, _pullUpStartPos.z);
-        Vector3 targetHoriz = new Vector3(_pullUpTargetPos.x, 0f, _pullUpTargetPos.z);
-        Vector3 currentHoriz = Vector3.Lerp(startHoriz, targetHoriz, horizT);
+        // 2. Smooth Horizontal Forward Step:
+        // Forward translation starts as the torso clears the ledge
+        float horizT = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((progress - 0.15f) / 0.85f));
+        Vector3 startXZ = new Vector3(_pullUpStartPos.x, 0f, _pullUpStartPos.z);
+        Vector3 targetXZ = new Vector3(_pullUpTargetPos.x, 0f, _pullUpTargetPos.z);
+        Vector3 currentXZ = Vector3.Lerp(startXZ, targetXZ, horizT);
 
-        Vector3 desiredPos = new Vector3(currentHoriz.x, currentY, currentHoriz.z);
+        Vector3 desiredPos = new Vector3(currentXZ.x, currentY, currentXZ.z);
         Vector3 displacement = desiredPos - transform.position;
 
         if (_characterController != null && _characterController.enabled)
@@ -678,23 +724,51 @@ public class Wallclimb : NetworkBehaviour
             _characterController.Move(displacement);
         }
 
-        // Animate hands sliding onto the top surface
-        if (_leftHand != null && _rightHand != null)
+        // 3. Smooth Body Rotation towards top platform
+        if (wallForward.sqrMagnitude > 0.001f)
         {
-            float handSlide = Mathf.Lerp(0f, 0.35f, t);
-            Vector3 handBase = _pullUpLedgePoint + camFwd * handSlide + Vector3.up * 0.02f;
-            Vector3 worldLeft = handBase - camRight * (_handLateralSpacing * 0.6f);
-            Vector3 worldRight = handBase + camRight * (_handLateralSpacing * 0.6f);
-
-            _leftHand.position = Vector3.Lerp(_leftHand.position, worldLeft, Time.deltaTime * 25f);
-            _rightHand.position = Vector3.Lerp(_rightHand.position, worldRight, Time.deltaTime * 25f);
+            Quaternion targetRot = Quaternion.LookRotation(wallForward, Vector3.up);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 16f);
         }
 
-        if (t >= 1.0f)
+        // 4. Smooth Procedural Hands Animation during Peak Climb:
+        // Hands plant firmly onto the ledge lip, push down as the player rises, and return to hips
+        if (_leftHand != null && _rightHand != null)
+        {
+            float handPlantT = Mathf.Clamp01(progress * 1.4f);
+            Vector3 handLip = _pullUpLedgePoint + Vector3.up * 0.02f + wallForward * (0.15f * handPlantT);
+
+            Vector3 leftPlant = handLip - camRight * (_handLateralSpacing * 0.55f);
+            Vector3 rightPlant = handLip + camRight * (_handLateralSpacing * 0.55f);
+
+            if (progress < 0.70f)
+            {
+                _leftHand.position = Vector3.Lerp(_leftHand.position, leftPlant, Time.deltaTime * 30f);
+                _rightHand.position = Vector3.Lerp(_rightHand.position, rightPlant, Time.deltaTime * 30f);
+            }
+            else
+            {
+                // Smoothly blend back to natural rest positions at hips
+                Vector3 chest = transform.position + Vector3.up * 0.5f;
+                Vector3 leftRest = chest - camRight * 0.35f + wallForward * 0.1f;
+                Vector3 rightRest = chest + camRight * 0.35f + wallForward * 0.1f;
+                _leftHand.position = Vector3.Lerp(_leftHand.position, leftRest, Time.deltaTime * 15f);
+                _rightHand.position = Vector3.Lerp(_rightHand.position, rightRest, Time.deltaTime * 15f);
+            }
+        }
+
+        // 5. Completion: Smoothly land and transfer forward walking momentum
+        if (progress >= 1.0f)
         {
             _isPullingUp = false;
-            if (_movement != null) _movement.IsClimbing = false;
-            Debug.Log($"[Wallclimb] Client {OwnerClientId} successfully landed on top of the wall!");
+            if (_movement != null)
+            {
+                _movement.IsClimbing = false;
+                _movement.ResetVelocity();
+                // Gentle forward impulse so the player steps smoothly into walking on the platform
+                _movement.ApplyImpulse(wallForward * 2.0f);
+            }
+            Debug.Log($"[Wallclimb] Client {OwnerClientId} successfully landed on peak/top platform!");
         }
     }
 
