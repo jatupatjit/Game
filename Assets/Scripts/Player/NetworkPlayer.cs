@@ -79,10 +79,21 @@ namespace CoopGame.Player
                     }
                 }
 
+                // Ensure player spawns flush on ground (y = 1.05m) and spaced out by ClientId
+                Vector3 currentPos = transform.position;
+                if (currentPos.sqrMagnitude < 0.1f || currentPos.y < 0.5f)
+                {
+                    Vector3 spawnPos = CalculateSpawnPosition(OwnerClientId);
+                    if (_characterController != null) _characterController.enabled = false;
+                    transform.position = spawnPos;
+                    if (_characterController != null) _characterController.enabled = true;
+                    if (_movement != null) _movement.ResetVelocity();
+                }
+
                 _characterController.enabled = true;
                 _movement.enabled = true;
 
-                Debug.Log($"[NetworkPlayer] Local Player initialized with Owner ClientId: {OwnerClientId}");
+                Debug.Log($"[NetworkPlayer] Local Player initialized with Owner ClientId: {OwnerClientId} at {transform.position}");
             }
             else
             {
@@ -166,6 +177,23 @@ namespace CoopGame.Player
                 propBlock.SetColor("_BaseColor", chosenColor); // URP default color property
                 propBlock.SetColor("_Color", chosenColor);     // Standard fallback
                 _playerRenderer.SetPropertyBlock(propBlock);
+            }
+        }
+
+        /// <summary>
+        /// Calculates an offset spawn position so players spawn on top of ground (y = 1.05m)
+        /// and spaced out according to ClientId to prevent overlapping.
+        /// </summary>
+        private static Vector3 CalculateSpawnPosition(ulong clientId)
+        {
+            float y = 1.05f;
+            switch (clientId % 4)
+            {
+                case 0: return new Vector3(0f, y, 0f);
+                case 1: return new Vector3(2f, y, 0f);
+                case 2: return new Vector3(-2f, y, 0f);
+                case 3: return new Vector3(0f, y, 2f);
+                default: return new Vector3(0f, y, 0f);
             }
         }
     }

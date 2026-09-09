@@ -228,7 +228,7 @@ namespace CoopGame.Player
 
         /// <summary>
         /// Handles mouse wheel zooming and quick 1st/3rd person toggle ('V' key).
-        /// Note: Middle Mouse Button is dedicated to Throwing mechanics to prevent conflict.
+        /// Note: 'Q' key is dedicated to Throwing mechanics to prevent conflict.
         /// </summary>
         private void HandleZoomInput()
         {

@@ -214,12 +214,12 @@ namespace CoopGame.Player
                 _grabRightAction.AddBinding("<Gamepad>/rightTrigger");
             }
 
-            // Throw: 'F' key, Middle Mouse Button, or Gamepad Right Shoulder (RB)
+            // Throw: 'Q' key (Hold to charge, release to throw), 'F' key, or Gamepad Right Shoulder (RB)
             if (_throwAction == null)
             {
                 _throwAction = new InputAction("FallbackThrow", InputActionType.Button);
+                _throwAction.AddBinding("<Keyboard>/q");
                 _throwAction.AddBinding("<Keyboard>/f");
-                _throwAction.AddBinding("<Mouse>/middleButton");
                 _throwAction.AddBinding("<Gamepad>/rightShoulder");
             }
 

@@ -31,7 +31,7 @@ namespace CoopGame.CarrySystem
     {
         [Header("Interaction & Facing Settings")]
         [Tooltip("Actual hand physical grab contact distance (hands reach the object)")]
-        [SerializeField] private float _grabContactDistance = 2.8f;
+        [SerializeField] private float _grabContactDistance = 1.6f;
 
         [Tooltip("Maximum distance to scan surfaces for the aim reticle")]
         [SerializeField] private float _maxScanDistance = 12.0f;
@@ -176,6 +176,20 @@ namespace CoopGame.CarrySystem
             NetworkVariableWritePermission.Owner
         );
 
+        // Synchronized vertical hold height (derived from camera pitch) so remote players see up/down gestures
+        private readonly NetworkVariable<float> _netHoldHeight = new NetworkVariable<float>(
+            0.85f,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Owner
+        );
+
+        // Synchronized NetworkObjectId of the carried object, ensuring 100% reliable state sync for all clients (including late joiners)
+        private readonly NetworkVariable<ulong> _netCarriedObjectId = new NetworkVariable<ulong>(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server
+        );
+
         private void Awake()
         {
             _inputReader = GetComponent<PlayerInputReader>();
@@ -208,6 +222,13 @@ namespace CoopGame.CarrySystem
         {
             base.OnNetworkSpawn();
 
+            _netCarriedObjectId.OnValueChanged += OnCarriedObjectIdChanged;
+
+            if (!IsOwner && _netCarriedObjectId.Value != 0)
+            {
+                ResolveCarriedObject(_netCarriedObjectId.Value);
+            }
+
             if (IsOwner)
             {
                 if (GetComponent<PlayerStaminaUI>() == null)
@@ -221,12 +242,41 @@ namespace CoopGame.CarrySystem
         {
             base.OnNetworkDespawn();
 
+            _netCarriedObjectId.OnValueChanged -= OnCarriedObjectIdChanged;
+
             HideMarkers();
             ClearOutlineHighlight();
 
             if (IsCarrying)
             {
                 ReleaseCarryState();
+            }
+        }
+
+        private void OnCarriedObjectIdChanged(ulong previousValue, ulong newValue)
+        {
+            if (IsOwner) return;
+
+            if (newValue != 0)
+            {
+                ResolveCarriedObject(newValue);
+            }
+            else
+            {
+                ReleaseCarryState();
+            }
+        }
+
+        private void ResolveCarriedObject(ulong netId)
+        {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null &&
+                NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(netId, out NetworkObject netObj))
+            {
+                CarryableObject carryable = netObj.GetComponent<CarryableObject>();
+                if (carryable != null)
+                {
+                    _currentCarryable = carryable;
+                }
             }
         }
 
@@ -450,6 +500,11 @@ namespace CoopGame.CarrySystem
                 if (_netHandState.Value != handMask)
                 {
                     _netHandState.Value = handMask;
+                }
+
+                if (Mathf.Abs(_netHoldHeight.Value - currentHoldHeight) > 0.015f)
+                {
+                    _netHoldHeight.Value = currentHoldHeight;
                 }
             }
         }
@@ -901,11 +956,17 @@ namespace CoopGame.CarrySystem
 
         /// <summary>
         /// Animates procedural hands for remote proxy players across the network.
-        /// Replicates reaches, box grabbing, and throw wind-ups so everyone sees natural physics gestures.
+        /// Replicates reaches, box grabbing, dynamic vertical lifting, and throw wind-ups so everyone sees natural physics gestures.
         /// </summary>
         private void UpdateVisualHandsProxy()
         {
             if (_leftHand == null || _rightHand == null) return;
+
+            // Ensure carried object is resolved if NetworkVariable indicates an active carry
+            if (_currentCarryable == null && _netCarriedObjectId.Value != 0)
+            {
+                ResolveCarriedObject(_netCarriedObjectId.Value);
+            }
 
             byte mask = _netHandState.Value;
             bool leftGrip = (mask & (1 << 0)) != 0;
@@ -914,28 +975,47 @@ namespace CoopGame.CarrySystem
             bool rightReach = (mask & (1 << 3)) != 0;
             bool chargingThrow = (mask & (1 << 4)) != 0;
 
+            float remoteHoldHeight = _netHoldHeight.Value;
+
             Vector3 targetLeftPos;
             Vector3 targetRightPos;
 
-            // If actively holding a carryable object, reach towards its position
-            if ((leftGrip || rightGrip) && _currentCarryable != null)
+            // Left Hand:
+            if (leftGrip && _currentCarryable != null)
             {
                 Vector3 objPos = _currentCarryable.transform.position;
                 Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
-                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.4f, 1.2f);
+                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 1.2f);
                 Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
-
-                targetLeftPos = leftGrip 
-                    ? (forwardNorm * reachDist + new Vector3(-0.25f, 0f, 0f)) 
-                    : _leftHandRest;
-                targetRightPos = rightGrip 
-                    ? (forwardNorm * reachDist + new Vector3(0.25f, 0f, 0f)) 
-                    : _rightHandRest;
+                targetLeftPos = forwardNorm * reachDist + new Vector3(-0.25f, 0f, 0f);
+            }
+            else if (leftReach || leftGrip)
+            {
+                // Naturally tracks remote player's look pitch/height up and down
+                targetLeftPos = new Vector3(-0.25f, remoteHoldHeight, 0.75f);
             }
             else
             {
-                targetLeftPos = (leftGrip || leftReach) ? new Vector3(-0.25f, 0.85f, 0.75f) : _leftHandRest;
-                targetRightPos = (rightGrip || rightReach) ? new Vector3(0.25f, 0.85f, 0.75f) : _rightHandRest;
+                targetLeftPos = _leftHandRest;
+            }
+
+            // Right Hand:
+            if (rightGrip && _currentCarryable != null)
+            {
+                Vector3 objPos = _currentCarryable.transform.position;
+                Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
+                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 1.2f);
+                Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
+                targetRightPos = forwardNorm * reachDist + new Vector3(0.25f, 0f, 0f);
+            }
+            else if (rightReach || rightGrip)
+            {
+                // Naturally tracks remote player's look pitch/height up and down
+                targetRightPos = new Vector3(0.25f, remoteHoldHeight, 0.75f);
+            }
+            else
+            {
+                targetRightPos = _rightHandRest;
             }
 
             if (chargingThrow)
@@ -966,10 +1046,12 @@ namespace CoopGame.CarrySystem
                 ? Vector3.Distance(transform.position, col.bounds.ClosestPoint(transform.position))
                 : Vector3.Distance(transform.position, carryable.transform.position);
 
-            if (dist > _grabContactDistance * 2.5f) return;
+            // Tightened grab distance check with generous latency margin (max 2.2m instead of 7.0m)
+            if (dist > _grabContactDistance + 0.6f) return;
 
             if (carryable.TryAttachCarrier(OwnerClientId, transform, _movement, localContactLeft, localContactRight, leftActive, rightActive, out int socketIndex))
             {
+                _netCarriedObjectId.Value = targetNetworkObjectId;
                 NotifyGrabResultClientRpc(targetNetworkObjectId, socketIndex, true);
             }
         }
@@ -991,6 +1073,7 @@ namespace CoopGame.CarrySystem
                 _currentCarryable.DetachCarrier(OwnerClientId);
             }
 
+            _netCarriedObjectId.Value = 0;
             NotifyDropClientRpc();
         }
 
@@ -1002,6 +1085,7 @@ namespace CoopGame.CarrySystem
                 _currentCarryable.ThrowObject(OwnerClientId, linearVelocity, angularVelocity);
             }
 
+            _netCarriedObjectId.Value = 0;
             NotifyDropClientRpc();
         }
 
