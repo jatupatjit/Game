@@ -87,9 +87,13 @@ namespace CoopGame.Network
             }
             else
             {
-                GUILayout.Label("<color=#ff6b6b><b>Steam not running or offline!</b></color>");
-                GUILayout.Label("<size=10>Open Steam client on PC to play Co-op.</size>");
-                if (GUILayout.Button("Retry Steam Connection", GUILayout.Height(24)))
+                // Animated dots to indicate active auto-retry in background
+                int dotCount = ((int)(Time.unscaledTime * 2.5f) % 4);
+                string dots = new string('.', dotCount);
+                GUILayout.Label($"<color=#ffb703><b>Connecting to Steam (Auto{dots})</b></color>");
+                GUILayout.Label("<size=10>Launch Steam client to connect automatically.</size>");
+                GUILayout.Space(2);
+                if (GUILayout.Button("Retry Now", GUILayout.Height(22)))
                 {
                     steamManager?.RefreshSteam();
                 }

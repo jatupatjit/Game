@@ -57,6 +57,15 @@ namespace CoopGame.Network
         public string CurrentRoomCode { get; private set; } = "";
         public string StatusMessage { get; private set; } = "Ready";
 
+        [Header("Steam Auto-Retry Settings")]
+        [Tooltip("Automatically retries connecting to Steam in background if offline")]
+        [SerializeField] private bool _autoRetrySteam = true;
+        [Tooltip("Interval in seconds between auto-retry attempts")]
+        [SerializeField] private float _retryInterval = 1.5f;
+
+        private float _lastRetryTime = 0f;
+        private bool _callbacksRegistered = false;
+
         // Cached Transports
         private FacepunchTransport _facepunchTransport;
         private UnityTransport _unityTransport;
@@ -106,7 +115,10 @@ namespace CoopGame.Network
 
         private void Start()
         {
-            RegisterSteamCallbacks();
+            if (IsSteamInitialized)
+            {
+                RegisterSteamCallbacks();
+            }
         }
 
         private void Update()
@@ -115,6 +127,15 @@ namespace CoopGame.Network
             if (IsSteamInitialized)
             {
                 SteamClient.RunCallbacks();
+            }
+            else if (_autoRetrySteam)
+            {
+                // Automatically retry connecting in the background without requiring user clicks
+                if (Time.unscaledTime >= _lastRetryTime + _retryInterval)
+                {
+                    _lastRetryTime = Time.unscaledTime;
+                    InitializeSteam(force: true);
+                }
             }
         }
 
@@ -159,17 +180,17 @@ namespace CoopGame.Network
                 {
                     StatusMessage = $"Steam Connected: {SteamClient.Name} ({SteamClient.SteamId})";
                     Debug.Log($"[SteamLobbyManager] Steamworks initialized successfully! Logged in as: {SteamClient.Name}");
+                    RegisterSteamCallbacks();
+                    EnsureTransports();
                 }
                 else
                 {
-                    StatusMessage = "Steam Client is not running.";
-                    Debug.LogWarning("[SteamLobbyManager] SteamClient is not valid. Make sure Steam is running on your machine.");
+                    StatusMessage = "Waiting for Steam client to launch...";
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                StatusMessage = $"Steam init error: {ex.Message}";
-                Debug.LogWarning($"[SteamLobbyManager] Failed to initialize Steamworks: {ex.Message}");
+                StatusMessage = "Waiting for Steam client to launch...";
             }
         }
 
@@ -240,16 +261,20 @@ namespace CoopGame.Network
 
         private void RegisterSteamCallbacks()
         {
+            if (_callbacksRegistered) return;
             SteamMatchmaking.OnLobbyCreated += OnLobbyCreated;
             SteamMatchmaking.OnLobbyEntered += OnLobbyEntered;
             SteamFriends.OnGameLobbyJoinRequested += OnGameLobbyJoinRequested;
+            _callbacksRegistered = true;
         }
 
         private void UnregisterSteamCallbacks()
         {
+            if (!_callbacksRegistered) return;
             SteamMatchmaking.OnLobbyCreated -= OnLobbyCreated;
             SteamMatchmaking.OnLobbyEntered -= OnLobbyEntered;
             SteamFriends.OnGameLobbyJoinRequested -= OnGameLobbyJoinRequested;
+            _callbacksRegistered = false;
         }
 
         private void OnLobbyCreated(Result result, Lobby lobby)
