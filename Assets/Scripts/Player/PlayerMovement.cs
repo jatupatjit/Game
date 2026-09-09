@@ -117,14 +117,6 @@ namespace CoopGame.Player
         {
             if (_characterController == null || !_characterController.enabled) return;
 
-            // When climbing or mantling, Wallclimb directly controls character displacement
-            if (IsClimbing)
-            {
-                _horizontalVelocity = Vector3.zero;
-                _verticalVelocity = 0f;
-                return;
-            }
-
             float deltaTime = Time.deltaTime;
 
             // 1. Update Platforming Timers (Coyote time & Jump buffer)
