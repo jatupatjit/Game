@@ -1324,7 +1324,12 @@ namespace CoopGame.CarrySystem
 
         public override void OnDestroy()
         {
-            base.OnDestroy();
+            try
+            {
+                base.OnDestroy();
+            }
+            catch { }
+
             if (_leftMarker != null) Destroy(_leftMarker.gameObject);
             if (_rightMarker != null) Destroy(_rightMarker.gameObject);
             if (_persistentMarker != null) Destroy(_persistentMarker.gameObject);

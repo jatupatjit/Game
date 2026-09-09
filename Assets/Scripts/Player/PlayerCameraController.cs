@@ -333,8 +333,14 @@ namespace CoopGame.Player
             }
         }
 
+        private void OnDisable()
+        {
+            SetCursorLock(false);
+        }
+
         private void OnDestroy()
         {
+            SetCursorLock(false);
             if (_playerCamera != null)
             {
                 Destroy(_playerCamera.gameObject);

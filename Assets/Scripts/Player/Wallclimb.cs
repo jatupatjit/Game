@@ -212,7 +212,12 @@ public class Wallclimb : NetworkBehaviour
 
     public override void OnDestroy()
     {
-        base.OnDestroy();
+        try
+        {
+            base.OnDestroy();
+        }
+        catch { }
+
         if (_leftClimbMarker != null) Destroy(_leftClimbMarker.gameObject);
         if (_rightClimbMarker != null) Destroy(_rightClimbMarker.gameObject);
     }

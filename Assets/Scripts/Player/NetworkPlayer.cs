@@ -129,6 +129,35 @@ namespace CoopGame.Player
                 _inputReader.DisableInput();
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
+                RestoreSceneCamera();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (IsOwner)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                RestoreSceneCamera();
+            }
+        }
+
+        /// <summary>
+        /// Re-enables the default scene camera so there is never a blank or frozen screen when leaving gameplay.
+        /// </summary>
+        private void RestoreSceneCamera()
+        {
+            Camera[] allCams = Resources.FindObjectsOfTypeAll<Camera>();
+            foreach (Camera cam in allCams)
+            {
+                if (cam != null && cam.gameObject.scene.isLoaded && cam.transform.root != transform)
+                {
+                    if (cam.gameObject.name.Contains("Main Camera"))
+                    {
+                        cam.gameObject.SetActive(true);
+                    }
+                }
             }
         }
 

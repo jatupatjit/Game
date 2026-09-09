@@ -61,15 +61,44 @@ namespace CoopGame.Network
         private FacepunchTransport _facepunchTransport;
         private UnityTransport _unityTransport;
 
+        public static SteamLobbyManager EnsureInstance()
+        {
+            if (Instance != null) return Instance;
+
+            var existing = FindFirstObjectByType<SteamLobbyManager>();
+            if (existing != null)
+            {
+                Instance = existing;
+                return Instance;
+            }
+
+            GameObject go = new GameObject("[SteamLobbyManager]");
+            DontDestroyOnLoad(go);
+            Instance = go.AddComponent<SteamLobbyManager>();
+            return Instance;
+        }
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
             {
-                Destroy(gameObject);
+                // Destroy only this duplicate component or object, never destroy the NetworkManager
+                if (transform.parent == null && gameObject.name == "[SteamLobbyManager]")
+                {
+                    Destroy(gameObject);
+                }
+                else
+                {
+                    Destroy(this);
+                }
                 return;
             }
+
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+            if (transform.parent == null)
+            {
+                DontDestroyOnLoad(gameObject);
+            }
 
             InitializeSteam();
             EnsureTransports();
@@ -92,15 +121,35 @@ namespace CoopGame.Network
         private void OnDestroy()
         {
             UnregisterSteamCallbacks();
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+            // CRITICAL: NEVER call SteamClient.Shutdown() here!
+            // SteamClient should stay alive across scene loads and lobby resets.
+        }
+
+        private void OnApplicationQuit()
+        {
+            UnregisterSteamCallbacks();
             if (IsSteamInitialized)
             {
+                Debug.Log("[SteamLobbyManager] Application quitting, shutting down SteamClient.");
                 SteamClient.Shutdown();
             }
         }
 
-        private void InitializeSteam()
+        /// <summary>
+        /// Attempts to initialize Steamworks or refresh connection status.
+        /// Safe to call multiple times without crashing or disconnecting.
+        /// </summary>
+        public void InitializeSteam(bool force = false)
         {
-            if (IsSteamInitialized) return;
+            if (SteamClient.IsValid && !force)
+            {
+                StatusMessage = $"Steam Connected: {SteamClient.Name} ({SteamClient.SteamId})";
+                return;
+            }
 
             try
             {
@@ -122,6 +171,14 @@ namespace CoopGame.Network
                 StatusMessage = $"Steam init error: {ex.Message}";
                 Debug.LogWarning($"[SteamLobbyManager] Failed to initialize Steamworks: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Public method for UI to refresh Steam connection if Steam was opened after the game.
+        /// </summary>
+        public void RefreshSteam()
+        {
+            InitializeSteam(force: true);
         }
 
         private void EnsureTransports()
@@ -438,6 +495,20 @@ namespace CoopGame.Network
         }
 
         /// <summary>
+        /// Regenerates a fresh 5-6 char Room Code for the active lobby (Host only).
+        /// </summary>
+        public void RegenerateRoomCode()
+        {
+            if (!CurrentLobby.HasValue) return;
+
+            CurrentRoomCode = GenerateRoomCode(6);
+            CurrentLobby.Value.SetData(RoomCodeKey, CurrentRoomCode);
+            CurrentLobby.Value.SetData("name", $"{SteamClient.Name}'s Lobby [{CurrentRoomCode}]");
+            StatusMessage = $"New Room Code: {CurrentRoomCode}";
+            Debug.Log($"[SteamLobbyManager] Regenerated Room Code: {CurrentRoomCode}");
+        }
+
+        /// <summary>
         /// Leaves current Steam lobby and resets state.
         /// </summary>
         public void LeaveLobby()
@@ -448,7 +519,48 @@ namespace CoopGame.Network
                 CurrentLobby = null;
             }
             CurrentRoomCode = "";
-            StatusMessage = "Left room";
+            StatusMessage = "Ready";
+        }
+
+        /// <summary>
+        /// Completely and cleanly disconnects from current Netcode session and Steam lobby,
+        /// restores cursor and scene camera, and reloads the active scene fresh to prevent any
+        /// frozen screen, missing objects, or stale network state.
+        /// </summary>
+        public void DisconnectAndReturnToLobby()
+        {
+            Debug.Log("[SteamLobbyManager] Disconnecting and returning to clean Lobby state...");
+
+            // 1. Restore Cursor immediately
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+
+            // 2. Re-enable scene cameras so there is never a blank/hung screen
+            Camera[] allCams = Resources.FindObjectsOfTypeAll<Camera>();
+            foreach (Camera cam in allCams)
+            {
+                if (cam != null && cam.gameObject.name.Contains("Main Camera"))
+                {
+                    cam.gameObject.SetActive(true);
+                }
+            }
+
+            // 3. Leave Steam lobby
+            LeaveLobby();
+
+            // 4. Shut down Netcode session
+            NetworkManager nm = NetworkManager.Singleton;
+            if (nm != null && (nm.IsClient || nm.IsServer))
+            {
+                nm.Shutdown();
+            }
+
+            // 5. Reload scene to reset all physical GameObjects, colliders, and NGO state cleanly
+            string activeSceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (!string.IsNullOrEmpty(activeSceneName))
+            {
+                UnityEngine.SceneManagement.SceneManager.LoadScene(activeSceneName);
+            }
         }
 
         #endregion

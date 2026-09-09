@@ -24,11 +24,8 @@ namespace CoopGame.Network
 
         private void Awake()
         {
-            // Ensure SteamLobbyManager exists in scene
-            if (FindFirstObjectByType<SteamLobbyManager>() == null)
-            {
-                gameObject.AddComponent<SteamLobbyManager>();
-            }
+            // Ensure dedicated persistent SteamLobbyManager exists
+            SteamLobbyManager.EnsureInstance();
         }
 
         private void Update()
@@ -49,7 +46,7 @@ namespace CoopGame.Network
             if (!_showHUD) return;
 
             NetworkManager networkManager = NetworkManager.Singleton;
-            SteamLobbyManager steamManager = SteamLobbyManager.Instance;
+            SteamLobbyManager steamManager = SteamLobbyManager.EnsureInstance();
 
             if (networkManager == null)
             {
@@ -60,7 +57,8 @@ namespace CoopGame.Network
             }
 
             // Clean, compact container for Steam Room Code networking
-            GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, 330f, 240f), GUI.skin.box);
+            float boxHeight = (networkManager.IsClient || networkManager.IsServer) ? 270f : 290f;
+            GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, 340f, boxHeight), GUI.skin.box);
             GUILayout.Label("<b>Co-op Multiplayer (Steam)</b>");
 
             // State 1: Offline -> Host Room or Join by Room Code
@@ -81,19 +79,25 @@ namespace CoopGame.Network
 
         private void DrawOfflineLobbyUI(NetworkManager nm, SteamLobbyManager steamManager)
         {
-            if (steamManager != null && steamManager.IsSteamInitialized)
+            bool steamReady = steamManager != null && steamManager.IsSteamInitialized;
+
+            if (steamReady)
             {
                 GUILayout.Label($"<color=#70d6ff>Steam:</color> <b>{steamManager.SteamPlayerName}</b>");
             }
             else
             {
-                GUILayout.Label("<color=#ff6b6b>Steam not running or offline!</color>");
+                GUILayout.Label("<color=#ff6b6b><b>Steam not running or offline!</b></color>");
                 GUILayout.Label("<size=10>Open Steam client on PC to play Co-op.</size>");
+                if (GUILayout.Button("Retry Steam Connection", GUILayout.Height(24)))
+                {
+                    steamManager?.RefreshSteam();
+                }
             }
 
             GUILayout.Space(6);
 
-            GUI.enabled = steamManager != null && steamManager.IsSteamInitialized;
+            GUI.enabled = steamReady;
 
             // 1. Host Room Button (Generates 5-6 char Room Code)
             if (GUILayout.Button("<b>Host Room (Create Code)</b>", GUILayout.Height(32)))
@@ -124,9 +128,27 @@ namespace CoopGame.Network
             }
             GUILayout.EndHorizontal();
 
+            // Quick convenience buttons: Paste & Clear / Reset
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Paste Code", GUILayout.Height(22)))
+            {
+                string clipboard = GUIUtility.systemCopyBuffer;
+                if (!string.IsNullOrEmpty(clipboard))
+                {
+                    _inputRoomCode = clipboard.Trim().ToUpperInvariant();
+                    if (_inputRoomCode.Length > 8) _inputRoomCode = _inputRoomCode.Substring(0, 8);
+                }
+            }
+            if (GUILayout.Button("Clear / Reset", GUILayout.Height(22)))
+            {
+                _inputRoomCode = "";
+                steamManager?.RefreshSteam();
+            }
+            GUILayout.EndHorizontal();
+
             GUI.enabled = true;
 
-            GUILayout.Space(6);
+            GUILayout.Space(4);
             if (steamManager != null && !string.IsNullOrEmpty(steamManager.StatusMessage))
             {
                 GUILayout.Label($"<size=10><i>Status: {steamManager.StatusMessage}</i></size>");
@@ -146,7 +168,7 @@ namespace CoopGame.Network
             // Display Room Code prominently
             GUILayout.BeginHorizontal();
             GUILayout.Label("<b>Room Code:</b>", GUILayout.Width(85));
-            GUILayout.Label($"<size=14><b><color=#70d6ff>{roomCode}</color></b></size>");
+            GUILayout.Label($"<size=16><b><color=#70d6ff>{roomCode}</color></b></size>");
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4);
@@ -163,6 +185,15 @@ namespace CoopGame.Network
                     steamManager.OpenSteamInviteOverlay();
                 }
                 GUILayout.EndHorizontal();
+
+                // If Host: Option to re-roll room code on the fly
+                if (nm.IsHost || nm.IsServer)
+                {
+                    if (GUILayout.Button("Re-roll Room Code", GUILayout.Height(22)))
+                    {
+                        steamManager.RegenerateRoomCode();
+                    }
+                }
             }
 
             GUILayout.Space(2);
@@ -177,11 +208,13 @@ namespace CoopGame.Network
             }
 
             GUILayout.Space(6);
-            if (GUILayout.Button("Leave Room & Disconnect", GUILayout.Height(28)))
+            // Clean Disconnect & Stop Session
+            GUI.backgroundColor = new Color(1.0f, 0.4f, 0.4f);
+            if (GUILayout.Button("<b>Disconnect & Stop Session</b>", GUILayout.Height(30)))
             {
-                steamManager?.LeaveLobby();
-                nm.Shutdown();
+                steamManager?.DisconnectAndReturnToLobby();
             }
+            GUI.backgroundColor = Color.white;
         }
     }
 }
