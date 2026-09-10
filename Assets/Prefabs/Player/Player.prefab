@@ -516,9 +516,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Wallclimb
   ShowTopMostFoldoutHeaderGroup: 1
-  _handReachDistance: 2
-  _twoHandStaminaDrain: 1.26
-  _oneHandStaminaDrain: 2.14
+  _handReachDistance: 1.53
+  _twoHandStaminaDrain: 2.56
+  _oneHandStaminaDrain: 5.28
   _wallLayers:
     serializedVersion: 2
     m_Bits: 8
@@ -536,5 +536,4 @@ MonoBehaviour:
   _maxScanDistance: 2
   _handLateralSpacing: 0.33
   _pullUpDuration: 0.52
-  _jumpBoostCooldownDuration: 2.03
   _handReleaseCooldown: 0.3
