@@ -152,6 +152,9 @@ namespace CoopGame.CarrySystem
         // Throwing state
         private float _currentThrowCharge = 0.0f;
         private bool _isChargingThrow = false;
+        private float _throwReleaseCooldown = 0.0f;
+        private bool _requireGrabRelease = false;
+        private bool _canAttemptGrab = true;
 
         // Exposed properties
         public bool IsCarrying => _leftHandGripping || _rightHandGripping;
@@ -317,12 +320,25 @@ namespace CoopGame.CarrySystem
             // 3.1 Update Outline Highlight on Aimed / Carried Object
             UpdateCarryableOutline(aimedCarryable, canGrabAimed);
 
-            // 4. Animate procedural hands to touch contact points or reach/rest
-            UpdateVisualHands(currentHoldHeight);
+            // 4.5. Grab attempt clearance and release requirement after throw
+            if (_throwReleaseCooldown > 0f)
+            {
+                _throwReleaseCooldown -= Time.deltaTime;
+            }
 
             // 5. Independent Hand Input Checking (Human Fall Flat style)
             bool leftClick = _inputReader.GrabLeftHeld || _inputReader.InteractHeld;
             bool rightClick = _inputReader.GrabRightHeld || _inputReader.InteractHeld;
+
+            if (!leftClick && !rightClick)
+            {
+                _requireGrabRelease = false;
+            }
+
+            _canAttemptGrab = !_requireGrabRelease && (_throwReleaseCooldown <= 0f);
+
+            // 4. Animate procedural hands to touch contact points or reach/rest
+            UpdateVisualHands(currentHoldHeight);
 
             // Release hands when button is released
             if (!leftClick && _leftHandGripping)
@@ -345,8 +361,8 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            // Grab with Left Hand if clicked and pointing at reachable object
-            if (leftClick && !_leftHandGripping)
+            // Grab with Left Hand if clicked, not already gripping, and grab is allowed
+            if (leftClick && !_leftHandGripping && _canAttemptGrab)
             {
                 if (_wallClimb != null && _wallClimb.IsClimbing)
                 {
@@ -362,8 +378,8 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            // Grab with Right Hand if clicked and pointing at reachable object
-            if (rightClick && !_rightHandGripping)
+            // Grab with Right Hand if clicked, not already gripping, and grab is allowed
+            if (rightClick && !_rightHandGripping && _canAttemptGrab)
             {
                 if (_wallClimb != null && _wallClimb.IsClimbing)
                 {
@@ -912,13 +928,13 @@ namespace CoopGame.CarrySystem
             Vector3 targetLeftPos;
             Vector3 targetRightPos;
 
-            // Left Hand: if gripping, attach to box. Else if holding click, reach forward. Else rest.
+            // Left Hand: if gripping, attach to box. Else if holding click and allowed, reach forward. Else rest.
             if (_leftHandGripping && _currentCarryable != null)
             {
                 Vector3 worldLeft = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
                 targetLeftPos = transform.InverseTransformPoint(worldLeft);
             }
-            else if (leftClick)
+            else if (leftClick && _canAttemptGrab)
             {
                 targetLeftPos = new Vector3(-0.25f, currentHeight, 0.75f);
             }
@@ -927,13 +943,13 @@ namespace CoopGame.CarrySystem
                 targetLeftPos = _leftHandRest;
             }
 
-            // Right Hand: if gripping, attach to box. Else if holding click, reach forward. Else rest.
+            // Right Hand: if gripping, attach to box. Else if holding click and allowed, reach forward. Else rest.
             if (_rightHandGripping && _currentCarryable != null)
             {
                 Vector3 worldRight = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
                 targetRightPos = transform.InverseTransformPoint(worldRight);
             }
-            else if (rightClick)
+            else if (rightClick && _canAttemptGrab)
             {
                 targetRightPos = new Vector3(0.25f, currentHeight, 0.75f);
             }
@@ -1194,6 +1210,8 @@ namespace CoopGame.CarrySystem
             {
                 _isChargingThrow = false;
                 _currentThrowCharge = 0f;
+                _leftHandGripping = false;
+                _rightHandGripping = false;
                 return;
             }
 
@@ -1201,6 +1219,12 @@ namespace CoopGame.CarrySystem
             float charge = _currentThrowCharge;
             _isChargingThrow = false;
             _currentThrowCharge = 0f;
+
+            // Automatically release hand grips from the item
+            _leftHandGripping = false;
+            _rightHandGripping = false;
+            _requireGrabRelease = true;
+            _throwReleaseCooldown = 0.4f;
 
             // Ballistic trajectory: forward + upward arc
             Vector3 throwDir = (camForward + Vector3.up * _throwUpwardArc).normalized;
@@ -1224,6 +1248,7 @@ namespace CoopGame.CarrySystem
             if (isNetworked)
             {
                 RequestThrowServerRpc(finalVelocity, angularImpulse);
+                ReleaseCarryState();
             }
             else
             {

@@ -1,14 +1,20 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace CoopGame.Network
 {
     /// <summary>
-    /// ConnectionHUD provides a streamlined Room Code matchmaking UI for Steam:
-    /// - Host creates a Steam Lobby with an auto-generated 5-6 character Room Code (e.g. "K7M2X9").
-    /// - Clients join instantly simply by entering the 5-6 character Room Code.
-    /// - Includes One-Click Copy Room Code and Steam Friends Overlay Invites.
-    /// - LAN / Direct IP mode has been removed as requested.
+    /// ConnectionHUD provides the complete in-game & lobby matchmaking UI:
+    /// 1. Lobby Menu (Offline):
+    ///    - Main: [Host Room] [Setting] [Quit]
+    ///    - Host Room Sub-Menu: [Host] [Join] [Back]
+    ///    - Join Sub-Menu: [Code Input] [Enter Room] [Paste] [Back]
+    ///    - Setting Sub-Menu: Blank screen [Back]
+    ///    - Quit: Quits game
+    /// 2. In-Game Session (Online):
+    ///    - Top-left (above left corner) displays Room Code & connected info
+    ///    - Pressing [ESC] pops up Pause Menu with [Continue], [Setting], [Quit]
     /// </summary>
     [DisallowMultipleComponent]
     public class ConnectionHUD : MonoBehaviour
@@ -20,21 +26,79 @@ namespace CoopGame.Network
         [Tooltip("Show or hide the connection HUD overlay")]
         [SerializeField] private bool _showHUD = true;
 
+        private enum LobbyMenuState
+        {
+            Main,
+            HostRoom,
+            Join,
+            Settings
+        }
+
+        private LobbyMenuState _lobbyState = LobbyMenuState.Main;
         private string _inputRoomCode = "";
+
+        // In-game Pause menu state
+        private bool _isPauseMenuOpen = false;
+        private bool _pauseInSettings = false;
 
         private void Awake()
         {
-            // Ensure dedicated persistent SteamLobbyManager exists
             SteamLobbyManager.EnsureInstance();
         }
 
         private void Update()
         {
-            // Press Tab or F1 to toggle HUD visibility
-            if (UnityEngine.InputSystem.Keyboard.current != null)
+            // Read ESC from New Input System
+            bool escPressed = false;
+            if (Keyboard.current != null)
             {
-                if (UnityEngine.InputSystem.Keyboard.current.tabKey.wasPressedThisFrame ||
-                    UnityEngine.InputSystem.Keyboard.current.f1Key.wasPressedThisFrame)
+                escPressed = Keyboard.current.escapeKey.wasPressedThisFrame;
+            }
+
+            if (escPressed)
+            {
+                NetworkManager nm = NetworkManager.Singleton;
+                bool sessionActive = nm != null && (nm.IsClient || nm.IsServer || nm.IsHost);
+
+                if (sessionActive)
+                {
+                    // In-game pause toggle
+                    if (_pauseInSettings)
+                    {
+                        _pauseInSettings = false;
+                    }
+                    else if (_isPauseMenuOpen)
+                    {
+                        _isPauseMenuOpen = false;
+                        Cursor.lockState = CursorLockMode.Locked;
+                        Cursor.visible = false;
+                    }
+                    else
+                    {
+                        _isPauseMenuOpen = true;
+                        Cursor.lockState = CursorLockMode.None;
+                        Cursor.visible = true;
+                    }
+                }
+                else
+                {
+                    // Lobby back navigation
+                    if (_lobbyState == LobbyMenuState.Join)
+                    {
+                        _lobbyState = LobbyMenuState.HostRoom;
+                    }
+                    else if (_lobbyState == LobbyMenuState.HostRoom || _lobbyState == LobbyMenuState.Settings)
+                    {
+                        _lobbyState = LobbyMenuState.Main;
+                    }
+                }
+            }
+
+            // Tab or F1 to toggle HUD visibility
+            if (Keyboard.current != null)
+            {
+                if (Keyboard.current.tabKey.wasPressedThisFrame ||
+                    Keyboard.current.f1Key.wasPressedThisFrame)
                 {
                     _showHUD = !_showHUD;
                 }
@@ -56,85 +120,186 @@ namespace CoopGame.Network
                 return;
             }
 
-            // Clean, compact container for Steam Room Code networking
-            float boxHeight = (networkManager.IsClient || networkManager.IsServer) ? 270f : 290f;
-            GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, 340f, boxHeight), GUI.skin.box);
-            GUILayout.Label("<b>Co-op Multiplayer (Steam)</b>");
+            bool sessionActive = networkManager.IsClient || networkManager.IsServer || networkManager.IsHost;
 
-            // State 1: Offline -> Host Room or Join by Room Code
-            if (!networkManager.IsClient && !networkManager.IsServer)
+            if (!sessionActive)
             {
-                DrawOfflineLobbyUI(networkManager, steamManager);
-            }
-            // State 2: Session Active -> Show Room Code, Connected Players, and Disconnect
-            else
-            {
-                DrawActiveSessionUI(networkManager, steamManager);
-            }
-
-            GUILayout.FlexibleSpace();
-            GUILayout.Label("<size=9><color=#888888>• [Esc] Toggle Cursor  |  [Tab/F1] Hide HUD</color></size>");
-            GUILayout.EndArea();
-        }
-
-        private void DrawOfflineLobbyUI(NetworkManager nm, SteamLobbyManager steamManager)
-        {
-            bool steamReady = steamManager != null && steamManager.IsSteamInitialized;
-
-            if (steamReady)
-            {
-                GUILayout.Label($"<color=#70d6ff>Steam:</color> <b>{steamManager.SteamPlayerName}</b>");
+                // Draw Lobby Menu with 3 buttons: Host Room - Setting - Quit
+                DrawLobbyMenu(steamManager);
             }
             else
             {
-                // Animated dots to indicate active auto-retry in background
-                int dotCount = ((int)(Time.unscaledTime * 2.5f) % 4);
-                string dots = new string('.', dotCount);
-                GUILayout.Label($"<color=#ffb703><b>Connecting to Steam (Auto{dots})</b></color>");
-                GUILayout.Label("<size=10>Launch Steam client to connect automatically.</size>");
-                GUILayout.Space(2);
-                if (GUILayout.Button("Retry Now", GUILayout.Height(22)))
+                // In-Game: Above left corner shows Room Code
+                DrawAboveLeftRoomCodeHUD(networkManager, steamManager);
+
+                // In-Game: ESC Pause Menu
+                if (_isPauseMenuOpen)
                 {
-                    steamManager?.RefreshSteam();
+                    DrawInGamePauseMenu(networkManager, steamManager);
                 }
             }
+        }
 
-            GUILayout.Space(6);
+        // ─────────────────────────────────────────────────────────────────────
+        // 1. LOBBY MENU (Host Room, Setting, Quit)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private void DrawLobbyMenu(SteamLobbyManager steamManager)
+        {
+            // Centered panel for peak aesthetic
+            float panelWidth = 360f;
+            float panelHeight = 340f;
+            float posX = (Screen.width - panelWidth) * 0.5f;
+            float posY = (Screen.height - panelHeight) * 0.5f;
+
+            GUILayout.BeginArea(new Rect(posX, posY, panelWidth, panelHeight), GUI.skin.box);
+
+            // Title
+            GUILayout.Space(8);
+            GUILayout.Label("<size=18><b><color=#00d9ff>DONT DROP IT</color></b></size>", GetCenteredLabelStyle());
+            GUILayout.Space(2);
+
+            // Steam status
+            bool steamReady = steamManager != null && steamManager.IsSteamInitialized;
+            if (steamReady)
+            {
+                GUILayout.Label($"<color=#70d6ff>● {steamManager.SteamPlayerName}</color>", GetCenteredLabelStyle());
+            }
+            else
+            {
+                int dotCount = ((int)(Time.unscaledTime * 2.5f) % 4);
+                string dots = new string('.', dotCount);
+                GUILayout.Label($"<color=#ffb703>● Waiting for Steam{dots}</color>", GetCenteredLabelStyle());
+            }
+
+            GUILayout.Space(12);
 
             GUI.enabled = steamReady;
 
-            // 1. Host Room Button (Generates 5-6 char Room Code)
-            if (GUILayout.Button("<b>Host Room (Create Code)</b>", GUILayout.Height(32)))
+            switch (_lobbyState)
+            {
+                case LobbyMenuState.Main:
+                    DrawMainMenu();
+                    break;
+
+                case LobbyMenuState.HostRoom:
+                    DrawHostRoomMenu(steamManager);
+                    break;
+
+                case LobbyMenuState.Join:
+                    DrawJoinMenu(steamManager);
+                    break;
+
+                case LobbyMenuState.Settings:
+                    DrawSettingsMenu(isPause: false);
+                    break;
+            }
+
+            GUI.enabled = true;
+
+            // Status message
+            if (steamManager != null && !string.IsNullOrEmpty(steamManager.StatusMessage) && steamManager.StatusMessage != "Ready")
+            {
+                GUILayout.FlexibleSpace();
+                GUILayout.Label($"<size=10><i>Status: {steamManager.StatusMessage}</i></size>", GetCenteredLabelStyle());
+            }
+
+            GUILayout.EndArea();
+        }
+
+        private void DrawMainMenu()
+        {
+            GUILayout.Label("<size=13><b>MAIN MENU</b></size>", GetCenteredLabelStyle());
+            GUILayout.Space(10);
+
+            // 1. Host Room
+            if (GUILayout.Button("<b>🎮  Host Room</b>", GUILayout.Height(44)))
+            {
+                _lobbyState = LobbyMenuState.HostRoom;
+            }
+
+            GUILayout.Space(8);
+
+            // 2. Setting
+            if (GUILayout.Button("<b>⚙  Setting</b>", GUILayout.Height(44)))
+            {
+                _lobbyState = LobbyMenuState.Settings;
+            }
+
+            GUILayout.Space(8);
+
+            // 3. Quit
+            GUI.backgroundColor = new Color(0.9f, 0.3f, 0.3f);
+            if (GUILayout.Button("<b>✕  Quit Game</b>", GUILayout.Height(44)))
+            {
+                QuitGame();
+            }
+            GUI.backgroundColor = Color.white;
+        }
+
+        private void DrawHostRoomMenu(SteamLobbyManager steamManager)
+        {
+            GUILayout.Label("<size=13><b>HOST ROOM MENU</b></size>", GetCenteredLabelStyle());
+            GUILayout.Space(10);
+
+            // Button 1: Host (Enters game lobby with room code above left corner)
+            GUI.backgroundColor = new Color(0.2f, 0.6f, 1.0f);
+            if (GUILayout.Button("<b>▶  Host</b>", GUILayout.Height(44)))
             {
                 steamManager?.HostSteamLobby(4);
             }
+            GUI.backgroundColor = Color.white;
 
-            GUILayout.Space(6);
+            GUILayout.Space(8);
 
-            // 2. Join by 5-6 Char Room Code
-            GUILayout.Label("Join Room by Code:");
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Code:", GUILayout.Width(42));
-            
-            // Automatically format input to uppercase and clean whitespace
-            string typed = GUILayout.TextField(_inputRoomCode, 8, GUILayout.Height(26));
+            // Button 2: Join (Opens input for code game)
+            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
+            if (GUILayout.Button("<b>🔑  Join</b>", GUILayout.Height(44)))
+            {
+                _lobbyState = LobbyMenuState.Join;
+            }
+            GUI.backgroundColor = Color.white;
+
+            GUILayout.Space(8);
+
+            // Back button
+            if (GUILayout.Button("<b>← Back</b>", GUILayout.Height(36)))
+            {
+                _lobbyState = LobbyMenuState.Main;
+            }
+        }
+
+        private void DrawJoinMenu(SteamLobbyManager steamManager)
+        {
+            GUILayout.Label("<size=13><b>ENTER ROOM CODE</b></size>", GetCenteredLabelStyle());
+            GUILayout.Space(8);
+
+            GUILayout.Label("Code Game:", GetCenteredLabelStyle());
+            GUILayout.Space(2);
+
+            string typed = GUILayout.TextField(_inputRoomCode, 8, GUILayout.Height(32));
             if (typed != _inputRoomCode)
             {
                 _inputRoomCode = typed.ToUpperInvariant().Trim();
             }
 
-            if (GUILayout.Button("Join Room", GUILayout.Width(90), GUILayout.Height(26)))
+            GUILayout.Space(8);
+
+            GUILayout.BeginHorizontal();
+
+            // Enter Room button
+            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
+            if (GUILayout.Button("<b>Enter Room</b>", GUILayout.Height(36)))
             {
                 if (!string.IsNullOrEmpty(_inputRoomCode))
                 {
                     steamManager?.JoinLobbyByCode(_inputRoomCode);
                 }
             }
-            GUILayout.EndHorizontal();
+            GUI.backgroundColor = Color.white;
 
-            // Quick convenience buttons: Paste & Clear / Reset
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Paste Code", GUILayout.Height(22)))
+            // Paste button
+            if (GUILayout.Button("Paste Code", GUILayout.Width(90), GUILayout.Height(36)))
             {
                 string clipboard = GUIUtility.systemCopyBuffer;
                 if (!string.IsNullOrEmpty(clipboard))
@@ -143,83 +308,154 @@ namespace CoopGame.Network
                     if (_inputRoomCode.Length > 8) _inputRoomCode = _inputRoomCode.Substring(0, 8);
                 }
             }
-            if (GUILayout.Button("Clear / Reset", GUILayout.Height(22)))
-            {
-                _inputRoomCode = "";
-                steamManager?.RefreshSteam();
-            }
             GUILayout.EndHorizontal();
 
-            GUI.enabled = true;
+            GUILayout.Space(8);
 
-            GUILayout.Space(4);
-            if (steamManager != null && !string.IsNullOrEmpty(steamManager.StatusMessage))
+            // Back button
+            if (GUILayout.Button("<b>← Back</b>", GUILayout.Height(34)))
             {
-                GUILayout.Label($"<size=10><i>Status: {steamManager.StatusMessage}</i></size>");
+                _lobbyState = LobbyMenuState.HostRoom;
             }
         }
 
-        private void DrawActiveSessionUI(NetworkManager nm, SteamLobbyManager steamManager)
+        private void DrawSettingsMenu(bool isPause)
         {
-            string mode = nm.IsHost ? "Host" : (nm.IsServer ? "Server" : "Client");
+            GUILayout.Label("<size=14><b>SETTINGS</b></size>", GetCenteredLabelStyle());
+            GUILayout.Space(14);
+
+            // Blank screen as requested by user ("Setting is basic so.. we dont have much thing there yet just press and enter to blank screen first")
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Space(24);
+            GUILayout.Label("<color=#888888><i>(Settings screen - blank for now)</i></color>", GetCenteredLabelStyle());
+            GUILayout.Space(24);
+            GUILayout.EndVertical();
+
+            GUILayout.Space(14);
+
+            if (GUILayout.Button("<b>← Back</b>", GUILayout.Height(38)))
+            {
+                if (isPause)
+                {
+                    _pauseInSettings = false;
+                }
+                else
+                {
+                    _lobbyState = LobbyMenuState.Main;
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 2. IN-GAME ROOM CODE (Above Left Corner)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private void DrawAboveLeftRoomCodeHUD(NetworkManager nm, SteamLobbyManager steamManager)
+        {
+            string mode = nm.IsHost ? "HOST" : (nm.IsServer ? "SERVER" : "CLIENT");
             string roomCode = (steamManager != null && !string.IsNullOrEmpty(steamManager.CurrentRoomCode))
                 ? steamManager.CurrentRoomCode
                 : "------";
 
-            GUILayout.Label($"<b>Session Mode:</b> {mode}");
-            GUILayout.Space(2);
+            float hudWidth = 240f;
+            float hudHeight = 110f;
+            GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, hudWidth, hudHeight), GUI.skin.box);
 
-            // Display Room Code prominently
+            GUILayout.Label($"<color=#70d6ff><b>MODE: {mode}</b></color>");
+            GUILayout.Label($"<b>ROOM CODE:</b> <size=18><b><color=#00d9ff>{roomCode}</color></b></size>");
+
+            if (nm.IsHost || nm.IsServer)
+            {
+                GUILayout.Label($"Players: {nm.ConnectedClientsIds.Count}");
+            }
+
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>Room Code:</b>", GUILayout.Width(85));
-            GUILayout.Label($"<size=16><b><color=#70d6ff>{roomCode}</color></b></size>");
+            if (GUILayout.Button("📋 Copy", GUILayout.Height(22)))
+            {
+                steamManager?.CopyRoomCodeToClipboard();
+            }
+            if (GUILayout.Button("Invite", GUILayout.Height(22)))
+            {
+                steamManager?.OpenSteamInviteOverlay();
+            }
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(4);
+            GUILayout.EndArea();
+        }
 
-            if (steamManager != null && steamManager.CurrentLobby.HasValue)
+        // ─────────────────────────────────────────────────────────────────────
+        // 3. IN-GAME ESC PAUSE MENU (Continue, Setting, Quit)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private void DrawInGamePauseMenu(NetworkManager nm, SteamLobbyManager steamManager)
+        {
+            float pauseWidth = 320f;
+            float pauseHeight = 280f;
+            float posX = (Screen.width - pauseWidth) * 0.5f;
+            float posY = (Screen.height - pauseHeight) * 0.5f;
+
+            // Semi-transparent overlay feel using modal box
+            GUI.Box(new Rect(0, 0, Screen.width, Screen.height), "");
+
+            GUILayout.BeginArea(new Rect(posX, posY, pauseWidth, pauseHeight), GUI.skin.box);
+
+            if (_pauseInSettings)
             {
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Copy Code", GUILayout.Height(26)))
+                DrawSettingsMenu(isPause: true);
+            }
+            else
+            {
+                GUILayout.Space(10);
+                GUILayout.Label("<size=18><b><color=#00d9ff>PAUSED</color></b></size>", GetCenteredLabelStyle());
+                GUILayout.Space(16);
+
+                // 1. Continue
+                GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
+                if (GUILayout.Button("<b>▶  Continue</b>", GUILayout.Height(44)))
                 {
-                    steamManager.CopyRoomCodeToClipboard();
+                    _isPauseMenuOpen = false;
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
                 }
-                if (GUILayout.Button("Invite Friends", GUILayout.Height(26)))
+                GUI.backgroundColor = Color.white;
+
+                GUILayout.Space(8);
+
+                // 2. Setting
+                if (GUILayout.Button("<b>⚙  Setting</b>", GUILayout.Height(44)))
                 {
-                    steamManager.OpenSteamInviteOverlay();
+                    _pauseInSettings = true;
                 }
-                GUILayout.EndHorizontal();
 
-                // If Host: Option to re-roll room code on the fly
-                if (nm.IsHost || nm.IsServer)
+                GUILayout.Space(8);
+
+                // 3. Quit
+                GUI.backgroundColor = new Color(0.9f, 0.3f, 0.3f);
+                if (GUILayout.Button("<b>✕  Quit</b>", GUILayout.Height(44)))
                 {
-                    if (GUILayout.Button("Re-roll Room Code", GUILayout.Height(22)))
-                    {
-                        steamManager.RegenerateRoomCode();
-                    }
+                    _isPauseMenuOpen = false;
+                    steamManager?.DisconnectAndReturnToLobby();
                 }
+                GUI.backgroundColor = Color.white;
             }
 
-            GUILayout.Space(2);
-            if (nm.IsServer || nm.IsHost)
-            {
-                GUILayout.Label($"<b>Connected Players:</b> {nm.ConnectedClientsIds.Count}");
-            }
+            GUILayout.EndArea();
+        }
 
-            if (steamManager != null && !string.IsNullOrEmpty(steamManager.StatusMessage))
-            {
-                GUILayout.Label($"<size=10><i>Status: {steamManager.StatusMessage}</i></size>");
-            }
+        private void QuitGame()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
 
-            GUILayout.Space(6);
-            // Clean Disconnect & Stop Session
-            GUI.backgroundColor = new Color(1.0f, 0.4f, 0.4f);
-            if (GUILayout.Button("<b>Disconnect & Stop Session</b>", GUILayout.Height(30)))
-            {
-                steamManager?.DisconnectAndReturnToLobby();
-            }
-            GUI.backgroundColor = Color.white;
+        private GUIStyle GetCenteredLabelStyle()
+        {
+            var style = new GUIStyle(GUI.skin.label);
+            style.alignment = TextAnchor.MiddleCenter;
+            return style;
         }
     }
 }
-

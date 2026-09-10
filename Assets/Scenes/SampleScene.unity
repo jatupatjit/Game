@@ -455,6 +455,72 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 209767f495c221c498ab71fed2ee2a13, type: 3}
+--- !u!1 &676017639
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 676017641}
+  - component: {fileID: 676017640}
+  m_Layer: 0
+  m_Name: LobbyUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &676017640
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 676017639}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6995118eb3a3305458dccadd37cef9d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Network.LobbyUI
+  _lobbyRoot: {fileID: 0}
+  _mainPanel: {fileID: 0}
+  _hostRoomMenuButton: {fileID: 0}
+  _settingsMenuButton: {fileID: 0}
+  _quitGameButton: {fileID: 0}
+  _steamStatusLabel: {fileID: 0}
+  _statusMessageLabel: {fileID: 0}
+  _hostRoomPanel: {fileID: 0}
+  _hostButton: {fileID: 0}
+  _joinButton: {fileID: 0}
+  _backFromHostRoomButton: {fileID: 0}
+  _joinPanel: {fileID: 0}
+  _roomCodeInput: {fileID: 0}
+  _confirmJoinButton: {fileID: 0}
+  _pasteCodeButton: {fileID: 0}
+  _backFromJoinButton: {fileID: 0}
+  _settingsPanel: {fileID: 0}
+  _backFromSettingsButton: {fileID: 0}
+  _connectingPanel: {fileID: 0}
+  _connectingLabel: {fileID: 0}
+  _fadeSpeed: 3.5
+  _statusUpdateInterval: 0.5
+--- !u!4 &676017641
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 676017639}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &724379371
 GameObject:
   m_ObjectHideFlags: 0
@@ -700,8 +766,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Network.ConnectionHUD
   _guiOffset: {x: 15, y: 15}
   _showHUD: 1
-  _ipAddress: 127.0.0.1
-  _port: 7777
 --- !u!114 &1363226270
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1051,3 +1115,4 @@ SceneRoots:
   - {fileID: 1052058638}
   - {fileID: 1744433584}
   - {fileID: 579451640}
+  - {fileID: 676017641}
