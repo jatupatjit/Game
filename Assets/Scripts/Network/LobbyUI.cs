@@ -224,31 +224,30 @@ namespace CoopGame.Network
         private void UpdateStatusLabels()
         {
             var mgr = SteamLobbyManager.Instance;
-            if (_steamStatusLabel == null) return;
             bool steamReady = mgr != null && mgr.IsSteamInitialized;
-            if (steamReady)
+
+            if (_hostRoomMenuButton != null) _hostRoomMenuButton.interactable = steamReady;
+            if (_hostButton         != null) _hostButton.interactable         = steamReady;
+            if (_joinButton         != null) _joinButton.interactable         = steamReady;
+            if (_confirmJoinButton  != null) _confirmJoinButton.interactable  = steamReady;
+
+            if (_steamStatusLabel != null)
             {
-                _steamStatusLabel.text  = "● " + mgr.SteamPlayerName;
-                _steamStatusLabel.color = new Color(0f, 0.85f, 1f);
-                if (_hostRoomMenuButton != null) _hostRoomMenuButton.interactable = true;
-                if (_hostButton         != null) _hostButton.interactable         = true;
-                if (_joinButton         != null) _joinButton.interactable         = true;
-                if (_confirmJoinButton  != null) _confirmJoinButton.interactable  = true;
+                _steamStatusLabel.gameObject.SetActive(false); // Kept completely hidden as requested
             }
-            else
+
+            if (_statusMessageLabel != null)
             {
-                int dots = (int)(Time.unscaledTime * 2.5f) % 4;
-                _steamStatusLabel.text  = "● Waiting for Steam" + new string('.', dots);
-                _steamStatusLabel.color = new Color(1f, 0.72f, 0f);
-                if (_hostRoomMenuButton != null) _hostRoomMenuButton.interactable = false;
-                if (_hostButton         != null) _hostButton.interactable         = false;
-                if (_joinButton         != null) _joinButton.interactable         = false;
-                if (_confirmJoinButton  != null) _confirmJoinButton.interactable  = false;
-            }
-            if (_statusMessageLabel != null && mgr != null &&
-                !string.IsNullOrEmpty(mgr.StatusMessage) && mgr.StatusMessage != "Ready")
-            {
-                _statusMessageLabel.text = mgr.StatusMessage;
+                if (mgr != null && !string.IsNullOrEmpty(mgr.StatusMessage) && mgr.StatusMessage != "Ready" && !mgr.StatusMessage.StartsWith("Steam Connected"))
+                {
+                    _statusMessageLabel.text = mgr.StatusMessage;
+                    _statusMessageLabel.gameObject.SetActive(true);
+                }
+                else
+                {
+                    _statusMessageLabel.text = "";
+                    _statusMessageLabel.gameObject.SetActive(false);
+                }
             }
         }
 
@@ -350,95 +349,116 @@ namespace CoopGame.Network
             if (_lobbyRoot == null) _lobbyRoot = gameObject.AddComponent<CanvasGroup>();
 
             // Palette
-            Color bgDeep        = H("#0A0E1A");
-            Color panelColor    = H("#111827EE");
-            Color accentCyan    = H("#00D9FF");
-            Color btnHost       = H("#1D4ED8");
-            Color btnJoin       = H("#059669");
-            Color btnSettings   = H("#4B5563");
-            Color btnQuit       = H("#991B1B");
-            Color btnBack       = H("#374151");
-            Color btnCopy       = H("#1F2937");
-            Color textPrimary   = H("#F9FAFB");
-            Color textSecondary = H("#9CA3AF");
+            Color bgDeep        = ProceduralUIUtility.BgDeep;
+            Color panelColor    = ProceduralUIUtility.PanelDark;
+            Color accentCyan    = ProceduralUIUtility.AccentCyan;
+            Color btnPlay       = ProceduralUIUtility.ButtonPlay;
+            Color btnJoin       = ProceduralUIUtility.ButtonJoin;
+            Color btnSettings   = ProceduralUIUtility.ButtonSlate;
+            Color btnQuit       = ProceduralUIUtility.ButtonQuit;
+            Color btnBack       = ProceduralUIUtility.ButtonSlate;
+            Color textPrimary   = ProceduralUIUtility.TextPrimary;
+            Color textSecondary = ProceduralUIUtility.TextSecondary;
 
             // Background
-            var bg = Img(gameObject, "Background", bgDeep);
-            Stretch(bg.GetComponent<RectTransform>());
+            var bg = ProceduralUIUtility.MakeImage(gameObject, "Background", bgDeep);
+            ProceduralUIUtility.StretchFull(bg.GetComponent<RectTransform>());
 
-            // Center Card
-            var card   = Panel(gameObject, "LobbyCard", new Vector2(500, 580), panelColor);
+            // Center Card (460 x 520)
+            var card   = ProceduralUIUtility.MakePanel(gameObject, "LobbyCard", new Vector2(460, 520), Vector2.zero, panelColor);
             var cardRT = card.GetComponent<RectTransform>();
             cardRT.anchorMin = cardRT.anchorMax = new Vector2(0.5f, 0.5f);
             cardRT.pivot     = new Vector2(0.5f, 0.5f);
             cardRT.anchoredPosition = Vector2.zero;
             var cvl = card.AddComponent<VerticalLayoutGroup>();
             cvl.childAlignment = TextAnchor.UpperCenter;
-            cvl.padding        = new RectOffset(40, 40, 36, 36);
+            cvl.padding        = new RectOffset(36, 36, 32, 32);
             cvl.spacing        = 14;
             cvl.childControlWidth    = true;
             cvl.childControlHeight   = false;
             cvl.childForceExpandWidth = true;
 
-            // Header
-            LE(Txt(card,"TitleLabel","DONT DROP IT",34,FontStyle.Bold,textPrimary,TextAnchor.MiddleCenter).gameObject, 46f);
-            LE(Img(card, "AccentLine", accentCyan).gameObject, 2f);
+            // Header: Game Title & Subtitle
+            LE(ProceduralUIUtility.MakeText(card, "TitleLabel", "DONT DROP IT", 32, FontStyle.Bold, textPrimary, TextAnchor.MiddleCenter).gameObject, 40f);
+            LE(ProceduralUIUtility.MakeText(card, "SubTitleLabel", "CO-OP PHYSICS ADVENTURE", 11, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 16f);
 
-            _steamStatusLabel   = Txt(card,"SteamStatusLabel","● Checking Steam...",13,FontStyle.Normal,textSecondary,TextAnchor.MiddleCenter);
-            LE(_steamStatusLabel.gameObject, 24f);
-
-            _statusMessageLabel = Txt(card,"StatusMessageLabel","",12,FontStyle.Italic,textSecondary,TextAnchor.MiddleCenter);
-            LE(_statusMessageLabel.gameObject, 22f);
+            _steamStatusLabel   = null;
+            _statusMessageLabel = ProceduralUIUtility.MakeText(card, "StatusMessageLabel", "", 12, FontStyle.Italic, ProceduralUIUtility.HexColor("#FCA5A5"), TextAnchor.MiddleCenter);
+            LE(_statusMessageLabel.gameObject, 18f);
 
             // Main panel
-            _mainPanel = Empty(card, "MainMenuPanel");
-            VL(_mainPanel, 14);
-            _hostRoomMenuButton = Btn(_mainPanel,"HostRoomMenuButton","HOST ROOM",btnHost,   50);
-            _settingsMenuButton = Btn(_mainPanel,"SettingsMenuButton", "SETTINGS", btnSettings,50);
-            _quitGameButton     = Btn(_mainPanel,"QuitGameButton",     "QUIT GAME",btnQuit,   50);
+            _mainPanel = ProceduralUIUtility.MakeEmpty(card, "MainMenuPanel");
+            VL(_mainPanel, 12);
+            var (_, pBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "HostRoomMenuButton", "▶   PLAY", btnPlay, 52);
+            _hostRoomMenuButton = pBtn;
+            var (_, sBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "SettingsMenuButton", "⚙   SETTINGS", btnSettings, 46);
+            _settingsMenuButton = sBtn;
+            var (_, qBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "QuitGameButton", "✕   QUIT GAME", btnQuit, 42);
+            _quitGameButton = qBtn;
 
             // Host room panel
-            _hostRoomPanel = Empty(card, "HostRoomSubPanel");
-            VL(_hostRoomPanel, 14);
-            LE(Txt(_hostRoomPanel,"SubTitle","CREATE OR JOIN",14,FontStyle.Bold,accentCyan,TextAnchor.MiddleCenter).gameObject, 26f);
-            _hostButton            = Btn(_hostRoomPanel,"HostButton","HOST",btnHost,50);
-            _joinButton            = Btn(_hostRoomPanel,"JoinButton","JOIN",btnJoin,50);
-            _backFromHostRoomButton= Btn(_hostRoomPanel,"BackFromHostRoomButton","BACK",btnBack,46);
+            _hostRoomPanel = ProceduralUIUtility.MakeEmpty(card, "HostRoomSubPanel");
+            VL(_hostRoomPanel, 12);
+            LE(ProceduralUIUtility.MakeText(_hostRoomPanel, "SubTitle", "SELECT PLAY MODE", 13, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 24f);
+            var (_, hBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "HostButton", "▶   HOST ROOM", btnPlay, 50);
+            _hostButton = hBtn;
+            var (_, jBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", btnJoin, 50);
+            _joinButton = jBtn;
+            var (_, bBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "BackFromHostRoomButton", "←   BACK", btnBack, 44);
+            _backFromHostRoomButton = bBtn;
             _hostRoomPanel.SetActive(false);
 
             // Join panel
-            _joinPanel = Empty(card, "JoinSubPanel");
+            _joinPanel = ProceduralUIUtility.MakeEmpty(card, "JoinSubPanel");
             VL(_joinPanel, 12);
-            LE(Txt(_joinPanel,"JoinTitle","ENTER ROOM CODE",14,FontStyle.Bold,accentCyan,TextAnchor.MiddleCenter).gameObject,24f);
-            _roomCodeInput = InputF(_joinPanel,"RoomCodeInput","ROOM CODE",48);
-            var row = Empty(_joinPanel,"JoinBtnRow");
-            LE(row, 44f);
-            var rhl = row.AddComponent<HorizontalLayoutGroup>();
-            rhl.spacing = 10; rhl.childControlWidth = true; rhl.childControlHeight = true; rhl.childForceExpandWidth = true;
-            _pasteCodeButton    = Btn(row,"PasteCodeButton",   "Paste",btnCopy,44);
-            _confirmJoinButton  = Btn(row,"ConfirmJoinButton", "Enter",btnJoin,44);
-            _backFromJoinButton = Btn(row,"BackFromJoinButton","Back", btnBack,44);
+            LE(ProceduralUIUtility.MakeText(_joinPanel, "JoinTitle", "ENTER 6-DIGIT ROOM CODE", 13, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 24f);
+
+            var inputRow = ProceduralUIUtility.MakeEmpty(_joinPanel, "InputRow");
+            LE(inputRow, 50f);
+            var inHL = inputRow.AddComponent<HorizontalLayoutGroup>();
+            inHL.spacing = 8; inHL.childControlWidth = false; inHL.childControlHeight = true; inHL.childForceExpandWidth = false; inHL.childForceExpandHeight = true;
+
+            var (inGO, cInp) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 50);
+            _roomCodeInput = cInp;
+            var inRT = inGO.GetComponent<RectTransform>();
+            inRT.sizeDelta = new Vector2(270, 50);
+            var inLE = inGO.AddComponent<LayoutElement>();
+            inLE.preferredWidth = 270; inLE.preferredHeight = 50;
+
+            var (pstGO, pstBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", btnSettings, 50, 13);
+            _pasteCodeButton = pstBtn;
+            var pstRT = pstGO.GetComponent<RectTransform>();
+            pstRT.sizeDelta = new Vector2(110, 50);
+            var pstLE = pstGO.GetComponent<LayoutElement>();
+            if (pstLE != null) { pstLE.preferredWidth = 110; pstLE.preferredHeight = 50; }
+
+            var (_, cnfBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", btnJoin, 50, 15);
+            _confirmJoinButton = cnfBtn;
+
+            var (_, bckBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "BackFromJoinButton", "←   BACK", btnBack, 44, 14);
+            _backFromJoinButton = bckBtn;
             _joinPanel.SetActive(false);
 
             // Settings panel
-            _settingsPanel = Empty(card, "SettingsSubPanel");
-            VL(_settingsPanel, 18);
-            LE(Txt(_settingsPanel,"SettingsTitle","SETTINGS",18,FontStyle.Bold,accentCyan,TextAnchor.MiddleCenter).gameObject,32f);
-            var blank = Empty(_settingsPanel,"BlankArea");
-            LE(blank, 120f);
-            Stretch(Txt(blank,"BlankNote","(Settings will be here)",13,FontStyle.Italic,textSecondary,TextAnchor.MiddleCenter).GetComponent<RectTransform>());
-            _backFromSettingsButton = Btn(_settingsPanel,"BackFromSettingsButton","BACK",btnBack,46);
+            _settingsPanel = ProceduralUIUtility.MakeEmpty(card, "SettingsSubPanel");
+            VL(_settingsPanel, 16);
+            LE(ProceduralUIUtility.MakeText(_settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 28f);
+            var blank = ProceduralUIUtility.MakeEmpty(_settingsPanel, "BlankArea");
+            LE(blank, 100f);
+            ProceduralUIUtility.StretchFull(ProceduralUIUtility.MakeText(blank, "BlankNote", "Game audio and control settings will be configured here.", 13, FontStyle.Italic, textSecondary, TextAnchor.MiddleCenter).GetComponent<RectTransform>());
+            var (_, bStgBtn) = ProceduralUIUtility.MakeButton(_settingsPanel, "BackFromSettingsButton", "←   BACK", btnBack, 44);
+            _backFromSettingsButton = bStgBtn;
             _settingsPanel.SetActive(false);
 
             // Connecting panel
-            _connectingPanel = Empty(card,"ConnectingPanel");
+            _connectingPanel = ProceduralUIUtility.MakeEmpty(card, "ConnectingPanel");
             VL(_connectingPanel, 16);
-            var sp = Img(_connectingPanel,"SpinnerRing",accentCyan);
-            sp.GetComponent<RectTransform>().sizeDelta = new Vector2(40,40);
+            var sp = ProceduralUIUtility.MakeImage(_connectingPanel, "SpinnerRing", accentCyan);
+            sp.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
             var sple = sp.gameObject.AddComponent<LayoutElement>(); sple.preferredWidth = 40; sple.preferredHeight = 40;
             sp.gameObject.AddComponent<SpinnerAnimator>();
-            _connectingLabel = Txt(_connectingPanel,"ConnectingLabel","Connecting...",16,FontStyle.Bold,accentCyan,TextAnchor.MiddleCenter);
-            LE(_connectingLabel.gameObject, 30f);
+            _connectingLabel = ProceduralUIUtility.MakeText(_connectingPanel, "ConnectingLabel", "Connecting to room...", 15, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter);
+            LE(_connectingLabel.gameObject, 28f);
             _connectingPanel.SetActive(false);
 
             Debug.Log("[LobbyUI] Runtime self-build complete.");

@@ -247,7 +247,20 @@ public static class PlayerModelSetupEditor
                 soCarry.ApplyModifiedPropertiesWithoutUndo();
             }
 
-            Debug.Log($"[PlayerModelSetup] Player.prefab successfully setup with Rigged_character_ skeleton! Reach: 2.0m, Grab: 1.6m ✅");
+            // 9. Ensure PlayerStamina and PlayerStaminaUI components
+            PlayerStamina stamina = playerRoot.GetComponent<PlayerStamina>();
+            if (stamina == null)
+            {
+                stamina = playerRoot.AddComponent<PlayerStamina>();
+            }
+
+            PlayerStaminaUI staminaUI = playerRoot.GetComponent<PlayerStaminaUI>();
+            if (staminaUI == null)
+            {
+                staminaUI = playerRoot.AddComponent<PlayerStaminaUI>();
+            }
+
+            Debug.Log($"[PlayerModelSetup] Player.prefab successfully setup with Rigged_character_ skeleton, PlayerStamina, & PlayerStaminaUI! Reach: 2.0m, Grab: 1.6m ✅");
         }
 
         SetupCarryablePackagePrefab();

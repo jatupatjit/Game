@@ -502,9 +502,8 @@ public class Wallclimb : NetworkBehaviour
             wallNormal = _rightGripNormal;
         }
 
-        // 3. Calculate target body height from W/S input (W = pull UP, S = lower DOWN)
+        // 3. Calculate target body height strictly from W/S input (W = pull UP, S = lower DOWN)
         float moveY = (_inputReader != null) ? _inputReader.MoveInput.y : 0f;
-        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
         float currentHangDist;
 
         if (moveY > 0.05f)
@@ -521,21 +520,8 @@ public class Wallclimb : NetworkBehaviour
         }
         else
         {
-            // If neither W nor S is pressed: check camera pitch as subtle assist
-            if (pitch < -20f)
-            {
-                float t = Mathf.InverseLerp(-20f, -50f, pitch);
-                currentHangDist = Mathf.Lerp(_normalHangDistance, _minHangDistance, t);
-            }
-            else if (pitch > 30f)
-            {
-                float t = Mathf.InverseLerp(30f, 65f, pitch);
-                currentHangDist = Mathf.Lerp(_normalHangDistance, _maxHangDistance, t);
-            }
-            else
-            {
-                currentHangDist = _normalHangDistance;
-            }
+            // Neutral: Hang at natural default distance without camera pitch interference
+            currentHangDist = _normalHangDistance;
         }
 
         // Target body position:

@@ -326,25 +326,46 @@ namespace CoopGame.Player
 
             Quaternion idleUpperL = _restUpperRotL;
             Quaternion idleUpperR = _restUpperRotR;
+            Quaternion idleLowerL = _initLowerRotL;
+            Quaternion idleLowerR = _initLowerRotR;
 
             if (_walkSwingWeight > 0.001f)
             {
-                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.5f, 1.8f);
-                _armCyclePhase += 5.5f * speedFactor * deltaTime * (Mathf.PI * 2.0f);
+                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.6f, 1.8f);
+                _armCyclePhase += 5.2f * speedFactor * deltaTime * (Mathf.PI * 2.0f);
                 if (_armCyclePhase > Mathf.PI * 2.0f) _armCyclePhase -= Mathf.PI * 2.0f;
 
                 float sin = Mathf.Sin(_armCyclePhase);
-                float swingAngleL = -sin * 18.0f * _walkSwingWeight;
-                float swingAngleR = sin * 18.0f * _walkSwingWeight;
 
-                // Apply swing around transform.right to guarantee clean forward-backward swing without twisting
+                // Expressive, visible swing amplitude: ~36° on normal walk, ramping up to ~52° on sprint!
+                float maxSwingAngle = Mathf.Lerp(36.0f, 52.0f, Mathf.Clamp01((currentSpeed - 2.0f) / 6.0f));
+                float swingAngleL = -sin * maxSwingAngle * _walkSwingWeight;
+                float swingAngleR = sin * maxSwingAngle * _walkSwingWeight;
+
+                // Subtle organic lateral roll (arms flare slightly outward on backswing)
+                float lateralL = Mathf.Clamp01(sin) * 5.0f * _walkSwingWeight;
+                float lateralR = Mathf.Clamp01(-sin) * 5.0f * _walkSwingWeight;
+
+                // Apply upper arm swing
                 Quaternion restWorldL = transform.rotation * _restUpperRotL;
-                Quaternion idleWorldL = Quaternion.AngleAxis(swingAngleL, transform.right) * restWorldL;
+                Quaternion idleWorldL = Quaternion.AngleAxis(swingAngleL, transform.right) * Quaternion.AngleAxis(-lateralL, transform.forward) * restWorldL;
                 idleUpperL = Quaternion.Inverse(transform.rotation) * idleWorldL;
 
                 Quaternion restWorldR = transform.rotation * _restUpperRotR;
-                Quaternion idleWorldR = Quaternion.AngleAxis(swingAngleR, transform.right) * restWorldR;
+                Quaternion idleWorldR = Quaternion.AngleAxis(swingAngleR, transform.right) * Quaternion.AngleAxis(lateralR, transform.forward) * restWorldR;
                 idleUpperR = Quaternion.Inverse(transform.rotation) * idleWorldR;
+
+                // Natural forearm elbow flexion when arm swings forward
+                float elbowFlexL = Mathf.Max(0f, -sin) * 20.0f * _walkSwingWeight;
+                float elbowFlexR = Mathf.Max(0f, sin) * 20.0f * _walkSwingWeight;
+
+                Quaternion restWorldMidL = transform.rotation * _initLowerRotL;
+                Quaternion idleWorldMidL = Quaternion.AngleAxis(elbowFlexL, transform.right) * restWorldMidL;
+                idleLowerL = Quaternion.Inverse(transform.rotation) * idleWorldMidL;
+
+                Quaternion restWorldMidR = transform.rotation * _initLowerRotR;
+                Quaternion idleWorldMidR = Quaternion.AngleAxis(elbowFlexR, transform.right) * restWorldMidR;
+                idleLowerR = Quaternion.Inverse(transform.rotation) * idleWorldMidR;
             }
 
             // Dynamic IK weight blending based on climbing, carrying, or grab input
@@ -393,7 +414,7 @@ namespace CoopGame.Player
                 _upperArmL, _lowerArmL, _wristL,
                 _targetLeftPos, _targetLeftRot, LeftOverrideWrist, poleL,
                 _leftUpperLen, _leftLowerLen,
-                idleUpperL, _initLowerRotL, _initWristRotL,
+                idleUpperL, idleLowerL, _initWristRotL,
                 _leftWeight,
                 true
             );
@@ -405,7 +426,7 @@ namespace CoopGame.Player
                 _upperArmR, _lowerArmR, _wristR,
                 _targetRightPos, _targetRightRot, RightOverrideWrist, poleR,
                 _rightUpperLen, _rightLowerLen,
-                idleUpperR, _initLowerRotR, _initWristRotR,
+                idleUpperR, idleLowerR, _initWristRotR,
                 _rightWeight,
                 false
             );

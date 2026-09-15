@@ -70,8 +70,10 @@
     - Green outline when aimed at within reach; Blue outline while carried/held.
 
 ### 🌐 Multiplayer, UI & Diagnostics
-- [`SteamLobbyManager.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/SteamLobbyManager.cs): Steamworks matchmaking, 6-character room codes, auto-reconnect, and lobby discovery.
-- [`LobbyUI.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/LobbyUI.cs) & [`PauseMenu.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/PauseMenu.cs): Isolated sub-menu panels, settings, and room code display.
+- [`SteamLobbyManager.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/SteamLobbyManager.cs): Steamworks matchmaking, 6-character room codes, auto-reconnect, and lobby member callbacks (`OnLobbyMemberJoined`, `OnLobbyMemberLeave`, `OnLobbyMembersChanged`) providing real-time player list names.
+- [`ProceduralUIUtility.cs` / `UIBuilders.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/UIBuilders.cs): Procedural 9-sliced rounded sprite generator (`GetRoundedSprite`), modern glass dark slate theme, isolated sub-panels.
+- [`LobbyUI.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/LobbyUI.cs): Fullscreen main menu with `▶ PLAY` button, clean sub-menus, and revamped `JoinSubPanel` (horizontal Input + Paste row, full-width `✓ JOIN ROOM` & `← BACK` buttons).
+- [`RoomCodeHUD.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Network/RoomCodeHUD.cs): Top-left in-game overlay card (`250x190`) with `ROOM CODE • HOST/CLIENT` badge, big stylized room code, real-time `PLAYERS (count/4)` with `• Name (Host)` list, and one-click `📋 Copy Code` with dynamic `✓ Copied!` emerald feedback.
 - [`AutomatedPlaytestVerifier.cs`](file:///e:/Unity/My%20project/Assets/Scripts/Editor/AutomatedPlaytestVerifier.cs): In-editor automated test runner validating all prefabs, scenes, and UI bindings.
 
 ---
@@ -83,12 +85,16 @@
 | **Arm Twist / Torso Penetration on Overhead & Turn** | `FromToRotation` had a 180° singularity when rotating from down-facing rest pose to upward-facing overhead pose. | Replaced with direct `LookRotation(boneZ, boneY)` where local +Z is locked to forward projection and local +Y is the bone direction; added `localTarget.z >= -0.05f` clamp. |
 | **Climbing Weak / Not Lifting Body Up** | `chestPos` was mistakenly offset to feet level (`-0.05f`), corrupting hang formulas. | Restored commit `d8d65af` parameters with `chestPos = transform.position + Vector3.up * 1.15f`, `_bodyPullSpeed = 10.0f`, `_minHangDistance = 0.35f`. |
 | **Carrying & Outline Behavior** | Diverged from the responsive feel of commit `d8d65af`. | Restored `PlayerCarry.cs`, `CarryableObject.cs`, `CarryableOutline.cs`, and `CarryableOutline.shader` from commit `d8d65af`. |
-| **UI Blocking Gameplay Clicks** | `EventSystem.IsPointerOverGameObject()` triggered on invisible canvas raycasters. | Restricted UI click suppression strictly to when cursor is unlocked (`Cursor.lockState != CursorLockMode.Locked`). |
+| **Stamina System Disappeared / HUD Missing** | `PlayerStamina` & `PlayerStaminaUI` were missing on `Player.prefab`, `PlayerStaminaUI.Awake()` disabled itself due to premature `netObj.IsOwner` check before Netcode spawn. | Attached `PlayerStamina` and `PlayerStaminaUI` (`NetworkBehaviour`) via `PlayerModelSetupEditor`, fixed `OnNetworkSpawn()` ownership check, dedicated `PlayerHUD_Canvas`, and wired sprint/carry stamina drain. |
+| **Climbing Pitch Interference & Hoisting Decoupling** | Looking up/down previously modulated climbing hang distance, fighting player intent. | Decoupled camera pitch entirely; body hoisting (up to `0.35m`) and lowering (down to `1.45m`) are now strictly mapped to **W** and **S** keys. |
+| **Join Menu Stretched Buttons & Missing Player List** | `VerticalLayoutGroup` stretched buttons into tall monoliths without `flexibleHeight = 0`; room lacked connected member display. | Redesigned `JoinSubPanel` with a horizontal `[Room Code Input (270px) + Paste (110px)]` row and full-width `✓ JOIN ROOM` / `← BACK` buttons; subscribed `RoomCodeHUD` to `SteamLobbyManager.OnLobbyMembersChanged` to display real-time player names and host badges. |
 
 ---
 
 ## 4. Current Workspace State
 
 - **Unity Editor Status**: Connected & Synchronized (Port 7800, Unity 6000.6.0f1).
-- **Automated Verification Status**: **`ALL CHECKS PASSED ✅`** (0 Compilation Errors, 0 Runtime Exceptions).
-- **Git Policy Notice**: All changes are currently **local working modifications** (Uncommitted / Unpushed as per user directive `อย่าเพิ่งเอาขึ้น git`).
+- **Automated Verification Status**: **`ALL CHECKS PASSED ✅`** (0 Compilation Errors, 0 Runtime Exceptions, UI & Gameplay verified in Play Mode).
+- **Session Persistence**: Closing hook active; updates automatically summarized to `.agents/context_handoff.md`.
+- **Git Policy Notice**: Do not commit or push unless explicitly requested.
+

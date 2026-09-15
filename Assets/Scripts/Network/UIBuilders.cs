@@ -20,6 +20,222 @@ public class SpinnerAnimator : MonoBehaviour
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Procedural UI Utility (Shared Runtime & Editor)
+// Provides 9-sliced rounded anti-aliased sprites, color palettes, and UI helpers
+// ─────────────────────────────────────────────────────────────────────────────
+public static class ProceduralUIUtility
+{
+    public static readonly Color BgDeep        = HexColor("#080D1AFA");
+    public static readonly Color PanelDark     = HexColor("#0F172AF4");
+    public static readonly Color AccentCyan    = HexColor("#38BDF8");
+    public static readonly Color AccentEmerald = HexColor("#10B981");
+    public static readonly Color ButtonPlay    = HexColor("#2563EB");
+    public static readonly Color ButtonJoin    = HexColor("#059669");
+    public static readonly Color ButtonSlate   = HexColor("#1E293B");
+    public static readonly Color ButtonQuit    = HexColor("#450A0A");
+    public static readonly Color TextPrimary   = HexColor("#F8FAFC");
+    public static readonly Color TextSecondary = HexColor("#94A3B8");
+    public static readonly Color InputBg       = HexColor("#0B1120");
+
+    private static Sprite _sharedRoundedSprite;
+
+    public static Sprite GetRoundedSprite(int size = 64, int radius = 16)
+    {
+        if (_sharedRoundedSprite != null) return _sharedRoundedSprite;
+
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp,
+            name = "T_Procedural_Rounded"
+        };
+
+        Color[] pixels = new Color[size * size];
+        float r = radius;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x < r) ? (r - x) : (x >= size - r) ? (x - (size - r - 1)) : 0;
+                float dy = (y < r) ? (r - y) : (y >= size - r) ? (y - (size - r - 1)) : 0;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                if (dist > r)
+                {
+                    float alpha = Mathf.Clamp01(1f - (dist - r));
+                    pixels[y * size + x] = new Color(1, 1, 1, alpha);
+                }
+                else
+                {
+                    pixels[y * size + x] = Color.white;
+                }
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+
+        Vector4 border = new Vector4(radius, radius, radius, radius);
+        _sharedRoundedSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+        return _sharedRoundedSprite;
+    }
+
+    public static Font GetDefaultFont()
+    {
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        return font;
+    }
+
+    public static Color HexColor(string hex)
+    {
+        ColorUtility.TryParseHtmlString(hex, out Color c);
+        return c;
+    }
+
+    public static void StretchFull(RectTransform rt)
+    {
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+    }
+
+    public static GameObject MakeEmpty(GameObject parent, string name)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+#if UNITY_EDITOR
+        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+#endif
+        var rt = go.AddComponent<RectTransform>();
+        rt.sizeDelta = Vector2.zero;
+        return go;
+    }
+
+    public static Image MakeImage(GameObject parent, string name, Color color)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+#if UNITY_EDITOR
+        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+#endif
+        var img = go.AddComponent<Image>();
+        img.color = color;
+        return img;
+    }
+
+    public static GameObject MakePanel(GameObject parent, string name, Vector2 size, Vector2 pos, Color color)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+#if UNITY_EDITOR
+        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+#endif
+        var rt = go.AddComponent<RectTransform>();
+        rt.sizeDelta = size;
+        rt.anchoredPosition = pos;
+        var img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite(64, 18);
+        img.type = Image.Type.Sliced;
+        img.color = color;
+        return go;
+    }
+
+    public static Text MakeText(GameObject parent, string name, string text, int size, FontStyle style, Color color, TextAnchor align)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+#if UNITY_EDITOR
+        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+#endif
+        var rt = go.AddComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(0, 30);
+        var t = go.AddComponent<Text>();
+        t.font = GetDefaultFont();
+        t.text = text;
+        t.fontSize = size;
+        t.fontStyle = style;
+        t.color = color;
+        t.alignment = align;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Overflow;
+        return t;
+    }
+
+    public static (GameObject, Button) MakeButton(GameObject parent, string name, string label, Color bgColor, float height, int fontSize = 15)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+#if UNITY_EDITOR
+        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+#endif
+        var rt = go.AddComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(0, height);
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredHeight = height;
+
+        var img = go.AddComponent<Image>();
+        img.sprite = GetRoundedSprite(64, 12);
+        img.type = Image.Type.Sliced;
+        img.color = bgColor;
+
+        var btn = go.AddComponent<Button>();
+        var colors = btn.colors;
+        colors.normalColor = bgColor;
+        colors.highlightedColor = Color.Lerp(bgColor, Color.white, 0.22f);
+        colors.pressedColor = Color.Lerp(bgColor, Color.black, 0.25f);
+        colors.selectedColor = bgColor;
+        colors.fadeDuration = 0.06f;
+        btn.colors = colors;
+        btn.targetGraphic = img;
+
+        var lbl = MakeText(go, "Label", label, fontSize, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+        StretchFull(lbl.GetComponent<RectTransform>());
+
+        return (go, btn);
+    }
+
+    public static (GameObject, InputField) MakeInputField(GameObject parent, string name, string placeholder, float height)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+#if UNITY_EDITOR
+        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+#endif
+        var rt = go.AddComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(0, height);
+
+        var bgImg = go.AddComponent<Image>();
+        bgImg.sprite = GetRoundedSprite(64, 10);
+        bgImg.type = Image.Type.Sliced;
+        bgImg.color = InputBg;
+
+        var inputField = go.AddComponent<InputField>();
+        inputField.caretWidth = 2;
+        inputField.characterLimit = 8;
+
+        var textObj = MakeText(go, "Text", "", 20, FontStyle.Bold, AccentCyan, TextAnchor.MiddleCenter);
+        StretchFull(textObj.GetComponent<RectTransform>());
+        var textRT = textObj.GetComponent<RectTransform>();
+        textRT.offsetMin = new Vector2(12, 0);
+        textRT.offsetMax = new Vector2(-12, 0);
+
+        var phObj = MakeText(go, "Placeholder", placeholder, 14, FontStyle.Italic, HexColor("#64748B"), TextAnchor.MiddleCenter);
+        StretchFull(phObj.GetComponent<RectTransform>());
+        var phRT = phObj.GetComponent<RectTransform>();
+        phRT.offsetMin = new Vector2(12, 0);
+        phRT.offsetMax = new Vector2(-12, 0);
+
+        inputField.textComponent = textObj;
+        inputField.placeholder = phObj;
+        inputField.targetGraphic = bgImg;
+
+        return (go, inputField);
+    }
+}
+
 #if UNITY_EDITOR
 // ─────────────────────────────────────────────────────────────────────────────
 // UIBuilders.cs  |  Editor Only
@@ -32,19 +248,6 @@ public class SpinnerAnimator : MonoBehaviour
 
 public static class LobbyUIBuilder
 {
-    private static readonly Color BgDeep        = HexColor("#0A0E1A");
-    private static readonly Color PanelColor    = HexColor("#111827EE");
-    private static readonly Color AccentCyan    = HexColor("#00D9FF");
-    private static readonly Color ButtonHost    = HexColor("#1D4ED8");
-    private static readonly Color ButtonJoin    = HexColor("#059669");
-    private static readonly Color ButtonSettings= HexColor("#4B5563");
-    private static readonly Color ButtonQuit    = HexColor("#991B1B");
-    private static readonly Color ButtonBack    = HexColor("#374151");
-    private static readonly Color ButtonCopy    = HexColor("#1F2937");
-    private static readonly Color TextPrimary   = HexColor("#F9FAFB");
-    private static readonly Color TextSecondary = HexColor("#9CA3AF");
-    private static readonly Color InputBg       = HexColor("#1F2937");
-
     public static void Build(LobbyUI target)
     {
         Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Build Lobby UI");
@@ -75,11 +278,11 @@ public static class LobbyUIBuilder
         }
 
         // 2. Background
-        var bg = MakeImage(target.gameObject, "Background", BgDeep);
-        StretchFull(bg.GetComponent<RectTransform>());
+        var bg = ProceduralUIUtility.MakeImage(target.gameObject, "Background", ProceduralUIUtility.BgDeep);
+        ProceduralUIUtility.StretchFull(bg.GetComponent<RectTransform>());
 
-        // 3. Center Card
-        var cardGO = MakePanel(target.gameObject, "LobbyCard", new Vector2(500, 580), Vector2.zero, PanelColor);
+        // 3. Center Glass Card (460 x 520)
+        var cardGO = ProceduralUIUtility.MakePanel(target.gameObject, "LobbyCard", new Vector2(460, 520), Vector2.zero, ProceduralUIUtility.PanelDark);
         var cardRect = cardGO.GetComponent<RectTransform>();
         cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
         cardRect.pivot = new Vector2(0.5f, 0.5f);
@@ -87,128 +290,139 @@ public static class LobbyUIBuilder
 
         var cardLayout = cardGO.AddComponent<VerticalLayoutGroup>();
         cardLayout.childAlignment = TextAnchor.UpperCenter;
-        cardLayout.padding = new RectOffset(40, 40, 36, 36);
+        cardLayout.padding = new RectOffset(36, 36, 32, 32);
         cardLayout.spacing = 14;
         cardLayout.childControlWidth = true;
-        cardLayout.childControlHeight = false;
+        cardLayout.childControlHeight = true;
         cardLayout.childForceExpandWidth = true;
+        cardLayout.childForceExpandHeight = false;
 
-        // 4. Header: Game Title
-        var titleText = MakeText(cardGO, "TitleLabel", "DONT DROP IT", 34, FontStyle.Bold, TextPrimary, TextAnchor.MiddleCenter);
+        // 4. Header: Game Title & Subtitle
+        var titleText = ProceduralUIUtility.MakeText(cardGO, "TitleLabel", "DONT DROP IT", 32, FontStyle.Bold, ProceduralUIUtility.TextPrimary, TextAnchor.MiddleCenter);
         var titleLE = titleText.gameObject.AddComponent<LayoutElement>();
-        titleLE.preferredHeight = 46;
+        titleLE.preferredHeight = 40;
 
-        // Accent Line
-        var accentLine = MakeImage(cardGO, "AccentLine", AccentCyan);
-        var accentLE = accentLine.gameObject.AddComponent<LayoutElement>();
-        accentLE.preferredHeight = 2;
+        var subTitleText = ProceduralUIUtility.MakeText(cardGO, "SubTitleLabel", "CO-OP PHYSICS ADVENTURE", 11, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
+        var subLE = subTitleText.gameObject.AddComponent<LayoutElement>();
+        subLE.preferredHeight = 16;
 
-        // Steam Status Label
-        var steamStatusText = MakeText(cardGO, "SteamStatusLabel", "● Checking Steam status...", 13, FontStyle.Normal, TextSecondary, TextAnchor.MiddleCenter);
-        var steamLE = steamStatusText.gameObject.AddComponent<LayoutElement>();
-        steamLE.preferredHeight = 24;
-
-        // Status Message Label (errors, connection updates)
-        var statusMsgText = MakeText(cardGO, "StatusMessageLabel", "", 12, FontStyle.Italic, TextSecondary, TextAnchor.MiddleCenter);
+        // Status Message Label (errors / warnings only, hidden when empty)
+        var statusMsgText = ProceduralUIUtility.MakeText(cardGO, "StatusMessageLabel", "", 12, FontStyle.Italic, ProceduralUIUtility.HexColor("#FCA5A5"), TextAnchor.MiddleCenter);
         var statusLE = statusMsgText.gameObject.AddComponent<LayoutElement>();
-        statusLE.preferredHeight = 22;
+        statusLE.preferredHeight = 18;
 
-        // ── 5. MAIN MENU PANEL (Host Room / Setting / Quit) ───────────────────
-        var mainPanel = MakeEmpty(cardGO, "MainMenuPanel");
+        // ── 5. MAIN MENU PANEL (PLAY / SETTINGS / QUIT) ───────────────────────
+        var mainPanel = ProceduralUIUtility.MakeEmpty(cardGO, "MainMenuPanel");
         var mainVL = mainPanel.AddComponent<VerticalLayoutGroup>();
-        mainVL.spacing = 14;
+        mainVL.spacing = 12;
         mainVL.childControlWidth = true;
-        mainVL.childControlHeight = false;
+        mainVL.childControlHeight = true;
         mainVL.childForceExpandWidth = true;
+        mainVL.childForceExpandHeight = false;
         mainVL.childAlignment = TextAnchor.UpperCenter;
 
-        var (_, hostRoomBtn) = MakeButton(mainPanel, "HostRoomMenuButton", "🎮  HOST ROOM", ButtonHost, 50);
-        var (_, settingsBtn) = MakeButton(mainPanel, "SettingsMenuButton", "⚙  SETTINGS", ButtonSettings, 50);
-        var (_, quitBtn)     = MakeButton(mainPanel, "QuitGameButton", "✕  QUIT GAME", ButtonQuit, 50);
+        var (_, hostRoomBtn) = ProceduralUIUtility.MakeButton(mainPanel, "HostRoomMenuButton", "▶   PLAY", ProceduralUIUtility.ButtonPlay, 52);
+        var (_, settingsBtn) = ProceduralUIUtility.MakeButton(mainPanel, "SettingsMenuButton", "⚙   SETTINGS", ProceduralUIUtility.ButtonSlate, 46);
+        var (_, quitBtn)     = ProceduralUIUtility.MakeButton(mainPanel, "QuitGameButton", "✕   QUIT GAME", ProceduralUIUtility.ButtonQuit, 42);
 
-        // ── 6. HOST ROOM SUB-PANEL (Host / Join / Back) ───────────────────────
-        var hostRoomPanel = MakeEmpty(cardGO, "HostRoomSubPanel");
+        // ── 6. PLAY / HOST ROOM SUB-PANEL (Host / Join / Back) ────────────────
+        var hostRoomPanel = ProceduralUIUtility.MakeEmpty(cardGO, "HostRoomSubPanel");
         var hostRoomVL = hostRoomPanel.AddComponent<VerticalLayoutGroup>();
-        hostRoomVL.spacing = 14;
+        hostRoomVL.spacing = 12;
         hostRoomVL.childControlWidth = true;
-        hostRoomVL.childControlHeight = false;
+        hostRoomVL.childControlHeight = true;
         hostRoomVL.childForceExpandWidth = true;
+        hostRoomVL.childForceExpandHeight = false;
         hostRoomVL.childAlignment = TextAnchor.UpperCenter;
 
-        var subTitle1 = MakeText(hostRoomPanel, "SubTitle", "CREATE OR JOIN", 14, FontStyle.Bold, AccentCyan, TextAnchor.MiddleCenter);
+        var subTitle1 = ProceduralUIUtility.MakeText(hostRoomPanel, "SubTitle", "SELECT PLAY MODE", 13, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var subTitle1LE = subTitle1.gameObject.AddComponent<LayoutElement>();
-        subTitle1LE.preferredHeight = 26;
+        subTitle1LE.preferredHeight = 24;
 
-        var (_, hostGameBtn) = MakeButton(hostRoomPanel, "HostButton", "▶  HOST", ButtonHost, 50);
-        var (_, joinGameBtn) = MakeButton(hostRoomPanel, "JoinButton", "🔑  JOIN", ButtonJoin, 50);
-        var (_, backFromHostBtn) = MakeButton(hostRoomPanel, "BackFromHostRoomButton", "←  BACK", ButtonBack, 46);
+        var (_, hostGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "HostButton", "▶   HOST ROOM", ProceduralUIUtility.ButtonPlay, 50);
+        var (_, joinGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", ProceduralUIUtility.ButtonJoin, 50);
+        var (_, backFromHostBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "BackFromHostRoomButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 44);
         hostRoomPanel.SetActive(false);
 
-        // ── 7. JOIN ROOM SUB-PANEL (Input / Enter / Paste / Back) ──────────────
-        var joinPanel = MakeEmpty(cardGO, "JoinSubPanel");
+        // ── 7. JOIN ROOM SUB-PANEL (Input + Paste Row / Join Button / Back) ────
+        var joinPanel = ProceduralUIUtility.MakeEmpty(cardGO, "JoinSubPanel");
         var joinVL = joinPanel.AddComponent<VerticalLayoutGroup>();
         joinVL.spacing = 12;
         joinVL.childControlWidth = true;
-        joinVL.childControlHeight = false;
+        joinVL.childControlHeight = true;
         joinVL.childForceExpandWidth = true;
+        joinVL.childForceExpandHeight = false;
         joinVL.childAlignment = TextAnchor.UpperCenter;
 
-        var subTitle2 = MakeText(joinPanel, "JoinTitle", "ENTER ROOM CODE", 14, FontStyle.Bold, AccentCyan, TextAnchor.MiddleCenter);
+        var subTitle2 = ProceduralUIUtility.MakeText(joinPanel, "JoinTitle", "ENTER 6-DIGIT ROOM CODE", 13, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var subTitle2LE = subTitle2.gameObject.AddComponent<LayoutElement>();
         subTitle2LE.preferredHeight = 24;
 
-        var (inputGO, codeInput) = MakeInputField(joinPanel, "RoomCodeInput", "ROOM CODE (e.g. K7M2X9)", 48);
+        // Input + Paste Row (Horizontal)
+        var inputRow = ProceduralUIUtility.MakeEmpty(joinPanel, "InputRow");
+        var inputRowLE = inputRow.AddComponent<LayoutElement>();
+        inputRowLE.preferredHeight = 50;
+        var inputRowHL = inputRow.AddComponent<HorizontalLayoutGroup>();
+        inputRowHL.spacing = 8;
+        inputRowHL.childControlWidth = false;
+        inputRowHL.childControlHeight = true;
+        inputRowHL.childForceExpandWidth = false;
+        inputRowHL.childForceExpandHeight = true;
+
+        var (inputGO, codeInput) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 50);
+        var inputRT = inputGO.GetComponent<RectTransform>();
+        inputRT.sizeDelta = new Vector2(270, 50);
         var inputLE = inputGO.AddComponent<LayoutElement>();
-        inputLE.preferredHeight = 48;
+        inputLE.preferredWidth = 270;
+        inputLE.preferredHeight = 50;
 
-        // Button row
-        var btnRow = MakeEmpty(joinPanel, "JoinBtnRow");
-        var btnRowLE = btnRow.AddComponent<LayoutElement>();
-        btnRowLE.preferredHeight = 44;
-        var btnRowHL = btnRow.AddComponent<HorizontalLayoutGroup>();
-        btnRowHL.spacing = 10;
-        btnRowHL.childControlWidth = true;
-        btnRowHL.childControlHeight = true;
-        btnRowHL.childForceExpandWidth = true;
+        var (pasteGO, pasteBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", ProceduralUIUtility.ButtonSlate, 50, 13);
+        var pasteRT = pasteGO.GetComponent<RectTransform>();
+        pasteRT.sizeDelta = new Vector2(110, 50);
+        var pasteLE = pasteGO.GetComponent<LayoutElement>();
+        if (pasteLE != null) { pasteLE.preferredWidth = 110; pasteLE.preferredHeight = 50; }
 
-        var (_, pasteBtn)       = MakeButton(btnRow, "PasteCodeButton", "📋 Paste", ButtonCopy, 44);
-        var (_, confirmJoinBtn) = MakeButton(btnRow, "ConfirmJoinButton", "✓ Enter", ButtonJoin, 44);
-        var (_, backFromJoinBtn)= MakeButton(btnRow, "BackFromJoinButton", "← Back", ButtonBack, 44);
+        // Primary Join Button (Full width)
+        var (_, confirmJoinBtn) = ProceduralUIUtility.MakeButton(joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", ProceduralUIUtility.ButtonJoin, 50, 15);
+
+        // Back Button
+        var (_, backFromJoinBtn)= ProceduralUIUtility.MakeButton(joinPanel, "BackFromJoinButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 44, 14);
         joinPanel.SetActive(false);
 
-        // ── 8. SETTINGS SUB-PANEL (Blank screen with Back) ─────────────────────
-        var settingsPanel = MakeEmpty(cardGO, "SettingsSubPanel");
+        // ── 8. SETTINGS SUB-PANEL ─────────────────────────────────────────────
+        var settingsPanel = ProceduralUIUtility.MakeEmpty(cardGO, "SettingsSubPanel");
         var settingsVL = settingsPanel.AddComponent<VerticalLayoutGroup>();
-        settingsVL.spacing = 18;
+        settingsVL.spacing = 16;
         settingsVL.childControlWidth = true;
-        settingsVL.childControlHeight = false;
+        settingsVL.childControlHeight = true;
         settingsVL.childForceExpandWidth = true;
+        settingsVL.childForceExpandHeight = false;
         settingsVL.childAlignment = TextAnchor.UpperCenter;
 
-        var sTitle = MakeText(settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, AccentCyan, TextAnchor.MiddleCenter);
+        var sTitle = ProceduralUIUtility.MakeText(settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var sTitleLE = sTitle.gameObject.AddComponent<LayoutElement>();
-        sTitleLE.preferredHeight = 32;
+        sTitleLE.preferredHeight = 28;
 
-        // Blank content space
-        var blankArea = MakeEmpty(settingsPanel, "BlankSettingsArea");
+        var blankArea = ProceduralUIUtility.MakeEmpty(settingsPanel, "BlankSettingsArea");
         var blankLE = blankArea.AddComponent<LayoutElement>();
-        blankLE.preferredHeight = 120;
-        var blankText = MakeText(blankArea, "BlankNote", "(Settings will be configured here)", 13, FontStyle.Italic, TextSecondary, TextAnchor.MiddleCenter);
-        StretchFull(blankText.GetComponent<RectTransform>());
+        blankLE.preferredHeight = 100;
+        var blankText = ProceduralUIUtility.MakeText(blankArea, "BlankNote", "Game audio and control settings will be configured here.", 13, FontStyle.Italic, ProceduralUIUtility.TextSecondary, TextAnchor.MiddleCenter);
+        ProceduralUIUtility.StretchFull(blankText.GetComponent<RectTransform>());
 
-        var (_, backFromSettingsBtn) = MakeButton(settingsPanel, "BackFromSettingsButton", "←  BACK", ButtonBack, 46);
+        var (_, backFromSettingsBtn) = ProceduralUIUtility.MakeButton(settingsPanel, "BackFromSettingsButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 44);
         settingsPanel.SetActive(false);
 
         // ── 9. CONNECTING PANEL ───────────────────────────────────────────────
-        var connectingPanel = MakeEmpty(cardGO, "ConnectingPanel");
+        var connectingPanel = ProceduralUIUtility.MakeEmpty(cardGO, "ConnectingPanel");
         var connVL = connectingPanel.AddComponent<VerticalLayoutGroup>();
         connVL.spacing = 16;
         connVL.childControlWidth = true;
-        connVL.childControlHeight = false;
+        connVL.childControlHeight = true;
         connVL.childForceExpandWidth = true;
+        connVL.childForceExpandHeight = false;
         connVL.childAlignment = TextAnchor.UpperCenter;
 
-        var spinnerGO = MakeImage(connectingPanel, "SpinnerRing", AccentCyan);
+        var spinnerGO = ProceduralUIUtility.MakeImage(connectingPanel, "SpinnerRing", ProceduralUIUtility.AccentCyan);
         var spinnerRT = spinnerGO.GetComponent<RectTransform>();
         spinnerRT.sizeDelta = new Vector2(40, 40);
         var spinnerLE = spinnerGO.gameObject.AddComponent<LayoutElement>();
@@ -216,9 +430,9 @@ public static class LobbyUIBuilder
         spinnerLE.preferredHeight = 40;
         spinnerGO.gameObject.AddComponent<SpinnerAnimator>();
 
-        var connectingText = MakeText(connectingPanel, "ConnectingLabel", "Connecting to room...", 16, FontStyle.Bold, AccentCyan, TextAnchor.MiddleCenter);
+        var connectingText = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingLabel", "Connecting to room...", 15, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var connTextLE = connectingText.gameObject.AddComponent<LayoutElement>();
-        connTextLE.preferredHeight = 30;
+        connTextLE.preferredHeight = 28;
         connectingPanel.SetActive(false);
 
         // ── 10. Wire references to LobbyUI via SerializedObject ───────────────
@@ -231,7 +445,7 @@ public static class LobbyUIBuilder
         so.FindProperty("_hostRoomMenuButton").objectReferenceValue = hostRoomBtn;
         so.FindProperty("_settingsMenuButton").objectReferenceValue = settingsBtn;
         so.FindProperty("_quitGameButton").objectReferenceValue = quitBtn;
-        so.FindProperty("_steamStatusLabel").objectReferenceValue = steamStatusText;
+        so.FindProperty("_steamStatusLabel").objectReferenceValue = null; // Completely hidden as requested
         so.FindProperty("_statusMessageLabel").objectReferenceValue = statusMsgText;
 
         // Host room panel
@@ -257,147 +471,7 @@ public static class LobbyUIBuilder
 
         so.ApplyModifiedProperties();
         EditorUtility.SetDirty(target);
-        Debug.Log("[LobbyUIBuilder] Lobby UI built and wired successfully! ✅");
-    }
-
-    // ─────────────────────────────────────────── UI Helpers ───────────────────
-
-    public static Font GetDefaultFont()
-    {
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        return font;
-    }
-
-    public static Color HexColor(string hex)
-    {
-        ColorUtility.TryParseHtmlString(hex, out Color c);
-        return c;
-    }
-
-    public static Image MakeImage(GameObject parent, string name, Color color)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
-        var img = go.AddComponent<Image>();
-        img.color = color;
-        return img;
-    }
-
-    public static GameObject MakeEmpty(GameObject parent, string name)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
-        go.AddComponent<RectTransform>();
-        return go;
-    }
-
-    public static GameObject MakePanel(GameObject parent, string name, Vector2 size, Vector2 pos, Color color)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = size;
-        rt.anchoredPosition = pos;
-        var img = go.AddComponent<Image>();
-        img.color = color;
-        return go;
-    }
-
-    public static Text MakeText(GameObject parent, string name, string text, int size, FontStyle style, Color color, TextAnchor align)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(400, 30);
-        var t = go.AddComponent<Text>();
-        t.font = GetDefaultFont();
-        t.text = text;
-        t.fontSize = size;
-        t.fontStyle = style;
-        t.color = color;
-        t.alignment = align;
-        t.horizontalOverflow = HorizontalWrapMode.Wrap;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-        return t;
-    }
-
-    public static (GameObject, Button) MakeButton(GameObject parent, string name, string label, Color bgColor, float height)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
-
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(0, height);
-        var le = go.AddComponent<LayoutElement>();
-        le.preferredHeight = height;
-
-        var img = go.AddComponent<Image>();
-        img.color = bgColor;
-
-        var btn = go.AddComponent<Button>();
-        var colors = btn.colors;
-        colors.normalColor = bgColor;
-        colors.highlightedColor = bgColor * 1.3f;
-        colors.pressedColor = bgColor * 0.75f;
-        colors.selectedColor = bgColor;
-        colors.fadeDuration = 0.08f;
-        btn.colors = colors;
-        btn.targetGraphic = img;
-
-        var lbl = MakeText(go, "Label", label, 15, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-        StretchFull(lbl.GetComponent<RectTransform>());
-
-        return (go, btn);
-    }
-
-    public static (GameObject, InputField) MakeInputField(GameObject parent, string name, string placeholder, float height)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent.transform, false);
-        Undo.RegisterCreatedObjectUndo(go, "Create " + name);
-
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(0, height);
-
-        var bgImg = go.AddComponent<Image>();
-        bgImg.color = HexColor("#1F2937");
-
-        var inputField = go.AddComponent<InputField>();
-        inputField.caretWidth = 2;
-        inputField.characterLimit = 8;
-
-        // Text object
-        var textObj = MakeText(go, "Text", "", 18, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-        StretchFull(textObj.GetComponent<RectTransform>());
-        var textRT = textObj.GetComponent<RectTransform>();
-        textRT.offsetMin = new Vector2(10, 0);
-        textRT.offsetMax = new Vector2(-10, 0);
-
-        // Placeholder object
-        var phObj = MakeText(go, "Placeholder", placeholder, 14, FontStyle.Italic, HexColor("#9CA3AF"), TextAnchor.MiddleCenter);
-        StretchFull(phObj.GetComponent<RectTransform>());
-        var phRT = phObj.GetComponent<RectTransform>();
-        phRT.offsetMin = new Vector2(10, 0);
-        phRT.offsetMax = new Vector2(-10, 0);
-
-        inputField.textComponent = textObj;
-        inputField.placeholder = phObj;
-        inputField.targetGraphic = bgImg;
-
-        return (go, inputField);
-    }
-
-    public static void StretchFull(RectTransform rt)
-    {
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        Debug.Log("[LobbyUIBuilder] Premium modern Lobby UI built and wired successfully! ✅");
     }
 }
 
@@ -406,16 +480,6 @@ public static class LobbyUIBuilder
 // ─────────────────────────────────────────────────────────────────────────────
 public static class PauseMenuBuilder
 {
-    private static readonly Color OverlayColor   = LobbyUIBuilder.HexColor("#0A0E1ACC");
-    private static readonly Color PanelColor     = LobbyUIBuilder.HexColor("#111827EE");
-    private static readonly Color AccentCyan     = LobbyUIBuilder.HexColor("#00D9FF");
-    private static readonly Color BtnContinue    = LobbyUIBuilder.HexColor("#059669");
-    private static readonly Color BtnSettings    = LobbyUIBuilder.HexColor("#1D4ED8");
-    private static readonly Color BtnQuit        = LobbyUIBuilder.HexColor("#991B1B");
-    private static readonly Color BtnBack        = LobbyUIBuilder.HexColor("#374151");
-    private static readonly Color TextPrimary    = LobbyUIBuilder.HexColor("#F9FAFB");
-    private static readonly Color TextSecondary  = LobbyUIBuilder.HexColor("#9CA3AF");
-
     public static void Build(PauseMenu target)
     {
         Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Build Pause Menu");
@@ -447,11 +511,11 @@ public static class PauseMenuBuilder
         }
 
         // Dark overlay
-        var overlay = LobbyUIBuilder.MakeImage(target.gameObject, "BackgroundOverlay", OverlayColor);
-        LobbyUIBuilder.StretchFull(overlay.GetComponent<RectTransform>());
+        var overlay = ProceduralUIUtility.MakeImage(target.gameObject, "BackgroundOverlay", ProceduralUIUtility.HexColor("#0A0E1ACC"));
+        ProceduralUIUtility.StretchFull(overlay.GetComponent<RectTransform>());
 
         // Center Pause Card
-        var panelGO = LobbyUIBuilder.MakePanel(target.gameObject, "PausePanel", new Vector2(400, 420), Vector2.zero, PanelColor);
+        var panelGO = ProceduralUIUtility.MakePanel(target.gameObject, "PausePanel", new Vector2(400, 420), Vector2.zero, ProceduralUIUtility.PanelDark);
         var panelRT = panelGO.GetComponent<RectTransform>();
         panelRT.anchorMin = panelRT.anchorMax = new Vector2(0.5f, 0.5f);
         panelRT.pivot = new Vector2(0.5f, 0.5f);
@@ -461,27 +525,28 @@ public static class PauseMenuBuilder
         panelVL.padding = new RectOffset(36, 36, 36, 36);
         panelVL.spacing = 16;
         panelVL.childControlWidth = true;
-        panelVL.childControlHeight = false;
+        panelVL.childControlHeight = true;
         panelVL.childForceExpandWidth = true;
+        panelVL.childForceExpandHeight = false;
         panelVL.childAlignment = TextAnchor.UpperCenter;
 
         // Title
-        var title = LobbyUIBuilder.MakeText(panelGO, "PauseTitle", "PAUSED", 32, FontStyle.Bold, TextPrimary, TextAnchor.MiddleCenter);
+        var title = ProceduralUIUtility.MakeText(panelGO, "PauseTitle", "PAUSED", 30, FontStyle.Bold, ProceduralUIUtility.TextPrimary, TextAnchor.MiddleCenter);
         var titleLE = title.gameObject.AddComponent<LayoutElement>();
-        titleLE.preferredHeight = 44;
+        titleLE.preferredHeight = 40;
 
-        // Accent line
-        var div = LobbyUIBuilder.MakeImage(panelGO, "Divider", AccentCyan);
+        // Divider
+        var div = ProceduralUIUtility.MakeImage(panelGO, "Divider", ProceduralUIUtility.AccentCyan);
         var divLE = div.gameObject.AddComponent<LayoutElement>();
         divLE.preferredHeight = 2;
 
         // Buttons: Continue, Setting, Quit
-        var (_, continueBtn) = LobbyUIBuilder.MakeButton(panelGO, "ContinueButton", "▶  CONTINUE", BtnContinue, 50);
-        var (_, settingsBtn) = LobbyUIBuilder.MakeButton(panelGO, "SettingsButton", "⚙  SETTINGS", BtnSettings, 50);
-        var (_, quitBtn)     = LobbyUIBuilder.MakeButton(panelGO, "QuitToMenuButton", "✕  QUIT TO MENU", BtnQuit, 50);
+        var (_, continueBtn) = ProceduralUIUtility.MakeButton(panelGO, "ContinueButton", "▶  CONTINUE", ProceduralUIUtility.ButtonJoin, 50);
+        var (_, settingsBtn) = ProceduralUIUtility.MakeButton(panelGO, "SettingsButton", "⚙  SETTINGS", ProceduralUIUtility.ButtonSlate, 50);
+        var (_, quitBtn)     = ProceduralUIUtility.MakeButton(panelGO, "QuitToMenuButton", "✕  QUIT TO MENU", ProceduralUIUtility.ButtonQuit, 50);
 
         // ── Settings Sub-Panel ─────
-        var settingsPanelGO = LobbyUIBuilder.MakePanel(target.gameObject, "SettingsPanel", new Vector2(440, 380), Vector2.zero, PanelColor);
+        var settingsPanelGO = ProceduralUIUtility.MakePanel(target.gameObject, "SettingsPanel", new Vector2(440, 380), Vector2.zero, ProceduralUIUtility.PanelDark);
         var settingsRT = settingsPanelGO.GetComponent<RectTransform>();
         settingsRT.anchorMin = settingsRT.anchorMax = new Vector2(0.5f, 0.5f);
         settingsRT.pivot = new Vector2(0.5f, 0.5f);
@@ -491,40 +556,41 @@ public static class PauseMenuBuilder
         settingsVL.padding = new RectOffset(36, 36, 36, 36);
         settingsVL.spacing = 16;
         settingsVL.childControlWidth = true;
-        settingsVL.childControlHeight = false;
+        settingsVL.childControlHeight = true;
         settingsVL.childForceExpandWidth = true;
+        settingsVL.childForceExpandHeight = false;
         settingsVL.childAlignment = TextAnchor.UpperCenter;
 
-        var sTitle = LobbyUIBuilder.MakeText(settingsPanelGO, "SettingsTitle", "SETTINGS", 24, FontStyle.Bold, AccentCyan, TextAnchor.MiddleCenter);
+        var sTitle = ProceduralUIUtility.MakeText(settingsPanelGO, "SettingsTitle", "SETTINGS", 22, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var sTitleLE = sTitle.gameObject.AddComponent<LayoutElement>();
-        sTitleLE.preferredHeight = 36;
+        sTitleLE.preferredHeight = 32;
 
         // Master Volume Slider
-        var volRow = LobbyUIBuilder.MakeEmpty(settingsPanelGO, "MasterVolumeRow");
+        var volRow = ProceduralUIUtility.MakeEmpty(settingsPanelGO, "MasterVolumeRow");
         var volLE = volRow.AddComponent<LayoutElement>();
         volLE.preferredHeight = 44;
         var volVL = volRow.AddComponent<VerticalLayoutGroup>();
-        volVL.spacing = 4; volVL.childControlWidth = true; volVL.childControlHeight = false; volVL.childForceExpandWidth = true;
+        volVL.spacing = 4; volVL.childControlWidth = true; volVL.childControlHeight = true; volVL.childForceExpandWidth = true; volVL.childForceExpandHeight = false;
 
-        var volLabel = LobbyUIBuilder.MakeText(volRow, "Label", "MASTER VOLUME", 11, FontStyle.Bold, TextSecondary, TextAnchor.MiddleLeft);
+        var volLabel = ProceduralUIUtility.MakeText(volRow, "Label", "MASTER VOLUME", 11, FontStyle.Bold, ProceduralUIUtility.TextSecondary, TextAnchor.MiddleLeft);
         var vlblLE = volLabel.gameObject.AddComponent<LayoutElement>(); vlblLE.preferredHeight = 16;
 
-        var sliderGO = LobbyUIBuilder.MakeEmpty(volRow, "Slider");
+        var sliderGO = ProceduralUIUtility.MakeEmpty(volRow, "Slider");
         var slLE = sliderGO.AddComponent<LayoutElement>(); slLE.preferredHeight = 20;
-        var sliderBg = LobbyUIBuilder.MakeImage(sliderGO, "Background", LobbyUIBuilder.HexColor("#374151"));
+        var sliderBg = ProceduralUIUtility.MakeImage(sliderGO, "Background", ProceduralUIUtility.HexColor("#374151"));
         var slBgRT = sliderBg.GetComponent<RectTransform>();
         slBgRT.anchorMin = new Vector2(0, 0.25f); slBgRT.anchorMax = new Vector2(1, 0.75f);
         slBgRT.offsetMin = slBgRT.offsetMax = Vector2.zero;
 
-        var fillArea = LobbyUIBuilder.MakeEmpty(sliderGO, "FillArea");
+        var fillArea = ProceduralUIUtility.MakeEmpty(sliderGO, "FillArea");
         var faRT = fillArea.GetComponent<RectTransform>();
         faRT.anchorMin = new Vector2(0, 0.25f); faRT.anchorMax = new Vector2(1, 0.75f);
         faRT.offsetMin = new Vector2(5, 0); faRT.offsetMax = new Vector2(-5, 0);
 
-        var fillImg = LobbyUIBuilder.MakeImage(fillArea, "Fill", AccentCyan);
-        LobbyUIBuilder.StretchFull(fillImg.GetComponent<RectTransform>());
+        var fillImg = ProceduralUIUtility.MakeImage(fillArea, "Fill", ProceduralUIUtility.AccentCyan);
+        ProceduralUIUtility.StretchFull(fillImg.GetComponent<RectTransform>());
 
-        var handleGO = LobbyUIBuilder.MakeImage(sliderGO, "Handle", Color.white);
+        var handleGO = ProceduralUIUtility.MakeImage(sliderGO, "Handle", Color.white);
         var hRT = handleGO.GetComponent<RectTransform>();
         hRT.sizeDelta = new Vector2(20, 0);
 
@@ -535,20 +601,20 @@ public static class PauseMenuBuilder
         slider.targetGraphic = handleGO;
 
         // Fullscreen Toggle
-        var togRow = LobbyUIBuilder.MakeEmpty(settingsPanelGO, "FullscreenToggleRow");
+        var togRow = ProceduralUIUtility.MakeEmpty(settingsPanelGO, "FullscreenToggleRow");
         var togLE = togRow.AddComponent<LayoutElement>(); togLE.preferredHeight = 32;
         var togHL = togRow.AddComponent<HorizontalLayoutGroup>();
         togHL.spacing = 10; togHL.childControlWidth = false; togHL.childControlHeight = true; togHL.childAlignment = TextAnchor.MiddleLeft;
 
-        var togBg = LobbyUIBuilder.MakeImage(togRow, "Background", LobbyUIBuilder.HexColor("#374151"));
+        var togBg = ProceduralUIUtility.MakeImage(togRow, "Background", ProceduralUIUtility.HexColor("#374151"));
         var togBgRT = togBg.GetComponent<RectTransform>(); togBgRT.sizeDelta = new Vector2(22, 22);
 
-        var checkImg = LobbyUIBuilder.MakeImage(togBg.gameObject, "Checkmark", AccentCyan);
+        var checkImg = ProceduralUIUtility.MakeImage(togBg.gameObject, "Checkmark", ProceduralUIUtility.AccentCyan);
         var ckRT = checkImg.GetComponent<RectTransform>();
         ckRT.anchorMin = new Vector2(0.15f, 0.15f); ckRT.anchorMax = new Vector2(0.85f, 0.85f);
         ckRT.offsetMin = ckRT.offsetMax = Vector2.zero;
 
-        var togLabel = LobbyUIBuilder.MakeText(togRow, "Label", "FULLSCREEN", 13, FontStyle.Bold, TextSecondary, TextAnchor.MiddleLeft);
+        var togLabel = ProceduralUIUtility.MakeText(togRow, "Label", "FULLSCREEN", 13, FontStyle.Bold, ProceduralUIUtility.TextSecondary, TextAnchor.MiddleLeft);
         var tlRT = togLabel.GetComponent<RectTransform>(); tlRT.sizeDelta = new Vector2(180, 22);
 
         var toggle = togRow.AddComponent<Toggle>();
@@ -556,11 +622,11 @@ public static class PauseMenuBuilder
         toggle.graphic = checkImg;
         toggle.isOn = true;
 
-        var (_, backBtn) = LobbyUIBuilder.MakeButton(settingsPanelGO, "BackFromSettingsButton", "←  BACK", BtnBack, 46);
+        var (_, backBtn) = ProceduralUIUtility.MakeButton(settingsPanelGO, "BackFromSettingsButton", "←  BACK", ProceduralUIUtility.ButtonSlate, 46);
         settingsPanelGO.SetActive(false);
 
         // ── Confirm Quit Sub-Panel ─────
-        var confirmGO = LobbyUIBuilder.MakePanel(target.gameObject, "ConfirmQuitDialog", new Vector2(400, 200), Vector2.zero, PanelColor);
+        var confirmGO = ProceduralUIUtility.MakePanel(target.gameObject, "ConfirmQuitDialog", new Vector2(400, 200), Vector2.zero, ProceduralUIUtility.PanelDark);
         var confirmRT = confirmGO.GetComponent<RectTransform>();
         confirmRT.anchorMin = confirmRT.anchorMax = new Vector2(0.5f, 0.5f);
         confirmRT.pivot = new Vector2(0.5f, 0.5f);
@@ -570,19 +636,20 @@ public static class PauseMenuBuilder
         confirmVL.padding = new RectOffset(30, 30, 24, 24);
         confirmVL.spacing = 14;
         confirmVL.childControlWidth = true;
-        confirmVL.childControlHeight = false;
+        confirmVL.childControlHeight = true;
         confirmVL.childForceExpandWidth = true;
+        confirmVL.childForceExpandHeight = false;
         confirmVL.childAlignment = TextAnchor.UpperCenter;
 
-        var cTitle = LobbyUIBuilder.MakeText(confirmGO, "ConfirmTitle", "QUIT TO MENU?", 22, FontStyle.Bold, TextPrimary, TextAnchor.MiddleCenter);
+        var cTitle = ProceduralUIUtility.MakeText(confirmGO, "ConfirmTitle", "QUIT TO MENU?", 22, FontStyle.Bold, ProceduralUIUtility.TextPrimary, TextAnchor.MiddleCenter);
         var cTitleLE = cTitle.gameObject.AddComponent<LayoutElement>();
         cTitleLE.preferredHeight = 30;
 
-        var cDesc = LobbyUIBuilder.MakeText(confirmGO, "ConfirmDesc", "Are you sure you want to quit?", 13, FontStyle.Normal, TextSecondary, TextAnchor.MiddleCenter);
+        var cDesc = ProceduralUIUtility.MakeText(confirmGO, "ConfirmDesc", "Are you sure you want to quit?", 13, FontStyle.Normal, ProceduralUIUtility.TextSecondary, TextAnchor.MiddleCenter);
         var cDescLE = cDesc.gameObject.AddComponent<LayoutElement>();
         cDescLE.preferredHeight = 22;
 
-        var cBtnRow = LobbyUIBuilder.MakeEmpty(confirmGO, "ButtonRow");
+        var cBtnRow = ProceduralUIUtility.MakeEmpty(confirmGO, "ButtonRow");
         var cBtnRowLE = cBtnRow.AddComponent<LayoutElement>();
         cBtnRowLE.preferredHeight = 44;
         var cBtnHL = cBtnRow.AddComponent<HorizontalLayoutGroup>();
@@ -591,8 +658,8 @@ public static class PauseMenuBuilder
         cBtnHL.childControlHeight = true;
         cBtnHL.childForceExpandWidth = true;
 
-        var (_, confirmQuitBtn) = LobbyUIBuilder.MakeButton(cBtnRow, "ConfirmQuitButton", "YES, QUIT", BtnQuit, 44);
-        var (_, cancelQuitBtn)  = LobbyUIBuilder.MakeButton(cBtnRow, "CancelQuitButton", "CANCEL", BtnBack, 44);
+        var (_, confirmQuitBtn) = ProceduralUIUtility.MakeButton(cBtnRow, "ConfirmQuitButton", "YES, QUIT", ProceduralUIUtility.ButtonQuit, 44);
+        var (_, cancelQuitBtn)  = ProceduralUIUtility.MakeButton(cBtnRow, "CancelQuitButton", "CANCEL", ProceduralUIUtility.ButtonSlate, 44);
         confirmGO.SetActive(false);
 
         // Wire references via SerializedObject
@@ -623,12 +690,6 @@ public static class PauseMenuBuilder
 // ─────────────────────────────────────────────────────────────────────────────
 public static class RoomCodeHUDBuilder
 {
-    private static readonly Color BgDark       = LobbyUIBuilder.HexColor("#111827DD");
-    private static readonly Color AccentCyan   = LobbyUIBuilder.HexColor("#00D9FF");
-    private static readonly Color TextPrimary  = LobbyUIBuilder.HexColor("#F9FAFB");
-    private static readonly Color TextSecondary= LobbyUIBuilder.HexColor("#9CA3AF");
-    private static readonly Color ButtonCopy   = LobbyUIBuilder.HexColor("#1D4ED8");
-
     public static void Build(RoomCodeHUD target)
     {
         Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Build Room Code HUD");
@@ -657,60 +718,84 @@ public static class RoomCodeHUDBuilder
             Object.DestroyImmediate(target.transform.GetChild(i).gameObject, true);
         }
 
-        // Top-left HUD Card
-        var panelGO = new GameObject("RoomCodePanel");
-        panelGO.transform.SetParent(target.gameObject.transform, false);
-        Undo.RegisterCreatedObjectUndo(panelGO, "Create RoomCodePanel");
-
-        var panelRT = panelGO.AddComponent<RectTransform>();
+        // Top-left HUD Card (250 x 190)
+        var panelGO = ProceduralUIUtility.MakePanel(target.gameObject, "RoomCodePanel", new Vector2(250, 190), Vector2.zero, ProceduralUIUtility.PanelDark);
+        var panelRT = panelGO.GetComponent<RectTransform>();
         panelRT.anchorMin = panelRT.anchorMax = new Vector2(0f, 1f);
         panelRT.pivot = new Vector2(0f, 1f);
-        panelRT.anchoredPosition = new Vector2(16f, -16f);
-        panelRT.sizeDelta = new Vector2(240, 125);
-
-        var panelImg = panelGO.AddComponent<Image>();
-        panelImg.color = BgDark;
+        panelRT.anchoredPosition = new Vector2(20f, -20f);
 
         var panelVL = panelGO.AddComponent<VerticalLayoutGroup>();
-        panelVL.padding = new RectOffset(12, 12, 8, 8);
-        panelVL.spacing = 3;
+        panelVL.padding = new RectOffset(16, 16, 12, 12);
+        panelVL.spacing = 6;
         panelVL.childControlWidth = true;
-        panelVL.childControlHeight = false;
+        panelVL.childControlHeight = true;
         panelVL.childForceExpandWidth = true;
+        panelVL.childForceExpandHeight = false;
+        panelVL.childAlignment = TextAnchor.UpperLeft;
 
-        // Mode label (HOST / CLIENT)
-        var modeText = LobbyUIBuilder.MakeText(panelGO, "ModeLabel", "HOST", 11, FontStyle.Bold, TextSecondary, TextAnchor.MiddleLeft);
-        var modeLE = modeText.gameObject.AddComponent<LayoutElement>();
-        modeLE.preferredHeight = 16;
+        // 1. Header Row (Room code tag + Host/Client tag)
+        var headerRow = ProceduralUIUtility.MakeEmpty(panelGO, "HeaderRow");
+        var headerRowLE = headerRow.AddComponent<LayoutElement>();
+        headerRowLE.preferredHeight = 18;
+        var headerHL = headerRow.AddComponent<HorizontalLayoutGroup>();
+        headerHL.childControlWidth = false;
+        headerHL.childControlHeight = true;
+        headerHL.childForceExpandWidth = false;
+        headerHL.spacing = 8;
 
-        // Room code text
-        var codeText = LobbyUIBuilder.MakeText(panelGO, "RoomCodeText", "------", 24, FontStyle.Bold, AccentCyan, TextAnchor.MiddleLeft);
+        var headerTitle = ProceduralUIUtility.MakeText(headerRow, "HeaderTitle", "ROOM CODE", 10, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleLeft);
+        var htRT = headerTitle.GetComponent<RectTransform>();
+        htRT.sizeDelta = new Vector2(90, 18);
+        var htLE = headerTitle.gameObject.AddComponent<LayoutElement>();
+        htLE.preferredWidth = 90;
+
+        var modeText = ProceduralUIUtility.MakeText(headerRow, "ModeLabel", "● HOST", 10, FontStyle.Bold, ProceduralUIUtility.AccentEmerald, TextAnchor.MiddleRight);
+        var mtRT = modeText.GetComponent<RectTransform>();
+        mtRT.sizeDelta = new Vector2(110, 18);
+        var mtLE = modeText.gameObject.AddComponent<LayoutElement>();
+        mtLE.preferredWidth = 110;
+
+        // 2. Room code text (Big, bold, stylized)
+        var codeText = ProceduralUIUtility.MakeText(panelGO, "RoomCodeText", "------", 24, FontStyle.Bold, ProceduralUIUtility.TextPrimary, TextAnchor.MiddleLeft);
         var codeLE = codeText.gameObject.AddComponent<LayoutElement>();
         codeLE.preferredHeight = 30;
 
-        // Player count text
-        var playerText = LobbyUIBuilder.MakeText(panelGO, "PlayerCountText", "Players: 1", 11, FontStyle.Normal, TextSecondary, TextAnchor.MiddleLeft);
-        var playerLE = playerText.gameObject.AddComponent<LayoutElement>();
-        playerLE.preferredHeight = 15;
+        // 3. Divider line
+        var div = ProceduralUIUtility.MakeImage(panelGO, "Divider", ProceduralUIUtility.HexColor("#334155"));
+        var divLE = div.gameObject.AddComponent<LayoutElement>();
+        divLE.preferredHeight = 1;
 
-        // Copy button row
-        var copyRow = LobbyUIBuilder.MakeEmpty(panelGO, "CopyRow");
+        // 4. Players section title
+        var playerText = ProceduralUIUtility.MakeText(panelGO, "PlayerCountText", "PLAYERS (1/4)", 10, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleLeft);
+        var countLE = playerText.gameObject.AddComponent<LayoutElement>();
+        countLE.preferredHeight = 16;
+
+        // 5. Player names list
+        var namesText = ProceduralUIUtility.MakeText(panelGO, "PlayerNamesText", "• Player (Host)", 11, FontStyle.Normal, ProceduralUIUtility.TextPrimary, TextAnchor.UpperLeft);
+        var namesLE = namesText.gameObject.AddComponent<LayoutElement>();
+        namesLE.preferredHeight = 44;
+
+        // 6. Copy button row
+        var copyRow = ProceduralUIUtility.MakeEmpty(panelGO, "CopyRow");
         var copyRowLE = copyRow.AddComponent<LayoutElement>();
-        copyRowLE.preferredHeight = 24;
+        copyRowLE.preferredHeight = 28;
         var copyHL = copyRow.AddComponent<HorizontalLayoutGroup>();
         copyHL.spacing = 8;
         copyHL.childControlWidth = false;
         copyHL.childControlHeight = true;
 
-        var (copyBtnGO, copyBtn) = LobbyUIBuilder.MakeButton(copyRow, "CopyButton", "📋 Copy Code", ButtonCopy, 24);
+        var (copyBtnGO, copyBtn) = ProceduralUIUtility.MakeButton(copyRow, "CopyButton", "📋 Copy Code", ProceduralUIUtility.ButtonSlate, 28, 11);
         var copyBtnRT = copyBtnGO.GetComponent<RectTransform>();
-        copyBtnRT.sizeDelta = new Vector2(100, 24);
+        copyBtnRT.sizeDelta = new Vector2(105, 28);
         var copyBtnLE = copyBtnGO.GetComponent<LayoutElement>();
-        if (copyBtnLE != null) copyBtnLE.preferredWidth = 100;
+        if (copyBtnLE != null) copyBtnLE.preferredWidth = 105;
 
-        var copyFeedback = LobbyUIBuilder.MakeText(copyRow, "CopyFeedbackText", "Copied!", 11, FontStyle.Bold, AccentCyan, TextAnchor.MiddleLeft);
+        var copyFeedback = ProceduralUIUtility.MakeText(copyRow, "CopyFeedbackText", "✓ Copied!", 11, FontStyle.Bold, ProceduralUIUtility.AccentEmerald, TextAnchor.MiddleLeft);
         var fbRT = copyFeedback.GetComponent<RectTransform>();
-        fbRT.sizeDelta = new Vector2(60, 24);
+        fbRT.sizeDelta = new Vector2(80, 28);
+        var fbLE = copyFeedback.gameObject.AddComponent<LayoutElement>();
+        fbLE.preferredWidth = 80;
         copyFeedback.gameObject.SetActive(false);
 
         // Wire references
@@ -720,12 +805,13 @@ public static class RoomCodeHUDBuilder
         so.FindProperty("_roomCodeText").objectReferenceValue = codeText;
         so.FindProperty("_modeLabel").objectReferenceValue = modeText;
         so.FindProperty("_playerCountText").objectReferenceValue = playerText;
+        so.FindProperty("_playerNamesText").objectReferenceValue = namesText;
         so.FindProperty("_copyButton").objectReferenceValue = copyBtn;
         so.FindProperty("_copyFeedbackText").objectReferenceValue = copyFeedback;
         so.ApplyModifiedProperties();
 
         EditorUtility.SetDirty(target);
-        Debug.Log("[RoomCodeHUDBuilder] Room Code HUD built and wired successfully! ✅");
+        Debug.Log("[RoomCodeHUDBuilder] Premium modern Room Code HUD built and wired successfully! ✅");
     }
 }
 

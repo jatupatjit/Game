@@ -22,6 +22,9 @@ namespace CoopGame.Player
         [Tooltip("Sprint speed in meters per second")]
         [SerializeField] private float _sprintSpeed = 8.0f;
 
+        [Tooltip("Stamina drain per second while sprinting")]
+        [SerializeField] private float _sprintStaminaDrain = 15.0f;
+
         [Tooltip("Acceleration rate to reach target horizontal speed")]
         [SerializeField] private float _acceleration = 12.0f;
 
@@ -138,7 +141,13 @@ namespace CoopGame.Player
             }
 
             // If exhausted, disable sprint speed boost
-            bool canSprint = isSprinting && (_stamina == null || !_stamina.IsExhausted);
+            bool isMoving = desiredMoveDirection.sqrMagnitude > 0.01f;
+            bool canSprint = isSprinting && isMoving && (_stamina == null || !_stamina.IsExhausted);
+            if (canSprint && _stamina != null)
+            {
+                _stamina.ConsumeStamina(_sprintStaminaDrain * deltaTime);
+            }
+
             float baseTargetSpeed = (canSprint ? _sprintSpeed : _walkSpeed) * SpeedMultiplier;
             Vector3 targetHorizontalVelocity = desiredMoveDirection * baseTargetSpeed;
 

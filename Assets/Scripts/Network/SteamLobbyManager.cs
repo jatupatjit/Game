@@ -168,7 +168,7 @@ namespace CoopGame.Network
         {
             if (SteamClient.IsValid && !force)
             {
-                StatusMessage = $"Steam Connected: {SteamClient.Name} ({SteamClient.SteamId})";
+                StatusMessage = "Ready";
                 return;
             }
 
@@ -178,7 +178,7 @@ namespace CoopGame.Network
                 SteamClient.Init(AppId, false);
                 if (SteamClient.IsValid)
                 {
-                    StatusMessage = $"Steam Connected: {SteamClient.Name} ({SteamClient.SteamId})";
+                    StatusMessage = "Ready";
                     Debug.Log($"[SteamLobbyManager] Steamworks initialized successfully! Logged in as: {SteamClient.Name}");
                     RegisterSteamCallbacks();
                     EnsureTransports();
@@ -257,6 +257,8 @@ namespace CoopGame.Network
             }
         }
 
+        public event Action OnLobbyMembersChanged;
+
         #region Steam Matchmaking & Invite Callbacks
 
         private void RegisterSteamCallbacks()
@@ -264,6 +266,9 @@ namespace CoopGame.Network
             if (_callbacksRegistered) return;
             SteamMatchmaking.OnLobbyCreated += OnLobbyCreated;
             SteamMatchmaking.OnLobbyEntered += OnLobbyEntered;
+            SteamMatchmaking.OnLobbyMemberJoined += OnMemberJoined;
+            SteamMatchmaking.OnLobbyMemberLeave += OnMemberLeave;
+            SteamMatchmaking.OnLobbyMemberDisconnected += OnMemberDisconnected;
             SteamFriends.OnGameLobbyJoinRequested += OnGameLobbyJoinRequested;
             _callbacksRegistered = true;
         }
@@ -273,8 +278,78 @@ namespace CoopGame.Network
             if (!_callbacksRegistered) return;
             SteamMatchmaking.OnLobbyCreated -= OnLobbyCreated;
             SteamMatchmaking.OnLobbyEntered -= OnLobbyEntered;
+            SteamMatchmaking.OnLobbyMemberJoined -= OnMemberJoined;
+            SteamMatchmaking.OnLobbyMemberLeave -= OnMemberLeave;
+            SteamMatchmaking.OnLobbyMemberDisconnected -= OnMemberDisconnected;
             SteamFriends.OnGameLobbyJoinRequested -= OnGameLobbyJoinRequested;
             _callbacksRegistered = false;
+        }
+
+        private void OnMemberJoined(Lobby lobby, Friend friend)
+        {
+            Debug.Log($"[SteamLobbyManager] Player joined lobby: {friend.Name} ({friend.Id})");
+            OnLobbyMembersChanged?.Invoke();
+        }
+
+        private void OnMemberLeave(Lobby lobby, Friend friend)
+        {
+            Debug.Log($"[SteamLobbyManager] Player left lobby: {friend.Name} ({friend.Id})");
+            OnLobbyMembersChanged?.Invoke();
+        }
+
+        private void OnMemberDisconnected(Lobby lobby, Friend friend)
+        {
+            Debug.Log($"[SteamLobbyManager] Player disconnected from lobby: {friend.Name} ({friend.Id})");
+            OnLobbyMembersChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Retrieves the list of currently connected player names in the room.
+        /// Formats lobby owner with ' (Host)' suffix.
+        /// </summary>
+        public System.Collections.Generic.List<string> GetCurrentPlayerNames()
+        {
+            var names = new System.Collections.Generic.List<string>();
+            if (CurrentLobby.HasValue)
+            {
+                var lobby = CurrentLobby.Value;
+                var ownerId = lobby.Owner.Id;
+                foreach (var member in lobby.Members)
+                {
+                    string name = member.Name;
+                    if (string.IsNullOrEmpty(name)) name = "Player";
+                    if (member.Id == ownerId)
+                    {
+                        name += " (Host)";
+                    }
+                    names.Add(name);
+                }
+            }
+            else
+            {
+                var nm = NetworkManager.Singleton;
+                if (nm != null && (nm.IsHost || nm.IsServer || nm.IsClient))
+                {
+                    string localName = IsSteamInitialized ? SteamPlayerName : "Player 1";
+                    if (nm.IsHost || nm.IsServer) localName += " (Host)";
+                    names.Add(localName);
+
+                    if (nm.ConnectedClientsIds.Count > 1)
+                    {
+                        for (int i = 1; i < nm.ConnectedClientsIds.Count; i++)
+                        {
+                            names.Add($"Player {i + 1}");
+                        }
+                    }
+                }
+            }
+
+            if (names.Count == 0 && IsSteamInitialized)
+            {
+                names.Add(SteamPlayerName + " (Host)");
+            }
+
+            return names;
         }
 
         private void OnLobbyCreated(Result result, Lobby lobby)

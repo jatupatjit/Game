@@ -25,7 +25,7 @@ namespace CoopGame.Player
     /// </summary>
     [RequireComponent(typeof(PlayerStamina))]
     [DisallowMultipleComponent]
-    public class PlayerStaminaUI : MonoBehaviour
+    public class PlayerStaminaUI : NetworkBehaviour
     {
         [Header("Colors & Visuals")]
         [SerializeField] private Color _colorHigh = new Color(0.15f, 0.92f, 0.38f, 0.95f);    // Lime Green
@@ -53,6 +53,9 @@ namespace CoopGame.Player
         // Cached references
         private PlayerStamina _stamina;
         private PlayerCarry _playerCarry;
+        private PlayerMovement _movement;
+        private Wallclimb _wallClimb;
+        private PlayerInputReader _inputReader;
 
         // Runtime UI elements
         private Canvas _canvas;
@@ -68,8 +71,9 @@ namespace CoopGame.Player
         // Animation state
         private float _displayedStamina = 1.0f;
         private float _ghostStamina = 1.0f;
-        private float _fullStaminaTimer = 0f;
+        private float _fullStaminaTimer = -2.5f; // Show for ~3.7s on spawn so player sees stamina bar
         private float _targetAlpha = 1.0f;
+        private bool _isHudCreated = false;
 
         // Cached procedural white sprite
         private static Sprite _sharedWhiteSprite;
@@ -78,29 +82,52 @@ namespace CoopGame.Player
         {
             _stamina = GetComponent<PlayerStamina>();
             _playerCarry = GetComponent<PlayerCarry>();
-
-            // Do not create HUD on remote proxies
-            NetworkObject netObj = GetComponent<NetworkObject>();
-            if (netObj != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !netObj.IsOwner)
-            {
-                enabled = false;
-                return;
-            }
-
-            EnsureWhiteSprite();
-            CreateProceduralHUD();
+            _movement = GetComponent<PlayerMovement>();
+            _wallClimb = GetComponent<Wallclimb>();
+            _inputReader = GetComponent<PlayerInputReader>();
         }
 
-        private void Start()
+        public override void OnNetworkSpawn()
         {
-            NetworkObject netObj = GetComponent<NetworkObject>();
-            if (netObj != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !netObj.IsOwner)
+            base.OnNetworkSpawn();
+
+            if (!IsOwner)
             {
                 if (_hudCanvasGroup != null && _hudCanvasGroup.gameObject != null)
                 {
                     Destroy(_hudCanvasGroup.gameObject);
                 }
                 enabled = false;
+                return;
+            }
+
+            EnsureHUDCreated();
+        }
+
+        private void Start()
+        {
+            // If offline / singleplayer (not using Netcode or not spawned as network object), create HUD for local player
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+            {
+                EnsureHUDCreated();
+            }
+        }
+
+        private void EnsureHUDCreated()
+        {
+            if (_isHudCreated) return;
+            _isHudCreated = true;
+
+            EnsureWhiteSprite();
+            CreateProceduralHUD();
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            base.OnNetworkDespawn();
+            if (_hudCanvasGroup != null && _hudCanvasGroup.gameObject != null)
+            {
+                Destroy(_hudCanvasGroup.gameObject);
             }
         }
 
@@ -200,7 +227,11 @@ namespace CoopGame.Player
             }
 
             // 6. Smart Auto-Fade: Visible when active/straining, hidden when idle at 100%
-            if (targetNormStamina < 0.999f || isExhausted || isChargingThrow || _ghostStamina < 0.999f)
+            bool isSprinting = (_movement != null && _movement.CurrentSpeed > 0.1f && (_inputReader != null && _inputReader.SprintHeld));
+            bool isClimbing = (_wallClimb != null && _wallClimb.IsClimbing);
+            bool isCarrying = (_playerCarry != null && _playerCarry.IsCarrying);
+
+            if (targetNormStamina < 0.999f || isExhausted || isChargingThrow || _ghostStamina < 0.999f || isSprinting || isClimbing || isCarrying)
             {
                 _targetAlpha = 1.0f;
                 _fullStaminaTimer = 0f;
@@ -247,11 +278,11 @@ namespace CoopGame.Player
 
         private void CreateProceduralHUD()
         {
-            // 1. Locate or create Canvas
-            _canvas = FindAnyObjectByType<Canvas>();
-            if (_canvas == null)
+            // 1. Locate or create dedicated Player HUD Canvas
+            GameObject canvasObj = GameObject.Find("PlayerHUD_Canvas");
+            if (canvasObj == null)
             {
-                GameObject canvasObj = new GameObject("HUD_Canvas");
+                canvasObj = new GameObject("PlayerHUD_Canvas");
                 _canvas = canvasObj.AddComponent<Canvas>();
                 _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 _canvas.sortingOrder = 50;
@@ -262,6 +293,10 @@ namespace CoopGame.Player
                 scaler.matchWidthOrHeight = 0.5f;
 
                 canvasObj.AddComponent<GraphicRaycaster>();
+            }
+            else
+            {
+                _canvas = canvasObj.GetComponent<Canvas>();
             }
 
             // 2. Main HUD Container anchored at Bottom Center
