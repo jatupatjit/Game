@@ -118,7 +118,8 @@ namespace CoopGame.Player
             }
 
             // Prevent mouse clicks on UI elements from triggering hand grabs / throws in-game
-            bool pointerOverUI = (UnityEngine.EventSystems.EventSystem.current != null &&
+            bool pointerOverUI = (Cursor.lockState != CursorLockMode.Locked &&
+                                  UnityEngine.EventSystems.EventSystem.current != null &&
                                   UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject());
 
             if (_grabLeftAction != null)

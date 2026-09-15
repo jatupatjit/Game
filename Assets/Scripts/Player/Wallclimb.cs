@@ -99,6 +99,7 @@ public class Wallclimb : NetworkBehaviour
     private PlayerCameraController _cameraController;
     private PlayerStamina _stamina;
     private PlayerCarry _playerCarry;
+    private ProceduralPlayerArms _procArms;
     private Camera _cachedCamera;
 
     // Hand Transforms
@@ -176,6 +177,7 @@ public class Wallclimb : NetworkBehaviour
         _cameraController = GetComponent<PlayerCameraController>();
         _stamina = GetComponent<PlayerStamina>();
         _playerCarry = GetComponent<PlayerCarry>();
+        _procArms = GetComponent<ProceduralPlayerArms>();
 
         EnsureMarkersCreated();
     }
@@ -224,7 +226,14 @@ public class Wallclimb : NetworkBehaviour
 
     private void ResolveHandReferences()
     {
-        if (_playerCarry != null)
+        if (_procArms == null) _procArms = GetComponent<ProceduralPlayerArms>();
+        if (_procArms != null)
+        {
+            _procArms.EnsureTargetNodesCreated();
+            _leftHand = _procArms.LeftHand;
+            _rightHand = _procArms.RightHand;
+        }
+        else if (_playerCarry != null)
         {
             _playerCarry.EnsureVisualHandsCreated();
             _leftHand = _playerCarry.LeftHand;
@@ -233,13 +242,13 @@ public class Wallclimb : NetworkBehaviour
 
         if (_leftHand == null)
         {
-            Transform existingLeft = transform.Find("VisualHand_Left");
+            Transform existingLeft = transform.Find("IKTarget_Left") ?? transform.Find("VisualHand_Left");
             if (existingLeft != null) _leftHand = existingLeft;
         }
 
         if (_rightHand == null)
         {
-            Transform existingRight = transform.Find("VisualHand_Right");
+            Transform existingRight = transform.Find("IKTarget_Right") ?? transform.Find("VisualHand_Right");
             if (existingRight != null) _rightHand = existingRight;
         }
     }
@@ -393,17 +402,10 @@ public class Wallclimb : NetworkBehaviour
         bool notExhausted = (_stamina == null || !_stamina.IsExhausted);
 
         // -------------------------------------------------------------
-        // LEFT HAND AIM (Up, Down, Left):
+        // LEFT HAND AIM:
         // -------------------------------------------------------------
         Vector3 leftShoulder = chestPos - camRight * (_handLateralSpacing * 0.5f);
-        Vector3 leftAimDir = camAimDir - camRight * 0.15f;
-        // Constraint: Left hand cannot aim significantly to the right side!
-        float leftRightDot = Vector3.Dot(leftAimDir, camRight);
-        if (leftRightDot > 0.05f)
-        {
-            leftAimDir = Vector3.ProjectOnPlane(leftAimDir, camRight).normalized;
-        }
-        leftAimDir.Normalize();
+        Vector3 leftAimDir = camAimDir;
 
         Ray leftRay = new Ray(leftShoulder, leftAimDir);
         if (Physics.Raycast(leftRay, out RaycastHit lHit, _maxScanDistance, _wallLayers, QueryTriggerInteraction.Ignore))
@@ -420,17 +422,10 @@ public class Wallclimb : NetworkBehaviour
         }
 
         // -------------------------------------------------------------
-        // RIGHT HAND AIM (Up, Down, Right):
+        // RIGHT HAND AIM:
         // -------------------------------------------------------------
         Vector3 rightShoulder = chestPos + camRight * (_handLateralSpacing * 0.5f);
-        Vector3 rightAimDir = camAimDir + camRight * 0.15f;
-        // Constraint: Right hand cannot aim significantly to the left side!
-        float rightLeftDot = Vector3.Dot(rightAimDir, -camRight);
-        if (rightLeftDot > 0.05f)
-        {
-            rightAimDir = Vector3.ProjectOnPlane(rightAimDir, camRight).normalized;
-        }
-        rightAimDir.Normalize();
+        Vector3 rightAimDir = camAimDir;
 
         Ray rightRay = new Ray(rightShoulder, rightAimDir);
         if (Physics.Raycast(rightRay, out RaycastHit rHit, _maxScanDistance, _wallLayers, QueryTriggerInteraction.Ignore))
@@ -466,8 +461,7 @@ public class Wallclimb : NetworkBehaviour
     }
 
     /// <summary>
-    /// Executes Human Fall Flat physical body hoisting/lowering based on camera pitch.
-    /// When looking UP, body pulls UP towards hands. When looking DOWN, body lowers.
+    /// Executes physical body hoisting/lowering based on W / S input (W = hoist UP, S = lower DOWN).
     /// </summary>
     private void ExecuteClimbPhysics()
     {
@@ -508,21 +502,40 @@ public class Wallclimb : NetworkBehaviour
             wallNormal = _rightGripNormal;
         }
 
-        // 3. Calculate target body height from camera pitch (Mouse Up / Down)
+        // 3. Calculate target body height from W/S input (W = pull UP, S = lower DOWN)
+        float moveY = (_inputReader != null) ? _inputReader.MoveInput.y : 0f;
         float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
         float currentHangDist;
 
-        if (pitch < 0f)
+        if (moveY > 0.05f)
         {
-            // Looking UP (pitch negative, -35): pulls body UP towards hands!
-            float t = Mathf.InverseLerp(0f, -35f, pitch);
+            // Pressing 'W': Pulls body UP towards hands! (min hang distance)
+            float t = Mathf.Clamp01(moveY);
             currentHangDist = Mathf.Lerp(_normalHangDistance, _minHangDistance, t);
+        }
+        else if (moveY < -0.05f)
+        {
+            // Pressing 'S': Lowers body away from hands! (max hang distance)
+            float t = Mathf.Clamp01(-moveY);
+            currentHangDist = Mathf.Lerp(_normalHangDistance, _maxHangDistance, t);
         }
         else
         {
-            // Looking DOWN (pitch positive, +55): lowers body away from hands
-            float t = Mathf.InverseLerp(0f, 55f, pitch);
-            currentHangDist = Mathf.Lerp(_normalHangDistance, _maxHangDistance, t);
+            // If neither W nor S is pressed: check camera pitch as subtle assist
+            if (pitch < -20f)
+            {
+                float t = Mathf.InverseLerp(-20f, -50f, pitch);
+                currentHangDist = Mathf.Lerp(_normalHangDistance, _minHangDistance, t);
+            }
+            else if (pitch > 30f)
+            {
+                float t = Mathf.InverseLerp(30f, 65f, pitch);
+                currentHangDist = Mathf.Lerp(_normalHangDistance, _maxHangDistance, t);
+            }
+            else
+            {
+                currentHangDist = _normalHangDistance;
+            }
         }
 
         // Target body position:
@@ -712,32 +725,52 @@ public class Wallclimb : NetworkBehaviour
         if (_leftHandGripping)
         {
             _leftHand.position = _leftGripPoint;
+            if (_leftGripNormal.sqrMagnitude > 0.01f)
+            {
+                _leftHand.rotation = Quaternion.LookRotation(-_leftGripNormal, Vector3.up);
+            }
         }
         else if (_leftHandCooldown <= 0f && !_leftRequireFreshPress && _canGrabLeft && _inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld))
         {
             // Only reach toward wall when NOT on cooldown
             _leftHand.position = Vector3.Lerp(_leftHand.position, _leftAimHit.point, Time.deltaTime * 25f);
+            if (_leftAimHit.normal.sqrMagnitude > 0.01f)
+            {
+                _leftHand.rotation = Quaternion.LookRotation(-_leftAimHit.normal, Vector3.up);
+            }
         }
         else
         {
             // On cooldown (or no wall) — pull hand back to rest
-            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, _leftHandRest, Time.deltaTime * 18f);
+            Vector3 restPos = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
+            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, restPos, Time.deltaTime * 18f);
+            _leftHand.localRotation = Quaternion.Slerp(_leftHand.localRotation, Quaternion.identity, Time.deltaTime * 18f);
         }
 
         // RIGHT HAND:
         if (_rightHandGripping)
         {
             _rightHand.position = _rightGripPoint;
+            if (_rightGripNormal.sqrMagnitude > 0.01f)
+            {
+                _rightHand.rotation = Quaternion.LookRotation(-_rightGripNormal, Vector3.up);
+            }
         }
         else if (_rightHandCooldown <= 0f && !_rightRequireFreshPress && _canGrabRight && _inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld))
         {
             // Only reach toward wall when NOT on cooldown
             _rightHand.position = Vector3.Lerp(_rightHand.position, _rightAimHit.point, Time.deltaTime * 25f);
+            if (_rightAimHit.normal.sqrMagnitude > 0.01f)
+            {
+                _rightHand.rotation = Quaternion.LookRotation(-_rightAimHit.normal, Vector3.up);
+            }
         }
         else
         {
             // On cooldown (or no wall) — pull hand back to rest
-            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, _rightHandRest, Time.deltaTime * 18f);
+            Vector3 restPos = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
+            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, restPos, Time.deltaTime * 18f);
+            _rightHand.localRotation = Quaternion.Slerp(_rightHand.localRotation, Quaternion.identity, Time.deltaTime * 18f);
         }
     }
 

@@ -113,6 +113,7 @@ namespace CoopGame.CarrySystem
         private Collider[] _playerColliders;
         private Camera _cachedCamera;
         private Wallclimb _wallClimb;
+        private ProceduralPlayerArms _procArms;
 
         // Marker renderers and materials
         private Renderer _leftMarkerRenderer;
@@ -216,6 +217,7 @@ namespace CoopGame.CarrySystem
 
             _playerColliders = GetComponentsInChildren<Collider>(true);
             _wallClimb = GetComponent<Wallclimb>();
+            _procArms = GetComponent<ProceduralPlayerArms>();
 
             EnsureVisualHandsCreated();
             EnsureDualMarkersCreated();
@@ -925,6 +927,9 @@ namespace CoopGame.CarrySystem
             bool leftClick = _inputReader.GrabLeftHeld || _inputReader.InteractHeld;
             bool rightClick = _inputReader.GrabRightHeld || _inputReader.InteractHeld;
 
+            Vector3 restL = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
+            Vector3 restR = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
+
             Vector3 targetLeftPos;
             Vector3 targetRightPos;
 
@@ -940,7 +945,7 @@ namespace CoopGame.CarrySystem
             }
             else
             {
-                targetLeftPos = _leftHandRest;
+                targetLeftPos = restL;
             }
 
             // Right Hand: if gripping, attach to box. Else if holding click and allowed, reach forward. Else rest.
@@ -955,7 +960,7 @@ namespace CoopGame.CarrySystem
             }
             else
             {
-                targetRightPos = _rightHandRest;
+                targetRightPos = restR;
             }
 
             // Wind-up animation when charging a throw
@@ -1259,26 +1264,45 @@ namespace CoopGame.CarrySystem
 
         public void EnsureVisualHandsCreated()
         {
+            if (_procArms == null) _procArms = GetComponent<ProceduralPlayerArms>();
+            if (_procArms != null)
+            {
+                _procArms.EnsureTargetNodesCreated();
+                _leftHand = _procArms.LeftHand;
+                _rightHand = _procArms.RightHand;
+                return;
+            }
+
             if (_leftHand == null)
             {
-                GameObject lh = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                lh.name = "VisualHand_Left";
-                lh.transform.SetParent(transform);
-                lh.transform.localPosition = _leftHandRest;
-                lh.transform.localScale = Vector3.one * 0.2f;
-                Destroy(lh.GetComponent<Collider>());
-                _leftHand = lh.transform;
+                Transform existing = transform.Find("IKTarget_Left") ?? transform.Find("VisualHand_Left");
+                if (existing != null)
+                {
+                    _leftHand = existing;
+                }
+                else
+                {
+                    GameObject lh = new GameObject("IKTarget_Left");
+                    lh.transform.SetParent(transform, false);
+                    lh.transform.localPosition = _leftHandRest;
+                    _leftHand = lh.transform;
+                }
             }
 
             if (_rightHand == null)
             {
-                GameObject rh = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                rh.name = "VisualHand_Right";
-                rh.transform.SetParent(transform);
-                rh.transform.localPosition = _rightHandRest;
-                rh.transform.localScale = Vector3.one * 0.2f;
-                Destroy(rh.GetComponent<Collider>());
-                _rightHand = rh.transform;
+                Transform existing = transform.Find("IKTarget_Right") ?? transform.Find("VisualHand_Right");
+                if (existing != null)
+                {
+                    _rightHand = existing;
+                }
+                else
+                {
+                    GameObject rh = new GameObject("IKTarget_Right");
+                    rh.transform.SetParent(transform, false);
+                    rh.transform.localPosition = _rightHandRest;
+                    _rightHand = rh.transform;
+                }
             }
         }
 

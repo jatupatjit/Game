@@ -19,6 +19,7 @@ namespace CoopGame.Network
         [Header("Canvas & Root")]
         [SerializeField] private Canvas      _canvas;
         [SerializeField] private CanvasGroup _pauseRoot;
+        [SerializeField] private GameObject  _pausePanel;
 
         [Header("Main Pause Buttons")]
         [SerializeField] private Button _continueButton;
@@ -137,6 +138,7 @@ namespace CoopGame.Network
 
             HideSettingsPanel();
             HideConfirmDialog();
+            if (_pausePanel != null) _pausePanel.SetActive(true);
 
             StopAllCoroutines();
             StartCoroutine(FadeTo(1f));
@@ -206,8 +208,21 @@ namespace CoopGame.Network
 
         // ─────────────────────────────────────────── Settings Panel ───────────
 
-        private void ShowSettingsPanel()  { if (_settingsPanel != null) _settingsPanel.SetActive(true);  SetMainButtonsVisible(false); }
-        private void HideSettingsPanel()  { _settingsOpen = false; if (_settingsPanel != null) _settingsPanel.SetActive(false); SetMainButtonsVisible(true); }
+        private void ShowSettingsPanel()
+        {
+            _settingsOpen = true;
+            if (_pausePanel != null) _pausePanel.SetActive(false);
+            if (_settingsPanel != null) _settingsPanel.SetActive(true);
+            SetMainButtonsVisible(false);
+        }
+
+        private void HideSettingsPanel()
+        {
+            _settingsOpen = false;
+            if (_settingsPanel != null) _settingsPanel.SetActive(false);
+            if (_pausePanel != null) _pausePanel.SetActive(true);
+            SetMainButtonsVisible(true);
+        }
 
         private void SetMainButtonsVisible(bool v)
         {
@@ -218,8 +233,17 @@ namespace CoopGame.Network
 
         // ─────────────────────────────────────────── Confirm Dialog ───────────
 
-        private void ShowConfirmDialog() { if (_confirmDialog != null) _confirmDialog.SetActive(true); }
-        private void HideConfirmDialog() { if (_confirmDialog != null) _confirmDialog.SetActive(false); }
+        private void ShowConfirmDialog()
+        {
+            if (_pausePanel != null) _pausePanel.SetActive(false);
+            if (_confirmDialog != null) _confirmDialog.SetActive(true);
+        }
+
+        private void HideConfirmDialog()
+        {
+            if (_confirmDialog != null) _confirmDialog.SetActive(false);
+            if (_pausePanel != null) _pausePanel.SetActive(true);
+        }
 
         // ─────────────────────────────────────────── Fade ─────────────────────
 
@@ -285,6 +309,7 @@ namespace CoopGame.Network
 
             // Center pause card
             var panelGO = Panel(gameObject, "PausePanel", new Vector2(400, 380), panel);
+            _pausePanel = panelGO;
             var pRT = panelGO.GetComponent<RectTransform>();
             pRT.anchorMin = pRT.anchorMax = new Vector2(0.5f, 0.5f);
             pRT.pivot = new Vector2(0.5f, 0.5f);

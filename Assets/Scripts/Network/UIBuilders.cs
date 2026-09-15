@@ -69,9 +69,9 @@ public static class LobbyUIBuilder
         if (lobbyRoot == null) lobbyRoot = target.gameObject.AddComponent<CanvasGroup>();
 
         // Clear existing generated children
-        while (target.transform.childCount > 0)
+        for (int i = target.transform.childCount - 1; i >= 0; i--)
         {
-            Object.DestroyImmediate(target.transform.GetChild(0).gameObject);
+            Object.DestroyImmediate(target.transform.GetChild(i).gameObject, true);
         }
 
         // 2. Background
@@ -79,7 +79,7 @@ public static class LobbyUIBuilder
         StretchFull(bg.GetComponent<RectTransform>());
 
         // 3. Center Card
-        var cardGO = MakePanel(target.gameObject, "LobbyCard", new Vector2(500, 560), Vector2.zero, PanelColor);
+        var cardGO = MakePanel(target.gameObject, "LobbyCard", new Vector2(500, 580), Vector2.zero, PanelColor);
         var cardRect = cardGO.GetComponent<RectTransform>();
         cardRect.anchorMin = cardRect.anchorMax = new Vector2(0.5f, 0.5f);
         cardRect.pivot = new Vector2(0.5f, 0.5f);
@@ -441,9 +441,9 @@ public static class PauseMenuBuilder
         rootGroup.blocksRaycasts = false;
 
         // Clear existing generated children
-        while (target.transform.childCount > 0)
+        for (int i = target.transform.childCount - 1; i >= 0; i--)
         {
-            Object.DestroyImmediate(target.transform.GetChild(0).gameObject);
+            Object.DestroyImmediate(target.transform.GetChild(i).gameObject, true);
         }
 
         // Dark overlay
@@ -599,6 +599,7 @@ public static class PauseMenuBuilder
         SerializedObject so = new SerializedObject(target);
         so.FindProperty("_canvas").objectReferenceValue = canvas;
         so.FindProperty("_pauseRoot").objectReferenceValue = rootGroup;
+        so.FindProperty("_pausePanel").objectReferenceValue = panelGO;
         so.FindProperty("_continueButton").objectReferenceValue = continueBtn;
         so.FindProperty("_settingsButton").objectReferenceValue = settingsBtn;
         so.FindProperty("_quitToMenuButton").objectReferenceValue = quitBtn;
@@ -651,9 +652,9 @@ public static class RoomCodeHUDBuilder
         hudGroup.alpha = 0f;
 
         // Clear existing generated children
-        while (target.transform.childCount > 0)
+        for (int i = target.transform.childCount - 1; i >= 0; i--)
         {
-            Object.DestroyImmediate(target.transform.GetChild(0).gameObject);
+            Object.DestroyImmediate(target.transform.GetChild(i).gameObject, true);
         }
 
         // Top-left HUD Card
@@ -665,7 +666,7 @@ public static class RoomCodeHUDBuilder
         panelRT.anchorMin = panelRT.anchorMax = new Vector2(0f, 1f);
         panelRT.pivot = new Vector2(0f, 1f);
         panelRT.anchoredPosition = new Vector2(16f, -16f);
-        panelRT.sizeDelta = new Vector2(230, 105);
+        panelRT.sizeDelta = new Vector2(240, 125);
 
         var panelImg = panelGO.AddComponent<Image>();
         panelImg.color = BgDark;

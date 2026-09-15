@@ -134,19 +134,19 @@ namespace CoopGame.Network
             if (!sessionActive)
             {
                 // If modern LobbyUI is in scene, suppress legacy IMGUI lobby
-                if (FindFirstObjectByType<LobbyUI>() != null) return;
+                if (FindFirstObjectByType<LobbyUI>(FindObjectsInactive.Include) != null) return;
                 DrawLobbyMenu(steamManager);
             }
             else
             {
                 // In-Game: If modern RoomCodeHUD is not present, fallback to IMGUI room code
-                if (FindFirstObjectByType<RoomCodeHUD>() == null)
+                if (FindFirstObjectByType<RoomCodeHUD>(FindObjectsInactive.Include) == null)
                 {
                     DrawAboveLeftRoomCodeHUD(networkManager, steamManager);
                 }
 
                 // In-Game: If modern PauseMenu is not present and pause open, fallback to IMGUI pause menu
-                if (_isPauseMenuOpen && PauseMenu.Instance == null)
+                if (_isPauseMenuOpen && FindFirstObjectByType<PauseMenu>(FindObjectsInactive.Include) == null)
                 {
                     DrawInGamePauseMenu(networkManager, steamManager);
                 }

@@ -64,11 +64,11 @@ namespace CoopGame.Player
             Transform visualT = transform.Find("CharacterVisual");
             if (visualT == null)
             {
-                GameObject modelAsset = Resources.Load<GameObject>("No bone_character");
+                GameObject modelAsset = Resources.Load<GameObject>("Rigged_character_");
 #if UNITY_EDITOR
                 if (modelAsset == null)
                 {
-                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/No bone_character.fbx");
+                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Rigged_character_.fbx");
                 }
 #endif
                 if (modelAsset != null)
@@ -103,12 +103,6 @@ namespace CoopGame.Player
 
             if (visualT != null)
             {
-                // Ensure BonelessCharacterPhysics is attached for Human Fall Flat style wobbly physics
-                if (visualT.GetComponent<BonelessCharacterPhysics>() == null)
-                {
-                    visualT.gameObject.AddComponent<BonelessCharacterPhysics>();
-                }
-
                 // Locate the main body renderer (body.002) for player color tinting
                 Renderer[] childRends = visualT.GetComponentsInChildren<Renderer>();
                 Renderer bodyRend = null;
@@ -133,6 +127,25 @@ namespace CoopGame.Player
                         _cameraController.SetPlayerBodyRenderer(bodyRend);
                     }
                 }
+
+                // Ensure ProceduralPlayerArms is configured
+                ProceduralPlayerArms arms = GetComponent<ProceduralPlayerArms>();
+                if (arms == null)
+                {
+                    arms = gameObject.AddComponent<ProceduralPlayerArms>();
+                }
+                arms.SetCharacterVisual(visualT);
+                arms.LocateVisualReferences();
+                arms.EnsureArmRenderersCreated();
+
+                // Ensure ProceduralPlayerLegs is configured
+                ProceduralPlayerLegs legs = GetComponent<ProceduralPlayerLegs>();
+                if (legs == null)
+                {
+                    legs = gameObject.AddComponent<ProceduralPlayerLegs>();
+                }
+                legs.SetCharacterVisual(visualT);
+                legs.LocateBones();
             }
         }
 
@@ -285,17 +298,24 @@ namespace CoopGame.Player
                 _playerRenderer = GetComponentInChildren<Renderer>();
             }
 
+            int colorIndex = (int)(OwnerClientId % (ulong)PlayerColors.Length);
+            Color chosenColor = PlayerColors[colorIndex];
+
             if (_playerRenderer != null)
             {
-                int colorIndex = (int)(OwnerClientId % (ulong)PlayerColors.Length);
-                Color chosenColor = PlayerColors[colorIndex];
-
                 // Create a material property block to tint without cloning materials
                 MaterialPropertyBlock propBlock = new MaterialPropertyBlock();
                 _playerRenderer.GetPropertyBlock(propBlock);
                 propBlock.SetColor("_BaseColor", chosenColor); // URP default color property
                 propBlock.SetColor("_Color", chosenColor);     // Standard fallback
                 _playerRenderer.SetPropertyBlock(propBlock);
+            }
+
+            // Tint procedural arms and hands
+            ProceduralPlayerArms arms = GetComponent<ProceduralPlayerArms>();
+            if (arms != null)
+            {
+                arms.SetArmColor(chosenColor);
             }
         }
 

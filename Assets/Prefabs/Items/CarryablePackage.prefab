@@ -156,14 +156,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3056898798
+  GlobalObjectIdHash: 2864442416
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
-  m_InScenePlaced: 1
+  m_InScenePlaced: 0
   ActiveSceneSynchronization: 0
   SceneMigrationSynchronization: 0
   SpawnWithObservers: 1
@@ -231,11 +231,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.CarryableObject
   ShowTopMostFoldoutHeaderGroup: 1
   _sockets: []
-  _multiCarrierSpeed: 5
-  _singleCarrierSpeed: 2.2
-  _acceleration: 10
+  _carryForwardDistance: 0.72
+  _carryHeightOffset: 0
+  _soloSpeedMultiplier: 0.6
+  _coopSpeedMultiplier: 0.9
   _rotationSpeed: 180
-  _carryGravity: -15
 --- !u!114 &5123984719234851234
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -252,4 +252,3 @@ MonoBehaviour:
   _defaultWidth: 3.5
   _enablePulse: 0
   _pulseSpeed: 3.5
-

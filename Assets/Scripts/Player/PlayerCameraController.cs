@@ -40,7 +40,7 @@ namespace CoopGame.Player
         [SerializeField] private float _sensitivity = 0.2f;
 
         [Tooltip("Minimum vertical angle in degrees (looking up)")]
-        [SerializeField] private float _minPitch = -35f;
+        [SerializeField] private float _minPitch = -65f;
 
         [Tooltip("Maximum vertical angle in degrees (looking down)")]
         [SerializeField] private float _maxPitch = 70f;
@@ -66,7 +66,7 @@ namespace CoopGame.Player
 
         [Header("Height & Collision Avoidance")]
         [Tooltip("Height offset above the pivot transform (eye level)")]
-        [SerializeField] private float _pivotHeightOffset = 1.6f;
+        [SerializeField] private float _pivotHeightOffset = 0.50f;
 
         [Tooltip("Sphere radius used to check for environmental occlusion")]
         [SerializeField] private float _collisionRadius = 0.22f;
@@ -109,6 +109,11 @@ namespace CoopGame.Player
         /// Camera right vector projected onto the horizontal X-Z plane.
         /// </summary>
         public Vector3 HorizontalRight => Quaternion.Euler(0f, _yaw, 0f) * Vector3.right;
+
+        /// <summary>
+        /// Camera forward vector in full 3D pitch/yaw space.
+        /// </summary>
+        public Vector3 AimForward => Quaternion.Euler(_pitch, _yaw, 0f) * Vector3.forward;
 
         /// <summary>
         /// Reference to the Camera component controlled by this script.
