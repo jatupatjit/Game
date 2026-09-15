@@ -62,7 +62,14 @@ namespace CoopGame.Network
 
                 if (sessionActive)
                 {
-                    // In-game pause toggle
+                    // If modern PauseMenu is present in scene, let PauseMenu handle ESC
+                    if (PauseMenu.Instance != null)
+                    {
+                        _isPauseMenuOpen = false;
+                        return;
+                    }
+
+                    // In-game pause toggle (legacy fallback)
                     if (_pauseInSettings)
                     {
                         _pauseInSettings = false;
@@ -72,12 +79,14 @@ namespace CoopGame.Network
                         _isPauseMenuOpen = false;
                         Cursor.lockState = CursorLockMode.Locked;
                         Cursor.visible = false;
+                        Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);
                     }
                     else
                     {
                         _isPauseMenuOpen = true;
                         Cursor.lockState = CursorLockMode.None;
                         Cursor.visible = true;
+                        Player.PlayerCameraController.LocalInstance?.SetCursorLock(false);
                     }
                 }
                 else
@@ -124,16 +133,20 @@ namespace CoopGame.Network
 
             if (!sessionActive)
             {
-                // Draw Lobby Menu with 3 buttons: Host Room - Setting - Quit
+                // If modern LobbyUI is in scene, suppress legacy IMGUI lobby
+                if (FindFirstObjectByType<LobbyUI>() != null) return;
                 DrawLobbyMenu(steamManager);
             }
             else
             {
-                // In-Game: Above left corner shows Room Code
-                DrawAboveLeftRoomCodeHUD(networkManager, steamManager);
+                // In-Game: If modern RoomCodeHUD is not present, fallback to IMGUI room code
+                if (FindFirstObjectByType<RoomCodeHUD>() == null)
+                {
+                    DrawAboveLeftRoomCodeHUD(networkManager, steamManager);
+                }
 
-                // In-Game: ESC Pause Menu
-                if (_isPauseMenuOpen)
+                // In-Game: If modern PauseMenu is not present and pause open, fallback to IMGUI pause menu
+                if (_isPauseMenuOpen && PauseMenu.Instance == null)
                 {
                     DrawInGamePauseMenu(networkManager, steamManager);
                 }
@@ -416,6 +429,7 @@ namespace CoopGame.Network
                     _isPauseMenuOpen = false;
                     Cursor.lockState = CursorLockMode.Locked;
                     Cursor.visible = false;
+                    Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);
                 }
                 GUI.backgroundColor = Color.white;
 

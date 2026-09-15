@@ -50,11 +50,13 @@ public static class LobbyUIBuilder
         Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Build Lobby UI");
 
         // 1. Fullscreen Canvas
-        Canvas canvas = target.GetComponent<Canvas>() ?? target.gameObject.AddComponent<Canvas>();
+        Canvas canvas = target.GetComponent<Canvas>();
+        if (canvas == null) canvas = target.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 100;
 
-        CanvasScaler scaler = target.GetComponent<CanvasScaler>() ?? target.gameObject.AddComponent<CanvasScaler>();
+        CanvasScaler scaler = target.GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = target.gameObject.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
@@ -63,12 +65,13 @@ public static class LobbyUIBuilder
         if (target.GetComponent<GraphicRaycaster>() == null)
             target.gameObject.AddComponent<GraphicRaycaster>();
 
-        CanvasGroup lobbyRoot = target.GetComponent<CanvasGroup>() ?? target.gameObject.AddComponent<CanvasGroup>();
+        CanvasGroup lobbyRoot = target.GetComponent<CanvasGroup>();
+        if (lobbyRoot == null) lobbyRoot = target.gameObject.AddComponent<CanvasGroup>();
 
         // Clear existing generated children
         while (target.transform.childCount > 0)
         {
-            Undo.DestroyObjectImmediate(target.transform.GetChild(0).gameObject);
+            Object.DestroyImmediate(target.transform.GetChild(0).gameObject);
         }
 
         // 2. Background
@@ -220,6 +223,7 @@ public static class LobbyUIBuilder
 
         // ── 10. Wire references to LobbyUI via SerializedObject ───────────────
         SerializedObject so = new SerializedObject(target);
+        so.FindProperty("_canvas").objectReferenceValue = canvas;
         so.FindProperty("_lobbyRoot").objectReferenceValue = lobbyRoot;
 
         // Main panel
@@ -416,11 +420,13 @@ public static class PauseMenuBuilder
     {
         Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Build Pause Menu");
 
-        Canvas canvas = target.GetComponent<Canvas>() ?? target.gameObject.AddComponent<Canvas>();
+        Canvas canvas = target.GetComponent<Canvas>();
+        if (canvas == null) canvas = target.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 300;
 
-        CanvasScaler scaler = target.GetComponent<CanvasScaler>() ?? target.gameObject.AddComponent<CanvasScaler>();
+        CanvasScaler scaler = target.GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = target.gameObject.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
@@ -428,7 +434,8 @@ public static class PauseMenuBuilder
         if (target.GetComponent<GraphicRaycaster>() == null)
             target.gameObject.AddComponent<GraphicRaycaster>();
 
-        CanvasGroup rootGroup = target.GetComponent<CanvasGroup>() ?? target.gameObject.AddComponent<CanvasGroup>();
+        CanvasGroup rootGroup = target.GetComponent<CanvasGroup>();
+        if (rootGroup == null) rootGroup = target.gameObject.AddComponent<CanvasGroup>();
         rootGroup.alpha = 0f;
         rootGroup.interactable = false;
         rootGroup.blocksRaycasts = false;
@@ -436,7 +443,7 @@ public static class PauseMenuBuilder
         // Clear existing generated children
         while (target.transform.childCount > 0)
         {
-            Undo.DestroyObjectImmediate(target.transform.GetChild(0).gameObject);
+            Object.DestroyImmediate(target.transform.GetChild(0).gameObject);
         }
 
         // Dark overlay
@@ -473,8 +480,8 @@ public static class PauseMenuBuilder
         var (_, settingsBtn) = LobbyUIBuilder.MakeButton(panelGO, "SettingsButton", "⚙  SETTINGS", BtnSettings, 50);
         var (_, quitBtn)     = LobbyUIBuilder.MakeButton(panelGO, "QuitToMenuButton", "✕  QUIT TO MENU", BtnQuit, 50);
 
-        // ── Settings Sub-Panel (Blank screen placeholder with Back button) ─────
-        var settingsPanelGO = LobbyUIBuilder.MakePanel(target.gameObject, "SettingsPanel", new Vector2(420, 360), Vector2.zero, PanelColor);
+        // ── Settings Sub-Panel ─────
+        var settingsPanelGO = LobbyUIBuilder.MakePanel(target.gameObject, "SettingsPanel", new Vector2(440, 380), Vector2.zero, PanelColor);
         var settingsRT = settingsPanelGO.GetComponent<RectTransform>();
         settingsRT.anchorMin = settingsRT.anchorMax = new Vector2(0.5f, 0.5f);
         settingsRT.pivot = new Vector2(0.5f, 0.5f);
@@ -482,7 +489,7 @@ public static class PauseMenuBuilder
 
         var settingsVL = settingsPanelGO.AddComponent<VerticalLayoutGroup>();
         settingsVL.padding = new RectOffset(36, 36, 36, 36);
-        settingsVL.spacing = 20;
+        settingsVL.spacing = 16;
         settingsVL.childControlWidth = true;
         settingsVL.childControlHeight = false;
         settingsVL.childForceExpandWidth = true;
@@ -492,17 +499,105 @@ public static class PauseMenuBuilder
         var sTitleLE = sTitle.gameObject.AddComponent<LayoutElement>();
         sTitleLE.preferredHeight = 36;
 
-        var blankSettingsArea = LobbyUIBuilder.MakeEmpty(settingsPanelGO, "BlankSettingsContent");
-        var blankLE = blankSettingsArea.AddComponent<LayoutElement>();
-        blankLE.preferredHeight = 120;
-        var blankNote = LobbyUIBuilder.MakeText(blankSettingsArea, "BlankNote", "(Settings will appear here)", 13, FontStyle.Italic, TextSecondary, TextAnchor.MiddleCenter);
-        LobbyUIBuilder.StretchFull(blankNote.GetComponent<RectTransform>());
+        // Master Volume Slider
+        var volRow = LobbyUIBuilder.MakeEmpty(settingsPanelGO, "MasterVolumeRow");
+        var volLE = volRow.AddComponent<LayoutElement>();
+        volLE.preferredHeight = 44;
+        var volVL = volRow.AddComponent<VerticalLayoutGroup>();
+        volVL.spacing = 4; volVL.childControlWidth = true; volVL.childControlHeight = false; volVL.childForceExpandWidth = true;
+
+        var volLabel = LobbyUIBuilder.MakeText(volRow, "Label", "MASTER VOLUME", 11, FontStyle.Bold, TextSecondary, TextAnchor.MiddleLeft);
+        var vlblLE = volLabel.gameObject.AddComponent<LayoutElement>(); vlblLE.preferredHeight = 16;
+
+        var sliderGO = LobbyUIBuilder.MakeEmpty(volRow, "Slider");
+        var slLE = sliderGO.AddComponent<LayoutElement>(); slLE.preferredHeight = 20;
+        var sliderBg = LobbyUIBuilder.MakeImage(sliderGO, "Background", LobbyUIBuilder.HexColor("#374151"));
+        var slBgRT = sliderBg.GetComponent<RectTransform>();
+        slBgRT.anchorMin = new Vector2(0, 0.25f); slBgRT.anchorMax = new Vector2(1, 0.75f);
+        slBgRT.offsetMin = slBgRT.offsetMax = Vector2.zero;
+
+        var fillArea = LobbyUIBuilder.MakeEmpty(sliderGO, "FillArea");
+        var faRT = fillArea.GetComponent<RectTransform>();
+        faRT.anchorMin = new Vector2(0, 0.25f); faRT.anchorMax = new Vector2(1, 0.75f);
+        faRT.offsetMin = new Vector2(5, 0); faRT.offsetMax = new Vector2(-5, 0);
+
+        var fillImg = LobbyUIBuilder.MakeImage(fillArea, "Fill", AccentCyan);
+        LobbyUIBuilder.StretchFull(fillImg.GetComponent<RectTransform>());
+
+        var handleGO = LobbyUIBuilder.MakeImage(sliderGO, "Handle", Color.white);
+        var hRT = handleGO.GetComponent<RectTransform>();
+        hRT.sizeDelta = new Vector2(20, 0);
+
+        var slider = sliderGO.AddComponent<Slider>();
+        slider.fillRect = fillImg.GetComponent<RectTransform>();
+        slider.handleRect = hRT;
+        slider.minValue = 0f; slider.maxValue = 1f; slider.value = 1f;
+        slider.targetGraphic = handleGO;
+
+        // Fullscreen Toggle
+        var togRow = LobbyUIBuilder.MakeEmpty(settingsPanelGO, "FullscreenToggleRow");
+        var togLE = togRow.AddComponent<LayoutElement>(); togLE.preferredHeight = 32;
+        var togHL = togRow.AddComponent<HorizontalLayoutGroup>();
+        togHL.spacing = 10; togHL.childControlWidth = false; togHL.childControlHeight = true; togHL.childAlignment = TextAnchor.MiddleLeft;
+
+        var togBg = LobbyUIBuilder.MakeImage(togRow, "Background", LobbyUIBuilder.HexColor("#374151"));
+        var togBgRT = togBg.GetComponent<RectTransform>(); togBgRT.sizeDelta = new Vector2(22, 22);
+
+        var checkImg = LobbyUIBuilder.MakeImage(togBg.gameObject, "Checkmark", AccentCyan);
+        var ckRT = checkImg.GetComponent<RectTransform>();
+        ckRT.anchorMin = new Vector2(0.15f, 0.15f); ckRT.anchorMax = new Vector2(0.85f, 0.85f);
+        ckRT.offsetMin = ckRT.offsetMax = Vector2.zero;
+
+        var togLabel = LobbyUIBuilder.MakeText(togRow, "Label", "FULLSCREEN", 13, FontStyle.Bold, TextSecondary, TextAnchor.MiddleLeft);
+        var tlRT = togLabel.GetComponent<RectTransform>(); tlRT.sizeDelta = new Vector2(180, 22);
+
+        var toggle = togRow.AddComponent<Toggle>();
+        toggle.targetGraphic = togBg;
+        toggle.graphic = checkImg;
+        toggle.isOn = true;
 
         var (_, backBtn) = LobbyUIBuilder.MakeButton(settingsPanelGO, "BackFromSettingsButton", "←  BACK", BtnBack, 46);
         settingsPanelGO.SetActive(false);
 
+        // ── Confirm Quit Sub-Panel ─────
+        var confirmGO = LobbyUIBuilder.MakePanel(target.gameObject, "ConfirmQuitDialog", new Vector2(400, 200), Vector2.zero, PanelColor);
+        var confirmRT = confirmGO.GetComponent<RectTransform>();
+        confirmRT.anchorMin = confirmRT.anchorMax = new Vector2(0.5f, 0.5f);
+        confirmRT.pivot = new Vector2(0.5f, 0.5f);
+        confirmRT.anchoredPosition = Vector2.zero;
+
+        var confirmVL = confirmGO.AddComponent<VerticalLayoutGroup>();
+        confirmVL.padding = new RectOffset(30, 30, 24, 24);
+        confirmVL.spacing = 14;
+        confirmVL.childControlWidth = true;
+        confirmVL.childControlHeight = false;
+        confirmVL.childForceExpandWidth = true;
+        confirmVL.childAlignment = TextAnchor.UpperCenter;
+
+        var cTitle = LobbyUIBuilder.MakeText(confirmGO, "ConfirmTitle", "QUIT TO MENU?", 22, FontStyle.Bold, TextPrimary, TextAnchor.MiddleCenter);
+        var cTitleLE = cTitle.gameObject.AddComponent<LayoutElement>();
+        cTitleLE.preferredHeight = 30;
+
+        var cDesc = LobbyUIBuilder.MakeText(confirmGO, "ConfirmDesc", "Are you sure you want to quit?", 13, FontStyle.Normal, TextSecondary, TextAnchor.MiddleCenter);
+        var cDescLE = cDesc.gameObject.AddComponent<LayoutElement>();
+        cDescLE.preferredHeight = 22;
+
+        var cBtnRow = LobbyUIBuilder.MakeEmpty(confirmGO, "ButtonRow");
+        var cBtnRowLE = cBtnRow.AddComponent<LayoutElement>();
+        cBtnRowLE.preferredHeight = 44;
+        var cBtnHL = cBtnRow.AddComponent<HorizontalLayoutGroup>();
+        cBtnHL.spacing = 12;
+        cBtnHL.childControlWidth = true;
+        cBtnHL.childControlHeight = true;
+        cBtnHL.childForceExpandWidth = true;
+
+        var (_, confirmQuitBtn) = LobbyUIBuilder.MakeButton(cBtnRow, "ConfirmQuitButton", "YES, QUIT", BtnQuit, 44);
+        var (_, cancelQuitBtn)  = LobbyUIBuilder.MakeButton(cBtnRow, "CancelQuitButton", "CANCEL", BtnBack, 44);
+        confirmGO.SetActive(false);
+
         // Wire references via SerializedObject
         SerializedObject so = new SerializedObject(target);
+        so.FindProperty("_canvas").objectReferenceValue = canvas;
         so.FindProperty("_pauseRoot").objectReferenceValue = rootGroup;
         so.FindProperty("_continueButton").objectReferenceValue = continueBtn;
         so.FindProperty("_settingsButton").objectReferenceValue = settingsBtn;
@@ -510,6 +605,11 @@ public static class PauseMenuBuilder
         so.FindProperty("_settingsPanel").objectReferenceValue = settingsPanelGO;
         so.FindProperty("_backFromSettingsButton").objectReferenceValue = backBtn;
         so.FindProperty("_backgroundOverlay").objectReferenceValue = overlay;
+        so.FindProperty("_confirmDialog").objectReferenceValue = confirmGO;
+        so.FindProperty("_confirmQuitButton").objectReferenceValue = confirmQuitBtn;
+        so.FindProperty("_cancelQuitButton").objectReferenceValue = cancelQuitBtn;
+        so.FindProperty("_masterVolumeSlider").objectReferenceValue = slider;
+        so.FindProperty("_fullscreenToggle").objectReferenceValue = toggle;
         so.ApplyModifiedProperties();
 
         EditorUtility.SetDirty(target);
@@ -532,11 +632,13 @@ public static class RoomCodeHUDBuilder
     {
         Undo.RegisterFullObjectHierarchyUndo(target.gameObject, "Build Room Code HUD");
 
-        Canvas canvas = target.GetComponent<Canvas>() ?? target.gameObject.AddComponent<Canvas>();
+        Canvas canvas = target.GetComponent<Canvas>();
+        if (canvas == null) canvas = target.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 200;
 
-        CanvasScaler scaler = target.GetComponent<CanvasScaler>() ?? target.gameObject.AddComponent<CanvasScaler>();
+        CanvasScaler scaler = target.GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = target.gameObject.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
@@ -544,13 +646,14 @@ public static class RoomCodeHUDBuilder
         if (target.GetComponent<GraphicRaycaster>() == null)
             target.gameObject.AddComponent<GraphicRaycaster>();
 
-        CanvasGroup hudGroup = target.GetComponent<CanvasGroup>() ?? target.gameObject.AddComponent<CanvasGroup>();
+        CanvasGroup hudGroup = target.GetComponent<CanvasGroup>();
+        if (hudGroup == null) hudGroup = target.gameObject.AddComponent<CanvasGroup>();
         hudGroup.alpha = 0f;
 
         // Clear existing generated children
         while (target.transform.childCount > 0)
         {
-            Undo.DestroyObjectImmediate(target.transform.GetChild(0).gameObject);
+            Object.DestroyImmediate(target.transform.GetChild(0).gameObject);
         }
 
         // Top-left HUD Card
@@ -611,6 +714,7 @@ public static class RoomCodeHUDBuilder
 
         // Wire references
         SerializedObject so = new SerializedObject(target);
+        so.FindProperty("_canvas").objectReferenceValue = canvas;
         so.FindProperty("_hudGroup").objectReferenceValue = hudGroup;
         so.FindProperty("_roomCodeText").objectReferenceValue = codeText;
         so.FindProperty("_modeLabel").objectReferenceValue = modeText;
@@ -639,13 +743,29 @@ public static class AutoSceneUIInstaller
             if (!EditorApplication.isPlayingOrWillChangePlaymode &&
                 UnityEngine.SceneManagement.SceneManager.GetActiveScene().isLoaded)
             {
-                var lobby = Object.FindFirstObjectByType<LobbyUI>();
-                if (lobby == null)
+                if (NeedsBuild())
                 {
                     BuildAll();
                 }
             }
         };
+    }
+
+    public static bool NeedsBuild()
+    {
+        var lobby = Object.FindFirstObjectByType<LobbyUI>();
+        if (lobby == null || lobby.transform.childCount == 0) return true;
+
+        var pause = Object.FindFirstObjectByType<PauseMenu>();
+        if (pause == null || pause.transform.childCount == 0) return true;
+
+        var hud = Object.FindFirstObjectByType<RoomCodeHUD>();
+        if (hud == null || hud.transform.childCount == 0) return true;
+
+        var es = Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
+        if (es == null) return true;
+
+        return false;
     }
 
     [MenuItem("CoopGame/Build All UI in Scene")]
@@ -660,9 +780,11 @@ public static class AutoSceneUIInstaller
         if (scene.isLoaded)
         {
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
+            UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
         }
 
-        Debug.Log("[AutoSceneUIInstaller] All UI (LobbyUI, PauseMenu, RoomCodeHUD, EventSystem) built and wired in scene! ✅");
+        Debug.Log("[AutoSceneUIInstaller] All UI (LobbyUI, PauseMenu, RoomCodeHUD, EventSystem) built, wired, and saved to scene! ✅");
     }
 
     private static void EnsureEventSystem()

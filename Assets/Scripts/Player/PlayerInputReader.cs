@@ -83,6 +83,25 @@ namespace CoopGame.Player
 
         private void Update()
         {
+            // 1. If game is paused, suppress ALL gameplay inputs completely
+            if (CoopGame.Network.PauseMenu.IsPaused)
+            {
+                MoveInput = Vector2.zero;
+                LookInput = Vector2.zero;
+                SprintHeld = false;
+                GrabLeftHeld = false;
+                GrabRightHeld = false;
+                InteractHeld = false;
+                ThrowHeld = false;
+
+                if (_wasGrabbing)
+                {
+                    OnGrabEnded?.Invoke();
+                    _wasGrabbing = false;
+                }
+                return;
+            }
+
             if (_moveAction != null)
             {
                 MoveInput = _moveAction.ReadValue<Vector2>();
@@ -98,14 +117,18 @@ namespace CoopGame.Player
                 SprintHeld = _sprintAction.IsPressed();
             }
 
+            // Prevent mouse clicks on UI elements from triggering hand grabs / throws in-game
+            bool pointerOverUI = (UnityEngine.EventSystems.EventSystem.current != null &&
+                                  UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject());
+
             if (_grabLeftAction != null)
             {
-                GrabLeftHeld = _grabLeftAction.IsPressed();
+                GrabLeftHeld = !pointerOverUI && _grabLeftAction.IsPressed();
             }
 
             if (_grabRightAction != null)
             {
-                GrabRightHeld = _grabRightAction.IsPressed();
+                GrabRightHeld = !pointerOverUI && _grabRightAction.IsPressed();
             }
 
             if (_interactAction != null)
@@ -115,7 +138,7 @@ namespace CoopGame.Player
 
             if (_throwAction != null)
             {
-                ThrowHeld = _throwAction.IsPressed();
+                ThrowHeld = !pointerOverUI && _throwAction.IsPressed();
             }
 
             // Detect transition between Grabbing and Released
@@ -231,23 +254,27 @@ namespace CoopGame.Player
 
         private void OnThrowPerformedCallback(InputAction.CallbackContext context)
         {
+            if (CoopGame.Network.PauseMenu.IsPaused) return;
             ThrowTriggered = true;
             OnThrowPerformed?.Invoke();
         }
 
         private void OnThrowCanceledCallback(InputAction.CallbackContext context)
         {
+            if (CoopGame.Network.PauseMenu.IsPaused) return;
             OnThrowReleased?.Invoke();
         }
 
         private void OnJumpTriggered(InputAction.CallbackContext context)
         {
+            if (CoopGame.Network.PauseMenu.IsPaused) return;
             JumpTriggered = true;
             OnJumpPerformed?.Invoke();
         }
 
         private void OnInteractTriggered(InputAction.CallbackContext context)
         {
+            if (CoopGame.Network.PauseMenu.IsPaused) return;
             InteractTriggered = true;
             OnInteractPerformed?.Invoke();
         }

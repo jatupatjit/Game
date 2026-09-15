@@ -47,6 +47,93 @@ namespace CoopGame.Player
             if (_cameraController == null) _cameraController = GetComponent<PlayerCameraController>();
             if (_characterController == null) _characterController = GetComponent<CharacterController>();
             if (_playerCarry == null) _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+
+            EnsureCharacterModelAttached();
+        }
+
+        /// <summary>
+        /// Ensures the No bone_character model is attached as CharacterVisual,
+        /// disables placeholder capsule rendering, and configures BonelessCharacterPhysics.
+        /// </summary>
+        public void EnsureCharacterModelAttached()
+        {
+            // 1. Disable root capsule MeshRenderer if present
+            MeshRenderer rootMR = GetComponent<MeshRenderer>();
+            if (rootMR != null) rootMR.enabled = false;
+
+            Transform visualT = transform.Find("CharacterVisual");
+            if (visualT == null)
+            {
+                GameObject modelAsset = Resources.Load<GameObject>("No bone_character");
+#if UNITY_EDITOR
+                if (modelAsset == null)
+                {
+                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/No bone_character.fbx");
+                }
+#endif
+                if (modelAsset != null)
+                {
+                    GameObject visualGO = Instantiate(modelAsset, transform);
+                    visualGO.name = "CharacterVisual";
+                    visualT = visualGO.transform;
+
+                    // Compute model bounds to fit CharacterController (height ~2m, bottom at y = -1.0)
+                    Renderer[] rends = visualGO.GetComponentsInChildren<Renderer>();
+                    if (rends.Length > 0)
+                    {
+                        Bounds b = rends[0].bounds;
+                        for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+
+                        float currentHeight = b.size.y;
+                        float scaleFactor = (currentHeight > 0.01f) ? (1.95f / currentHeight) : 1f;
+                        visualGO.transform.localScale = Vector3.one * scaleFactor;
+
+                        // Recompute bounds with scale to align feet to y = -1.0
+                        b = rends[0].bounds;
+                        for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+
+                        float offsetY = -1.0f - b.min.y;
+                        float offsetX = -b.center.x;
+                        float offsetZ = -b.center.z;
+                        visualGO.transform.localPosition = new Vector3(offsetX, offsetY, offsetZ);
+                        visualGO.transform.localRotation = Quaternion.identity;
+                    }
+                }
+            }
+
+            if (visualT != null)
+            {
+                // Ensure BonelessCharacterPhysics is attached for Human Fall Flat style wobbly physics
+                if (visualT.GetComponent<BonelessCharacterPhysics>() == null)
+                {
+                    visualT.gameObject.AddComponent<BonelessCharacterPhysics>();
+                }
+
+                // Locate the main body renderer (body.002) for player color tinting
+                Renderer[] childRends = visualT.GetComponentsInChildren<Renderer>();
+                Renderer bodyRend = null;
+                foreach (var r in childRends)
+                {
+                    if (r.name.Contains("body") || r.name.Contains("BODY"))
+                    {
+                        bodyRend = r;
+                        break;
+                    }
+                }
+                if (bodyRend == null && childRends.Length > 0)
+                {
+                    bodyRend = childRends[0];
+                }
+
+                if (bodyRend != null)
+                {
+                    _playerRenderer = bodyRend;
+                    if (_cameraController != null)
+                    {
+                        _cameraController.SetPlayerBodyRenderer(bodyRend);
+                    }
+                }
+            }
         }
 
         public override void OnNetworkSpawn()
@@ -68,6 +155,9 @@ namespace CoopGame.Player
                 {
                     _cameraController.SetOwnershipState(true);
                 }
+
+                // Ensure PauseMenu UI is present for the local player
+                CoopGame.Network.PauseMenu.EnsureInstance();
 
                 // If a default scene camera exists, disable it so it doesn't conflict with the player camera
                 Camera[] sceneCameras = FindObjectsByType<Camera>();

@@ -168,8 +168,21 @@ namespace CoopGame.Player
 
         public bool IsCursorLocked => _isCursorLocked;
 
+        public void SetPlayerBodyRenderer(Renderer rend) => _playerBodyRenderer = rend;
+
+        public static PlayerCameraController LocalInstance { get; private set; }
+
         public void SetOwnershipState(bool isOwner)
         {
+            if (isOwner)
+            {
+                LocalInstance = this;
+            }
+            else if (LocalInstance == this)
+            {
+                LocalInstance = null;
+            }
+
             if (_playerCamera != null)
             {
                 _playerCamera.enabled = isOwner;
@@ -192,6 +205,8 @@ namespace CoopGame.Player
             }
         }
 
+
+
         public void SetCursorLock(bool locked)
         {
             _isCursorLocked = locked;
@@ -201,8 +216,9 @@ namespace CoopGame.Player
 
         public void UpdateLookInput(Vector2 lookDelta)
         {
-            // Do not rotate camera when cursor is unlocked to allow smooth UI clicking
-            if (!_isCursorLocked) return;
+            // Do not rotate camera when cursor is unlocked (e.g. pause menu or UI active)
+            if (Cursor.lockState != CursorLockMode.Locked) return;
+            _isCursorLocked = true;
 
             _yaw += lookDelta.x * _sensitivity;
             _pitch -= lookDelta.y * _sensitivity;
@@ -216,13 +232,32 @@ namespace CoopGame.Player
         }
 
         /// <summary>
-        /// Press 'Escape' to toggle cursor unlock (for clicking HUD/menus) and lock.
+        /// Handles cursor locking. If PauseMenu is active, PauseMenu handles ESC.
+        /// If cursor was unlocked and player clicks back into the game viewport (not on UI), re-lock cursor.
         /// </summary>
         private void HandleCursorToggle()
         {
-            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            // If game is not paused and cursor is currently unlocked, clicking on the game viewport re-locks cursor
+            if (Cursor.lockState != CursorLockMode.Locked && !CoopGame.Network.PauseMenu.IsPaused)
             {
-                SetCursorLock(!_isCursorLocked);
+                if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+                {
+                    if (UnityEngine.EventSystems.EventSystem.current == null ||
+                        !UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+                    {
+                        SetCursorLock(true);
+                        return;
+                    }
+                }
+            }
+
+            // Fallback ESC toggle if no PauseMenu exists in scene
+            if (CoopGame.Network.PauseMenu.Instance == null)
+            {
+                if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+                {
+                    SetCursorLock(!_isCursorLocked);
+                }
             }
         }
 
@@ -340,6 +375,10 @@ namespace CoopGame.Player
 
         private void OnDestroy()
         {
+            if (LocalInstance == this)
+            {
+                LocalInstance = null;
+            }
             SetCursorLock(false);
             if (_playerCamera != null)
             {
