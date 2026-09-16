@@ -6,13 +6,13 @@
 - **Physics**: All physics calculations and Rigidbody modifications must run strictly in `FixedUpdate()`.
 - **Direct Editor Control**: Drive live Editor state via Unity MCP / CLI rather than manual `.unity` / `.prefab` YAML file manipulation.
 
-## 2. Progressive Disclosure
-- Refer to [`.agents/context_handoff.md`](.agents/context_handoff.md) for full system architecture, player mechanics (movement, climbing, lifting, procedural 2-bone IK), and resolved bug references.
+## 2. Progressive Disclosure & Context Auto-Load
+- **Context Auto-Load**: Always reference [`.agents/ctx.md`](.agents/ctx.md) (or `@ctx.md`) for current project state, active architecture, player mechanics (movement, climbing, lifting, procedural 2-bone IK), and resolved bug references.
 
 ## 3. Autonomous Verification & Error Resolution
 - You have full permission to autonomously use Unity MCP tools (`get_console_logs`, `recompile`, `eval`, `editor_play`, etc.) to diagnose console errors, apply fixes, and re-test until compilation passes 100% cleanly without pausing to ask for approval at each step.
 - **Git Policy**: Do NOT run `git commit` or `git push` unless explicitly requested.
 
 ## 4. Session Persistence Rule
-- At the conclusion of each milestone or major bug fix, automatically summarize the latest changes, resolved issues, and next tasks directly into [`.agents/context_handoff.md`](.agents/context_handoff.md). Keep it concise under 300 words using bullet points.
+- At the conclusion of each milestone or major bug fix, automatically summarize the latest changes, resolved issues, and next tasks directly into [`.agents/ctx.md`](.agents/ctx.md) and keep it mirrored to `ctx.md`. Keep it concise under 300 words using bullet points.
 
