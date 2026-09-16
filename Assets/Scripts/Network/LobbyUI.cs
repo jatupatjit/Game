@@ -47,6 +47,7 @@ namespace CoopGame.Network
         [Header("Connecting Panel")]
         [SerializeField] private GameObject _connectingPanel;
         [SerializeField] private Text       _connectingLabel;
+        [SerializeField] private Button     _cancelConnectingButton;
 
         [Header("Settings")]
         [SerializeField] private float _fadeSpeed            = 3.5f;
@@ -73,16 +74,17 @@ namespace CoopGame.Network
 
         private void Start()
         {
-            if (_hostRoomMenuButton    != null) _hostRoomMenuButton.onClick.AddListener(OnHostRoomMenuClicked);
-            if (_settingsMenuButton    != null) _settingsMenuButton.onClick.AddListener(OnSettingsMenuClicked);
-            if (_quitGameButton        != null) _quitGameButton.onClick.AddListener(OnQuitGameClicked);
-            if (_hostButton            != null) _hostButton.onClick.AddListener(OnHostClicked);
-            if (_joinButton            != null) _joinButton.onClick.AddListener(OnJoinMenuClicked);
+            if (_hostRoomMenuButton     != null) _hostRoomMenuButton.onClick.AddListener(OnHostRoomMenuClicked);
+            if (_settingsMenuButton     != null) _settingsMenuButton.onClick.AddListener(OnSettingsMenuClicked);
+            if (_quitGameButton         != null) _quitGameButton.onClick.AddListener(OnQuitGameClicked);
+            if (_hostButton             != null) _hostButton.onClick.AddListener(OnHostClicked);
+            if (_joinButton             != null) _joinButton.onClick.AddListener(OnJoinMenuClicked);
             if (_backFromHostRoomButton != null) _backFromHostRoomButton.onClick.AddListener(OnBackToMainMenu);
-            if (_confirmJoinButton     != null) _confirmJoinButton.onClick.AddListener(OnConfirmJoin);
-            if (_pasteCodeButton       != null) _pasteCodeButton.onClick.AddListener(OnPasteCode);
-            if (_backFromJoinButton    != null) _backFromJoinButton.onClick.AddListener(OnBackToHostRoom);
+            if (_confirmJoinButton      != null) _confirmJoinButton.onClick.AddListener(OnConfirmJoin);
+            if (_pasteCodeButton        != null) _pasteCodeButton.onClick.AddListener(OnPasteCode);
+            if (_backFromJoinButton     != null) _backFromJoinButton.onClick.AddListener(OnBackToHostRoom);
             if (_backFromSettingsButton != null) _backFromSettingsButton.onClick.AddListener(OnBackToMainMenu);
+            if (_cancelConnectingButton != null) _cancelConnectingButton.onClick.AddListener(OnCancelConnecting);
 
             if (_roomCodeInput != null)
             {
@@ -127,6 +129,8 @@ namespace CoopGame.Network
             {
                 if (_currentState == MenuState.Join)
                     OnBackToHostRoom();
+                else if (_currentState == MenuState.Connecting)
+                    OnCancelConnecting();
                 else if (_currentState == MenuState.HostRoom || _currentState == MenuState.Settings)
                     OnBackToMainMenu();
             }
@@ -139,6 +143,15 @@ namespace CoopGame.Network
         private void OnJoinMenuClicked()     => ShowPanel(MenuState.Join);
         private void OnBackToMainMenu()      => ShowPanel(MenuState.Main);
         private void OnBackToHostRoom()      => ShowPanel(MenuState.HostRoom);
+        private void OnCancelConnecting()
+        {
+            var mgr = SteamLobbyManager.Instance;
+            if (mgr != null)
+            {
+                mgr.LeaveLobby();
+            }
+            ShowPanel(MenuState.Main);
+        }
 
         private void OnQuitGameClicked()
         {
@@ -388,77 +401,221 @@ namespace CoopGame.Network
 
             // Main panel
             _mainPanel = ProceduralUIUtility.MakeEmpty(card, "MainMenuPanel");
-            VL(_mainPanel, 12);
-            var (_, pBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "HostRoomMenuButton", "▶   PLAY", btnPlay, 52);
+            var mainLE = _mainPanel.AddComponent<LayoutElement>();
+            mainLE.preferredHeight = 360;
+            mainLE.flexibleHeight = 1f;
+            var mvl = _mainPanel.AddComponent<VerticalLayoutGroup>();
+            mvl.padding = new RectOffset(0, 0, 0, 0);
+            mvl.spacing = 22;
+            mvl.childControlWidth = true;
+            mvl.childControlHeight = true;
+            mvl.childForceExpandWidth = true;
+            mvl.childForceExpandHeight = false;
+            mvl.childAlignment = TextAnchor.MiddleCenter;
+
+            var (_, pBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "HostRoomMenuButton", "▶   PLAY", btnPlay, 58, 16);
             _hostRoomMenuButton = pBtn;
-            var (_, sBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "SettingsMenuButton", "⚙   SETTINGS", btnSettings, 46);
+            var (_, sBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "SettingsMenuButton", "⚙   SETTINGS", btnSettings, 52, 15);
             _settingsMenuButton = sBtn;
-            var (_, qBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "QuitGameButton", "✕   QUIT GAME", btnQuit, 42);
+
+            // Controlled breathing spacer before quit button
+            var mSpacer = ProceduralUIUtility.MakeEmpty(_mainPanel, "MainSpacer");
+            var mSpLE = mSpacer.AddComponent<LayoutElement>();
+            mSpLE.preferredHeight = 32;
+            mSpLE.flexibleHeight = 0;
+
+            var (_, qBtn) = ProceduralUIUtility.MakeButton(_mainPanel, "QuitGameButton", "✕   QUIT GAME", btnQuit, 48, 14);
             _quitGameButton = qBtn;
 
             // Host room panel
             _hostRoomPanel = ProceduralUIUtility.MakeEmpty(card, "HostRoomSubPanel");
-            VL(_hostRoomPanel, 12);
-            LE(ProceduralUIUtility.MakeText(_hostRoomPanel, "SubTitle", "SELECT PLAY MODE", 13, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 24f);
-            var (_, hBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "HostButton", "▶   HOST ROOM", btnPlay, 50);
+            var hrLE = _hostRoomPanel.AddComponent<LayoutElement>();
+            hrLE.preferredHeight = 360;
+            hrLE.flexibleHeight = 1f;
+            var hvl = _hostRoomPanel.AddComponent<VerticalLayoutGroup>();
+            hvl.padding = new RectOffset(0, 0, 0, 0);
+            hvl.spacing = 18;
+            hvl.childControlWidth = true;
+            hvl.childControlHeight = true;
+            hvl.childForceExpandWidth = true;
+            hvl.childForceExpandHeight = false;
+            hvl.childAlignment = TextAnchor.MiddleCenter;
+
+            var subT1 = ProceduralUIUtility.MakeText(_hostRoomPanel, "SubTitle", "SELECT PLAY MODE", 13, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter);
+            var subT1LE = subT1.gameObject.AddComponent<LayoutElement>();
+            subT1LE.preferredHeight = 26;
+            subT1LE.flexibleHeight = 0;
+
+            var (_, hBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "HostButton", "👑   HOST ROOM", btnPlay, 58, 16);
             _hostButton = hBtn;
-            var (_, jBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", btnJoin, 50);
+            var (_, jBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", btnJoin, 54, 15);
             _joinButton = jBtn;
-            var (_, bBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "BackFromHostRoomButton", "←   BACK", btnBack, 44);
+
+            // Controlled breathing spacer before Back button
+            var hrSpacer = ProceduralUIUtility.MakeEmpty(_hostRoomPanel, "HostSpacer");
+            var hrSpLE = hrSpacer.AddComponent<LayoutElement>();
+            hrSpLE.preferredHeight = 28;
+            hrSpLE.flexibleHeight = 0;
+
+            var (_, bBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "BackFromHostRoomButton", "←   BACK", btnBack, 48, 14);
             _backFromHostRoomButton = bBtn;
             _hostRoomPanel.SetActive(false);
 
             // Join panel
             _joinPanel = ProceduralUIUtility.MakeEmpty(card, "JoinSubPanel");
-            VL(_joinPanel, 12);
-            LE(ProceduralUIUtility.MakeText(_joinPanel, "JoinTitle", "ENTER 6-DIGIT ROOM CODE", 13, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 24f);
+            var jnLE = _joinPanel.AddComponent<LayoutElement>();
+            jnLE.preferredHeight = 360;
+            jnLE.flexibleHeight = 1f;
+            var jvl = _joinPanel.AddComponent<VerticalLayoutGroup>();
+            jvl.padding = new RectOffset(0, 0, 0, 0);
+            jvl.spacing = 18;
+            jvl.childControlWidth = true;
+            jvl.childControlHeight = true;
+            jvl.childForceExpandWidth = true;
+            jvl.childForceExpandHeight = false;
+            jvl.childAlignment = TextAnchor.MiddleCenter;
+
+            var jTitle = ProceduralUIUtility.MakeText(_joinPanel, "JoinTitle", "ENTER 6-DIGIT ROOM CODE", 13, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter);
+            var jTitleLE = jTitle.gameObject.AddComponent<LayoutElement>();
+            jTitleLE.preferredHeight = 26;
+            jTitleLE.flexibleHeight = 0;
 
             var inputRow = ProceduralUIUtility.MakeEmpty(_joinPanel, "InputRow");
-            LE(inputRow, 50f);
+            var inRowLE = inputRow.AddComponent<LayoutElement>();
+            inRowLE.preferredHeight = 54;
+            inRowLE.flexibleHeight = 0;
             var inHL = inputRow.AddComponent<HorizontalLayoutGroup>();
             inHL.spacing = 8; inHL.childControlWidth = false; inHL.childControlHeight = true; inHL.childForceExpandWidth = false; inHL.childForceExpandHeight = true;
 
-            var (inGO, cInp) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 50);
+            var (inGO, cInp) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 54);
             _roomCodeInput = cInp;
             var inRT = inGO.GetComponent<RectTransform>();
-            inRT.sizeDelta = new Vector2(270, 50);
+            inRT.sizeDelta = new Vector2(270, 54);
             var inLE = inGO.AddComponent<LayoutElement>();
-            inLE.preferredWidth = 270; inLE.preferredHeight = 50;
+            inLE.preferredWidth = 270; inLE.preferredHeight = 54;
 
-            var (pstGO, pstBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", btnSettings, 50, 13);
+            var (pstGO, pstBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", btnSettings, 54, 13);
             _pasteCodeButton = pstBtn;
             var pstRT = pstGO.GetComponent<RectTransform>();
-            pstRT.sizeDelta = new Vector2(110, 50);
+            pstRT.sizeDelta = new Vector2(110, 54);
             var pstLE = pstGO.GetComponent<LayoutElement>();
-            if (pstLE != null) { pstLE.preferredWidth = 110; pstLE.preferredHeight = 50; }
+            if (pstLE != null) { pstLE.preferredWidth = 110; pstLE.preferredHeight = 54; }
 
-            var (_, cnfBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", btnJoin, 50, 15);
+            var (_, cnfBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", btnJoin, 54, 15);
             _confirmJoinButton = cnfBtn;
+            var cnfLE = cnfBtn.GetComponent<LayoutElement>();
+            if (cnfLE != null) { cnfLE.preferredHeight = 54; cnfLE.flexibleHeight = 0; }
 
-            var (_, bckBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "BackFromJoinButton", "←   BACK", btnBack, 44, 14);
+            // Controlled breathing spacer before Back button
+            var jnSpacer = ProceduralUIUtility.MakeEmpty(_joinPanel, "JoinSpacer");
+            var jnSpLE = jnSpacer.AddComponent<LayoutElement>();
+            jnSpLE.preferredHeight = 28;
+            jnSpLE.flexibleHeight = 0;
+
+            var (_, bckBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "BackFromJoinButton", "←   BACK", btnBack, 48, 14);
             _backFromJoinButton = bckBtn;
+            var bckLE = bckBtn.GetComponent<LayoutElement>();
+            if (bckLE != null) { bckLE.preferredHeight = 48; bckLE.flexibleHeight = 0; }
             _joinPanel.SetActive(false);
 
             // Settings panel
             _settingsPanel = ProceduralUIUtility.MakeEmpty(card, "SettingsSubPanel");
-            VL(_settingsPanel, 16);
-            LE(ProceduralUIUtility.MakeText(_settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 28f);
+            var stLE = _settingsPanel.AddComponent<LayoutElement>();
+            stLE.preferredHeight = 360;
+            stLE.flexibleHeight = 1f;
+            var svl = _settingsPanel.AddComponent<VerticalLayoutGroup>();
+            svl.padding = new RectOffset(0, 0, 0, 0);
+            svl.spacing = 18;
+            svl.childControlWidth = true;
+            svl.childControlHeight = true;
+            svl.childForceExpandWidth = true;
+            svl.childForceExpandHeight = false;
+            svl.childAlignment = TextAnchor.MiddleCenter;
+
+            var stTitle = ProceduralUIUtility.MakeText(_settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter);
+            var stTitleLE = stTitle.gameObject.AddComponent<LayoutElement>();
+            stTitleLE.preferredHeight = 28;
+            stTitleLE.flexibleHeight = 0;
+
             var blank = ProceduralUIUtility.MakeEmpty(_settingsPanel, "BlankArea");
-            LE(blank, 100f);
+            var blankLE = blank.AddComponent<LayoutElement>();
+            blankLE.preferredHeight = 110;
+            blankLE.flexibleHeight = 0;
             ProceduralUIUtility.StretchFull(ProceduralUIUtility.MakeText(blank, "BlankNote", "Game audio and control settings will be configured here.", 13, FontStyle.Italic, textSecondary, TextAnchor.MiddleCenter).GetComponent<RectTransform>());
-            var (_, bStgBtn) = ProceduralUIUtility.MakeButton(_settingsPanel, "BackFromSettingsButton", "←   BACK", btnBack, 44);
+
+            // Controlled breathing spacer before Back button
+            var stSpacer = ProceduralUIUtility.MakeEmpty(_settingsPanel, "SettingsSpacer");
+            var stSpLE = stSpacer.AddComponent<LayoutElement>();
+            stSpLE.preferredHeight = 28;
+            stSpLE.flexibleHeight = 0;
+
+            var (_, bStgBtn) = ProceduralUIUtility.MakeButton(_settingsPanel, "BackFromSettingsButton", "←   BACK", btnBack, 48, 14);
             _backFromSettingsButton = bStgBtn;
+            var bStgLE = bStgBtn.GetComponent<LayoutElement>();
+            if (bStgLE != null) { bStgLE.preferredHeight = 48; bStgLE.flexibleHeight = 0; }
             _settingsPanel.SetActive(false);
 
             // Connecting panel
             _connectingPanel = ProceduralUIUtility.MakeEmpty(card, "ConnectingPanel");
-            VL(_connectingPanel, 16);
-            var sp = ProceduralUIUtility.MakeImage(_connectingPanel, "SpinnerRing", accentCyan);
-            sp.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
-            var sple = sp.gameObject.AddComponent<LayoutElement>(); sple.preferredWidth = 40; sple.preferredHeight = 40;
+            var connPanelLE = _connectingPanel.AddComponent<LayoutElement>();
+            connPanelLE.preferredHeight = 360;
+            connPanelLE.flexibleHeight = 1f;
+
+            var connVL = _connectingPanel.AddComponent<VerticalLayoutGroup>();
+            connVL.padding = new RectOffset(0, 0, 0, 0);
+            connVL.spacing = 16;
+            connVL.childControlWidth = true;
+            connVL.childControlHeight = true;
+            connVL.childForceExpandWidth = true;
+            connVL.childForceExpandHeight = false;
+            connVL.childAlignment = TextAnchor.MiddleCenter;
+
+            // Centered Spinner container
+            var spinnerContainer = ProceduralUIUtility.MakeEmpty(_connectingPanel, "SpinnerContainer");
+            var scLE = spinnerContainer.AddComponent<LayoutElement>();
+            scLE.preferredHeight = 76;
+            scLE.minHeight = 76;
+            scLE.flexibleHeight = 0;
+
+            var sp = ProceduralUIUtility.MakeImage(spinnerContainer, "SpinnerRing", accentCyan, ProceduralUIUtility.GetSpinnerRingSprite());
+            var spRT = sp.GetComponent<RectTransform>();
+            spRT.anchorMin = new Vector2(0.5f, 0.5f);
+            spRT.anchorMax = new Vector2(0.5f, 0.5f);
+            spRT.pivot = new Vector2(0.5f, 0.5f);
+            spRT.sizeDelta = new Vector2(58, 58);
+            spRT.anchoredPosition = Vector2.zero;
             sp.gameObject.AddComponent<SpinnerAnimator>();
-            _connectingLabel = ProceduralUIUtility.MakeText(_connectingPanel, "ConnectingLabel", "Connecting to room...", 15, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter);
-            LE(_connectingLabel.gameObject, 28f);
+
+            // Title
+            var titleText = ProceduralUIUtility.MakeText(_connectingPanel, "ConnectingTitle", "ENTERING GAME...", 17, FontStyle.Bold, textPrimary, TextAnchor.MiddleCenter);
+            var titleLE = titleText.gameObject.AddComponent<LayoutElement>();
+            titleLE.preferredHeight = 28;
+            titleLE.flexibleHeight = 0;
+
+            // Dynamic status label
+            _connectingLabel = ProceduralUIUtility.MakeText(_connectingPanel, "ConnectingLabel", "Creating room...", 15, FontStyle.Normal, accentCyan, TextAnchor.MiddleCenter);
+            var connLblLE = _connectingLabel.gameObject.AddComponent<LayoutElement>();
+            connLblLE.preferredHeight = 24;
+            connLblLE.flexibleHeight = 0;
+
+            // Subtitle
+            var subText = ProceduralUIUtility.MakeText(_connectingPanel, "ConnectingSub", "Initializing Steam relay network and starting host server", 12, FontStyle.Italic, textSecondary, TextAnchor.MiddleCenter);
+            var subTextLE = subText.gameObject.AddComponent<LayoutElement>();
+            subTextLE.preferredHeight = 22;
+            subTextLE.flexibleHeight = 0;
+
+            // Controlled breathing spacer before cancel button
+            var bottomSpacer = ProceduralUIUtility.MakeEmpty(_connectingPanel, "BottomSpacer");
+            var btmSpacerLE = bottomSpacer.AddComponent<LayoutElement>();
+            btmSpacerLE.preferredHeight = 24;
+            btmSpacerLE.flexibleHeight = 0;
+
+            // Cancel button
+            var (_, cancelBtn) = ProceduralUIUtility.MakeButton(_connectingPanel, "CancelConnectingButton", "←   CANCEL", btnBack, 48, 14);
+            _cancelConnectingButton = cancelBtn;
+            var cancelLE = cancelBtn.GetComponent<LayoutElement>();
+            if (cancelLE != null) { cancelLE.preferredHeight = 48; cancelLE.flexibleHeight = 0; }
+
             _connectingPanel.SetActive(false);
 
             Debug.Log("[LobbyUI] Runtime self-build complete.");

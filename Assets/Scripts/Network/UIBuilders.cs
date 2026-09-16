@@ -12,11 +12,68 @@ using UnityEditor;
 [DisallowMultipleComponent]
 public class SpinnerAnimator : MonoBehaviour
 {
-    [SerializeField] private float _speed = 180f;
+    [SerializeField] private float _speed = 260f;
 
     private void Update()
     {
         transform.Rotate(0, 0, -_speed * Time.unscaledDeltaTime);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI Button Hover & Press Animator (Runtime Component)
+// Smooth scale transitions on hover and click for modern tactile feel
+// ─────────────────────────────────────────────────────────────────────────────
+[DisallowMultipleComponent]
+public class UIButtonHover : MonoBehaviour, UnityEngine.EventSystems.IPointerEnterHandler, UnityEngine.EventSystems.IPointerExitHandler, UnityEngine.EventSystems.IPointerDownHandler, UnityEngine.EventSystems.IPointerUpHandler
+{
+    [SerializeField] private float _hoverScale = 1.025f;
+    [SerializeField] private float _downScale = 0.975f;
+    [SerializeField] private float _lerpSpeed = 18f;
+
+    private Vector3 _originalScale = Vector3.one;
+    private Vector3 _targetScale = Vector3.one;
+    private Button _button;
+
+    private void Awake()
+    {
+        _originalScale = transform.localScale;
+        _targetScale = _originalScale;
+        _button = GetComponent<Button>();
+    }
+
+    private void OnEnable()
+    {
+        transform.localScale = _originalScale;
+        _targetScale = _originalScale;
+    }
+
+    private void Update()
+    {
+        transform.localScale = Vector3.Lerp(transform.localScale, _targetScale, Time.unscaledDeltaTime * _lerpSpeed);
+    }
+
+    public void OnPointerEnter(UnityEngine.EventSystems.PointerEventData eventData)
+    {
+        if (_button != null && !_button.interactable) return;
+        _targetScale = _originalScale * _hoverScale;
+    }
+
+    public void OnPointerExit(UnityEngine.EventSystems.PointerEventData eventData)
+    {
+        _targetScale = _originalScale;
+    }
+
+    public void OnPointerDown(UnityEngine.EventSystems.PointerEventData eventData)
+    {
+        if (_button != null && !_button.interactable) return;
+        _targetScale = _originalScale * _downScale;
+    }
+
+    public void OnPointerUp(UnityEngine.EventSystems.PointerEventData eventData)
+    {
+        if (_button != null && !_button.interactable) return;
+        _targetScale = _originalScale * _hoverScale;
     }
 }
 
@@ -39,6 +96,7 @@ public static class ProceduralUIUtility
     public static readonly Color InputBg       = HexColor("#0B1120");
 
     private static Sprite _sharedRoundedSprite;
+    private static Sprite _sharedSpinnerRingSprite;
 
     public static Sprite GetRoundedSprite(int size = 64, int radius = 16)
     {
@@ -82,6 +140,69 @@ public static class ProceduralUIUtility
         return _sharedRoundedSprite;
     }
 
+    public static Sprite GetSpinnerRingSprite(int size = 128, int thickness = 14)
+    {
+        if (_sharedSpinnerRingSprite != null) return _sharedSpinnerRingSprite;
+
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp,
+            name = "T_Procedural_SpinnerRing"
+        };
+
+        float center = size * 0.5f;
+        float outerRadius = center - 2f;
+        float innerRadius = outerRadius - thickness;
+
+        Color[] pixels = new Color[size * size];
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f) - center;
+                float dy = (y + 0.5f) - center;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                // Anti-aliased ring mask
+                float ringAlpha = Mathf.Clamp01((dist - (innerRadius - 1.5f)) / 1.5f) *
+                                  Mathf.Clamp01(((outerRadius + 1.5f) - dist) / 1.5f);
+
+                if (ringAlpha <= 0f)
+                {
+                    pixels[y * size + x] = Color.clear;
+                    continue;
+                }
+
+                // Angle from 0 to 360 degrees (0 = right, 90 = top)
+                float angle = Mathf.Atan2(dy, dx) * Mathf.Rad2Deg;
+                if (angle < 0f) angle += 360f;
+
+                // Comet arc: 0 to 280 degrees, gap at 280 to 360
+                float arcLength = 280f;
+                float arcAlpha = 0f;
+
+                if (angle <= arcLength)
+                {
+                    float fraction = angle / arcLength;
+                    float tail = Mathf.Pow(1f - fraction, 1.2f);
+                    float head = Mathf.Clamp01(angle / 18f);
+                    arcAlpha = head * tail;
+                }
+
+                float finalAlpha = ringAlpha * arcAlpha;
+                pixels[y * size + x] = new Color(1f, 1f, 1f, finalAlpha);
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+
+        _sharedSpinnerRingSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+        return _sharedSpinnerRingSprite;
+    }
+
     public static Font GetDefaultFont()
     {
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -114,7 +235,7 @@ public static class ProceduralUIUtility
         return go;
     }
 
-    public static Image MakeImage(GameObject parent, string name, Color color)
+    public static Image MakeImage(GameObject parent, string name, Color color, Sprite sprite = null)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent.transform, false);
@@ -123,6 +244,11 @@ public static class ProceduralUIUtility
 #endif
         var img = go.AddComponent<Image>();
         img.color = color;
+        if (sprite != null)
+        {
+            img.sprite = sprite;
+            img.type = Image.Type.Simple;
+        }
         return img;
     }
 
@@ -173,6 +299,7 @@ public static class ProceduralUIUtility
 #endif
         var rt = go.AddComponent<RectTransform>();
         rt.sizeDelta = new Vector2(0, height);
+        rt.pivot = new Vector2(0.5f, 0.5f);
         var le = go.AddComponent<LayoutElement>();
         le.preferredHeight = height;
 
@@ -184,12 +311,14 @@ public static class ProceduralUIUtility
         var btn = go.AddComponent<Button>();
         var colors = btn.colors;
         colors.normalColor = bgColor;
-        colors.highlightedColor = Color.Lerp(bgColor, Color.white, 0.22f);
-        colors.pressedColor = Color.Lerp(bgColor, Color.black, 0.25f);
+        colors.highlightedColor = Color.Lerp(bgColor, Color.white, 0.28f);
+        colors.pressedColor = Color.Lerp(bgColor, Color.black, 0.30f);
         colors.selectedColor = bgColor;
-        colors.fadeDuration = 0.06f;
+        colors.fadeDuration = 0.08f;
         btn.colors = colors;
         btn.targetGraphic = img;
+
+        go.AddComponent<UIButtonHover>();
 
         var lbl = MakeText(go, "Label", label, fontSize, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
         StretchFull(lbl.GetComponent<RectTransform>());
@@ -313,55 +442,91 @@ public static class LobbyUIBuilder
 
         // ── 5. MAIN MENU PANEL (PLAY / SETTINGS / QUIT) ───────────────────────
         var mainPanel = ProceduralUIUtility.MakeEmpty(cardGO, "MainMenuPanel");
+        var mainLE = mainPanel.AddComponent<LayoutElement>();
+        mainLE.preferredHeight = 360;
+        mainLE.flexibleHeight = 1f;
+
         var mainVL = mainPanel.AddComponent<VerticalLayoutGroup>();
-        mainVL.spacing = 12;
+        mainVL.padding = new RectOffset(0, 0, 0, 0);
+        mainVL.spacing = 22;
         mainVL.childControlWidth = true;
         mainVL.childControlHeight = true;
         mainVL.childForceExpandWidth = true;
         mainVL.childForceExpandHeight = false;
-        mainVL.childAlignment = TextAnchor.UpperCenter;
+        mainVL.childAlignment = TextAnchor.MiddleCenter;
 
-        var (_, hostRoomBtn) = ProceduralUIUtility.MakeButton(mainPanel, "HostRoomMenuButton", "▶   PLAY", ProceduralUIUtility.ButtonPlay, 52);
-        var (_, settingsBtn) = ProceduralUIUtility.MakeButton(mainPanel, "SettingsMenuButton", "⚙   SETTINGS", ProceduralUIUtility.ButtonSlate, 46);
-        var (_, quitBtn)     = ProceduralUIUtility.MakeButton(mainPanel, "QuitGameButton", "✕   QUIT GAME", ProceduralUIUtility.ButtonQuit, 42);
+        var (_, hostRoomBtn) = ProceduralUIUtility.MakeButton(mainPanel, "HostRoomMenuButton", "▶   PLAY", ProceduralUIUtility.ButtonPlay, 58, 16);
+        var (_, settingsBtn) = ProceduralUIUtility.MakeButton(mainPanel, "SettingsMenuButton", "⚙   SETTINGS", ProceduralUIUtility.ButtonSlate, 52, 15);
+
+        // Controlled breathing spacer before quit button
+        var mainSpacer = ProceduralUIUtility.MakeEmpty(mainPanel, "MainSpacer");
+        var mainSpacerLE = mainSpacer.AddComponent<LayoutElement>();
+        mainSpacerLE.preferredHeight = 32;
+        mainSpacerLE.flexibleHeight = 0;
+
+        var (_, quitBtn)     = ProceduralUIUtility.MakeButton(mainPanel, "QuitGameButton", "✕   QUIT GAME", ProceduralUIUtility.ButtonQuit, 48, 14);
+        var quitLE = quitBtn.GetComponent<LayoutElement>();
+        if (quitLE != null) { quitLE.preferredHeight = 48; quitLE.flexibleHeight = 0; }
 
         // ── 6. PLAY / HOST ROOM SUB-PANEL (Host / Join / Back) ────────────────
         var hostRoomPanel = ProceduralUIUtility.MakeEmpty(cardGO, "HostRoomSubPanel");
+        var hostRoomLE = hostRoomPanel.AddComponent<LayoutElement>();
+        hostRoomLE.preferredHeight = 360;
+        hostRoomLE.flexibleHeight = 1f;
+
         var hostRoomVL = hostRoomPanel.AddComponent<VerticalLayoutGroup>();
-        hostRoomVL.spacing = 12;
+        hostRoomVL.padding = new RectOffset(0, 0, 0, 0);
+        hostRoomVL.spacing = 18;
         hostRoomVL.childControlWidth = true;
         hostRoomVL.childControlHeight = true;
         hostRoomVL.childForceExpandWidth = true;
         hostRoomVL.childForceExpandHeight = false;
-        hostRoomVL.childAlignment = TextAnchor.UpperCenter;
+        hostRoomVL.childAlignment = TextAnchor.MiddleCenter;
 
         var subTitle1 = ProceduralUIUtility.MakeText(hostRoomPanel, "SubTitle", "SELECT PLAY MODE", 13, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var subTitle1LE = subTitle1.gameObject.AddComponent<LayoutElement>();
-        subTitle1LE.preferredHeight = 24;
+        subTitle1LE.preferredHeight = 26;
+        subTitle1LE.flexibleHeight = 0;
 
-        var (_, hostGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "HostButton", "▶   HOST ROOM", ProceduralUIUtility.ButtonPlay, 50);
-        var (_, joinGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", ProceduralUIUtility.ButtonJoin, 50);
-        var (_, backFromHostBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "BackFromHostRoomButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 44);
+        var (_, hostGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "HostButton", "👑   HOST ROOM", ProceduralUIUtility.ButtonPlay, 58, 16);
+        var (_, joinGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", ProceduralUIUtility.ButtonJoin, 54, 15);
+
+        // Controlled breathing spacer before Back button
+        var hostSpacer = ProceduralUIUtility.MakeEmpty(hostRoomPanel, "HostSpacer");
+        var hostSpacerLE = hostSpacer.AddComponent<LayoutElement>();
+        hostSpacerLE.preferredHeight = 28;
+        hostSpacerLE.flexibleHeight = 0;
+
+        var (_, backFromHostBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "BackFromHostRoomButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 48, 14);
+        var backHostLE = backFromHostBtn.GetComponent<LayoutElement>();
+        if (backHostLE != null) { backHostLE.preferredHeight = 48; backHostLE.flexibleHeight = 0; }
         hostRoomPanel.SetActive(false);
 
         // ── 7. JOIN ROOM SUB-PANEL (Input + Paste Row / Join Button / Back) ────
         var joinPanel = ProceduralUIUtility.MakeEmpty(cardGO, "JoinSubPanel");
+        var joinPanelLE = joinPanel.AddComponent<LayoutElement>();
+        joinPanelLE.preferredHeight = 360;
+        joinPanelLE.flexibleHeight = 1f;
+
         var joinVL = joinPanel.AddComponent<VerticalLayoutGroup>();
-        joinVL.spacing = 12;
+        joinVL.padding = new RectOffset(0, 0, 0, 0);
+        joinVL.spacing = 18;
         joinVL.childControlWidth = true;
         joinVL.childControlHeight = true;
         joinVL.childForceExpandWidth = true;
         joinVL.childForceExpandHeight = false;
-        joinVL.childAlignment = TextAnchor.UpperCenter;
+        joinVL.childAlignment = TextAnchor.MiddleCenter;
 
         var subTitle2 = ProceduralUIUtility.MakeText(joinPanel, "JoinTitle", "ENTER 6-DIGIT ROOM CODE", 13, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var subTitle2LE = subTitle2.gameObject.AddComponent<LayoutElement>();
-        subTitle2LE.preferredHeight = 24;
+        subTitle2LE.preferredHeight = 26;
+        subTitle2LE.flexibleHeight = 0;
 
         // Input + Paste Row (Horizontal)
         var inputRow = ProceduralUIUtility.MakeEmpty(joinPanel, "InputRow");
         var inputRowLE = inputRow.AddComponent<LayoutElement>();
-        inputRowLE.preferredHeight = 50;
+        inputRowLE.preferredHeight = 54;
+        inputRowLE.flexibleHeight = 0;
         var inputRowHL = inputRow.AddComponent<HorizontalLayoutGroup>();
         inputRowHL.spacing = 8;
         inputRowHL.childControlWidth = false;
@@ -369,70 +534,134 @@ public static class LobbyUIBuilder
         inputRowHL.childForceExpandWidth = false;
         inputRowHL.childForceExpandHeight = true;
 
-        var (inputGO, codeInput) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 50);
+        var (inputGO, codeInput) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 54);
         var inputRT = inputGO.GetComponent<RectTransform>();
-        inputRT.sizeDelta = new Vector2(270, 50);
+        inputRT.sizeDelta = new Vector2(270, 54);
         var inputLE = inputGO.AddComponent<LayoutElement>();
         inputLE.preferredWidth = 270;
-        inputLE.preferredHeight = 50;
+        inputLE.preferredHeight = 54;
 
-        var (pasteGO, pasteBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", ProceduralUIUtility.ButtonSlate, 50, 13);
+        var (pasteGO, pasteBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", ProceduralUIUtility.ButtonSlate, 54, 13);
         var pasteRT = pasteGO.GetComponent<RectTransform>();
-        pasteRT.sizeDelta = new Vector2(110, 50);
+        pasteRT.sizeDelta = new Vector2(110, 54);
         var pasteLE = pasteGO.GetComponent<LayoutElement>();
-        if (pasteLE != null) { pasteLE.preferredWidth = 110; pasteLE.preferredHeight = 50; }
+        if (pasteLE != null) { pasteLE.preferredWidth = 110; pasteLE.preferredHeight = 54; }
 
         // Primary Join Button (Full width)
-        var (_, confirmJoinBtn) = ProceduralUIUtility.MakeButton(joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", ProceduralUIUtility.ButtonJoin, 50, 15);
+        var (_, confirmJoinBtn) = ProceduralUIUtility.MakeButton(joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", ProceduralUIUtility.ButtonJoin, 54, 15);
+        var confirmLE = confirmJoinBtn.GetComponent<LayoutElement>();
+        if (confirmLE != null) { confirmLE.preferredHeight = 54; confirmLE.flexibleHeight = 0; }
+
+        // Controlled breathing spacer before Back button
+        var joinSpacer = ProceduralUIUtility.MakeEmpty(joinPanel, "JoinSpacer");
+        var joinSpacerLE = joinSpacer.AddComponent<LayoutElement>();
+        joinSpacerLE.preferredHeight = 28;
+        joinSpacerLE.flexibleHeight = 0;
 
         // Back Button
-        var (_, backFromJoinBtn)= ProceduralUIUtility.MakeButton(joinPanel, "BackFromJoinButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 44, 14);
+        var (_, backFromJoinBtn)= ProceduralUIUtility.MakeButton(joinPanel, "BackFromJoinButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 48, 14);
+        var backJoinLE = backFromJoinBtn.GetComponent<LayoutElement>();
+        if (backJoinLE != null) { backJoinLE.preferredHeight = 48; backJoinLE.flexibleHeight = 0; }
         joinPanel.SetActive(false);
 
         // ── 8. SETTINGS SUB-PANEL ─────────────────────────────────────────────
         var settingsPanel = ProceduralUIUtility.MakeEmpty(cardGO, "SettingsSubPanel");
+        var settingsLE = settingsPanel.AddComponent<LayoutElement>();
+        settingsLE.preferredHeight = 360;
+        settingsLE.flexibleHeight = 1f;
+
         var settingsVL = settingsPanel.AddComponent<VerticalLayoutGroup>();
-        settingsVL.spacing = 16;
+        settingsVL.padding = new RectOffset(0, 0, 0, 0);
+        settingsVL.spacing = 18;
         settingsVL.childControlWidth = true;
         settingsVL.childControlHeight = true;
         settingsVL.childForceExpandWidth = true;
         settingsVL.childForceExpandHeight = false;
-        settingsVL.childAlignment = TextAnchor.UpperCenter;
+        settingsVL.childAlignment = TextAnchor.MiddleCenter;
 
         var sTitle = ProceduralUIUtility.MakeText(settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var sTitleLE = sTitle.gameObject.AddComponent<LayoutElement>();
         sTitleLE.preferredHeight = 28;
+        sTitleLE.flexibleHeight = 0;
 
         var blankArea = ProceduralUIUtility.MakeEmpty(settingsPanel, "BlankSettingsArea");
         var blankLE = blankArea.AddComponent<LayoutElement>();
-        blankLE.preferredHeight = 100;
+        blankLE.preferredHeight = 110;
+        blankLE.flexibleHeight = 0;
         var blankText = ProceduralUIUtility.MakeText(blankArea, "BlankNote", "Game audio and control settings will be configured here.", 13, FontStyle.Italic, ProceduralUIUtility.TextSecondary, TextAnchor.MiddleCenter);
         ProceduralUIUtility.StretchFull(blankText.GetComponent<RectTransform>());
 
-        var (_, backFromSettingsBtn) = ProceduralUIUtility.MakeButton(settingsPanel, "BackFromSettingsButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 44);
+        // Controlled breathing spacer before Back button
+        var settingsSpacer = ProceduralUIUtility.MakeEmpty(settingsPanel, "SettingsSpacer");
+        var settingsSpacerLE = settingsSpacer.AddComponent<LayoutElement>();
+        settingsSpacerLE.preferredHeight = 28;
+        settingsSpacerLE.flexibleHeight = 0;
+
+        var (_, backFromSettingsBtn) = ProceduralUIUtility.MakeButton(settingsPanel, "BackFromSettingsButton", "←   BACK", ProceduralUIUtility.ButtonSlate, 48, 14);
+        var backSettingsLE = backFromSettingsBtn.GetComponent<LayoutElement>();
+        if (backSettingsLE != null) { backSettingsLE.preferredHeight = 48; backSettingsLE.flexibleHeight = 0; }
         settingsPanel.SetActive(false);
 
         // ── 9. CONNECTING PANEL ───────────────────────────────────────────────
         var connectingPanel = ProceduralUIUtility.MakeEmpty(cardGO, "ConnectingPanel");
+        var connPanelLE = connectingPanel.AddComponent<LayoutElement>();
+        connPanelLE.preferredHeight = 360;
+        connPanelLE.flexibleHeight = 1f;
+
         var connVL = connectingPanel.AddComponent<VerticalLayoutGroup>();
+        connVL.padding = new RectOffset(0, 0, 0, 0);
         connVL.spacing = 16;
         connVL.childControlWidth = true;
         connVL.childControlHeight = true;
         connVL.childForceExpandWidth = true;
         connVL.childForceExpandHeight = false;
-        connVL.childAlignment = TextAnchor.UpperCenter;
+        connVL.childAlignment = TextAnchor.MiddleCenter;
 
-        var spinnerGO = ProceduralUIUtility.MakeImage(connectingPanel, "SpinnerRing", ProceduralUIUtility.AccentCyan);
+        // Centered Spinner container to prevent stretching
+        var spinnerContainer = ProceduralUIUtility.MakeEmpty(connectingPanel, "SpinnerContainer");
+        var scLE = spinnerContainer.AddComponent<LayoutElement>();
+        scLE.preferredHeight = 76;
+        scLE.minHeight = 76;
+        scLE.flexibleHeight = 0;
+
+        var spinnerGO = ProceduralUIUtility.MakeImage(spinnerContainer, "SpinnerRing", ProceduralUIUtility.AccentCyan, ProceduralUIUtility.GetSpinnerRingSprite());
         var spinnerRT = spinnerGO.GetComponent<RectTransform>();
-        spinnerRT.sizeDelta = new Vector2(40, 40);
-        var spinnerLE = spinnerGO.gameObject.AddComponent<LayoutElement>();
-        spinnerLE.preferredWidth = 40;
-        spinnerLE.preferredHeight = 40;
+        spinnerRT.anchorMin = new Vector2(0.5f, 0.5f);
+        spinnerRT.anchorMax = new Vector2(0.5f, 0.5f);
+        spinnerRT.pivot = new Vector2(0.5f, 0.5f);
+        spinnerRT.sizeDelta = new Vector2(58, 58);
+        spinnerRT.anchoredPosition = Vector2.zero;
         spinnerGO.gameObject.AddComponent<SpinnerAnimator>();
 
-        var connectingText = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingLabel", "Connecting to room...", 15, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
+        // Title
+        var connTitle = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingTitle", "ENTERING GAME...", 17, FontStyle.Bold, ProceduralUIUtility.TextPrimary, TextAnchor.MiddleCenter);
+        var connTitleLE = connTitle.gameObject.AddComponent<LayoutElement>();
+        connTitleLE.preferredHeight = 28;
+        connTitleLE.flexibleHeight = 0;
+
+        // Dynamic status text
+        var connectingText = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingLabel", "Creating room...", 15, FontStyle.Normal, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleCenter);
         var connTextLE = connectingText.gameObject.AddComponent<LayoutElement>();
-        connTextLE.preferredHeight = 28;
+        connTextLE.preferredHeight = 24;
+        connTextLE.flexibleHeight = 0;
+
+        // Subtitle / hint
+        var connSub = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingSub", "Initializing Steam relay network and starting host server", 12, FontStyle.Italic, ProceduralUIUtility.TextSecondary, TextAnchor.MiddleCenter);
+        var connSubLE = connSub.gameObject.AddComponent<LayoutElement>();
+        connSubLE.preferredHeight = 22;
+        connSubLE.flexibleHeight = 0;
+
+        // Controlled breathing spacer before cancel button
+        var bottomSpacer = ProceduralUIUtility.MakeEmpty(connectingPanel, "BottomSpacer");
+        var btmSpacerLE = bottomSpacer.AddComponent<LayoutElement>();
+        btmSpacerLE.preferredHeight = 24;
+        btmSpacerLE.flexibleHeight = 0;
+
+        // Cancel button
+        var (_, cancelConnBtn) = ProceduralUIUtility.MakeButton(connectingPanel, "CancelConnectingButton", "←   CANCEL", ProceduralUIUtility.ButtonSlate, 48, 14);
+        var cancelLE = cancelConnBtn.GetComponent<LayoutElement>();
+        if (cancelLE != null) { cancelLE.preferredHeight = 48; cancelLE.flexibleHeight = 0; }
+
         connectingPanel.SetActive(false);
 
         // ── 10. Wire references to LobbyUI via SerializedObject ───────────────
@@ -468,6 +697,7 @@ public static class LobbyUIBuilder
         // Connecting panel
         so.FindProperty("_connectingPanel").objectReferenceValue = connectingPanel;
         so.FindProperty("_connectingLabel").objectReferenceValue = connectingText;
+        so.FindProperty("_cancelConnectingButton").objectReferenceValue = cancelConnBtn;
 
         so.ApplyModifiedProperties();
         EditorUtility.SetDirty(target);
