@@ -28,18 +28,38 @@ namespace CoopGame.Player
         [SerializeField] private Transform _footR;
         [SerializeField] private Transform _hip;
 
-        [Header("Locomotion Parameters")]
-        [Tooltip("Base stride cycle frequency at walk speed")]
-        [SerializeField] private float _baseStrideFrequency = 5.5f;
+        [Header("Locomotion Animation Settings")]
+        [Tooltip("Overall animation walk speed multiplier. Adjust this slider in Inspector to make the walk animation slower or faster!")]
+        [Range(0.1f, 3.0f)]
+        [SerializeField] private float _walkAnimationSpeed = 1.0f;
+
+        [Tooltip("Base stride cycle cadence (full steps per second) at standard walk speed")]
+        [Range(0.5f, 4.0f)]
+        [SerializeField] private float _baseStrideFrequency = 2.0f;
 
         [Tooltip("Maximum thigh swing angle in degrees")]
+        [Range(10.0f, 60.0f)]
         [SerializeField] private float _maxThighAngle = 28.0f;
 
         [Tooltip("Maximum knee lift bend angle in degrees")]
+        [Range(10.0f, 60.0f)]
         [SerializeField] private float _maxKneeAngle = 32.0f;
 
         [Tooltip("Pelvis vertical bobbing amplitude in meters")]
-        [SerializeField] private float _pelvisBobAmplitude = 0.025f;
+        [Range(0.0f, 0.08f)]
+        [SerializeField] private float _pelvisBobAmplitude = 0.02f;
+
+        public float WalkAnimationSpeed
+        {
+            get => _walkAnimationSpeed;
+            set => _walkAnimationSpeed = Mathf.Max(0.01f, value);
+        }
+
+        public float BaseStrideFrequency
+        {
+            get => _baseStrideFrequency;
+            set => _baseStrideFrequency = Mathf.Max(0.1f, value);
+        }
 
         // Cached rest local rotations
         private Quaternion _initUpperLegRotL = Quaternion.identity;
@@ -137,9 +157,9 @@ namespace CoopGame.Player
 
             if (_strideWeight > 0.001f)
             {
-                // Advance stride cycle phase proportional to character speed
-                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.5f, 1.8f);
-                float stepFreq = _baseStrideFrequency * speedFactor;
+                // Advance stride cycle phase proportional to character speed and walk animation speed slider
+                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.4f, 1.8f);
+                float stepFreq = _baseStrideFrequency * speedFactor * _walkAnimationSpeed;
                 _cyclePhase += stepFreq * deltaTime * (Mathf.PI * 2.0f);
                 if (_cyclePhase > Mathf.PI * 2.0f) _cyclePhase -= Mathf.PI * 2.0f;
 

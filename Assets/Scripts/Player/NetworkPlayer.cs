@@ -146,6 +146,14 @@ namespace CoopGame.Player
                 }
                 legs.SetCharacterVisual(visualT);
                 legs.LocateBones();
+
+                // Ensure BonelessCharacterPhysics is on the CharacterVisual child
+                // (it reads transform.parent to find the root player components)
+                CoopGame.Player.BonelessCharacterPhysics boneless = visualT.GetComponent<CoopGame.Player.BonelessCharacterPhysics>();
+                if (boneless == null)
+                {
+                    boneless = visualT.gameObject.AddComponent<CoopGame.Player.BonelessCharacterPhysics>();
+                }
             }
         }
 

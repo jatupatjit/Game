@@ -262,5 +262,25 @@ namespace CoopGame.Player
             _horizontalVelocity = Vector3.zero;
             _verticalVelocity = 0f;
         }
+
+        /// <summary>
+        /// Physical interaction when CharacterController collides with Rigidbodies (e.g. carried objects, boxes).
+        /// Ensures physical push-back and prevents walking through solid objects.
+        /// </summary>
+        private void OnControllerColliderHit(ControllerColliderHit hit)
+        {
+            Rigidbody rb = hit.collider.attachedRigidbody;
+            if (rb == null || rb.isKinematic) return;
+
+            // Don't push objects below our feet to avoid affecting jump/ground stability
+            if (hit.moveDirection.y < -0.3f) return;
+
+            Vector3 pushDir = new Vector3(hit.moveDirection.x, 0f, hit.moveDirection.z);
+            if (pushDir.sqrMagnitude > 0.001f)
+            {
+                float pushForce = Mathf.Clamp(_horizontalVelocity.magnitude * 8f, 12f, 40f);
+                rb.AddForceAtPosition(pushDir.normalized * pushForce, hit.point, ForceMode.Force);
+            }
+        }
     }
 }

@@ -44,13 +44,13 @@ namespace CoopGame.CarrySystem
 
         [Header("Dynamic Vertical Lift Range (Mouse Up/Down)")]
         [Tooltip("Maximum lift height when looking all the way up (meters above feet)")]
-        [SerializeField] private float _maxLiftHeight = 1.7f;
+        [SerializeField] private float _maxLiftHeight = 2.4f;
 
         [Tooltip("Normal carry height when looking straight ahead")]
-        [SerializeField] private float _normalLiftHeight = 0.85f;
+        [SerializeField] private float _normalLiftHeight = 0.95f;
 
         [Tooltip("Minimum carry height when looking down into carts/ground")]
-        [SerializeField] private float _minLiftHeight = 0.25f;
+        [SerializeField] private float _minLiftHeight = 0.20f;
 
         [Header("Procedural Hands")]
         [Tooltip("Visual transform for Left Hand. Generated automatically if empty.")]
@@ -304,12 +304,16 @@ namespace CoopGame.CarrySystem
             if (_cameraController != null)
             {
                 float pitch = _cameraController.Pitch;
-                float normalizedPitch = (pitch < 0f) 
-                    ? Mathf.InverseLerp(0f, -35f, pitch) 
-                    : Mathf.InverseLerp(0f, 50f, pitch);
-                currentHoldHeight = (pitch < 0f)
-                    ? Mathf.Lerp(_normalLiftHeight, _maxLiftHeight, normalizedPitch)
-                    : Mathf.Lerp(_normalLiftHeight, _minLiftHeight, normalizedPitch);
+                if (pitch < 0f)
+                {
+                    float t = Mathf.Clamp01(-pitch / 55f);
+                    currentHoldHeight = Mathf.Lerp(_normalLiftHeight, _maxLiftHeight, t);
+                }
+                else
+                {
+                    float t = Mathf.Clamp01(pitch / 60f);
+                    currentHoldHeight = Mathf.Lerp(_normalLiftHeight, _minLiftHeight, t);
+                }
             }
 
             // 2. Camera forward and right vectors for movement & carrying
@@ -924,55 +928,92 @@ namespace CoopGame.CarrySystem
             if (_leftHand == null || _rightHand == null) return;
             if (_wallClimb != null && _wallClimb.IsClimbing) return;
 
+            // When actively carrying an object, attach hands firmly to the object's contact points
+            if (_currentCarryable != null)
+            {
+                // LEFT HAND:
+                if (_leftHandGripping)
+                {
+                    // STICKY GRAB: Hand locks directly to the exact contact point on the object — no floating!
+                    Vector3 worldLeft = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
+                    _leftHand.position = worldLeft;
+
+                    // Orient palm to face the object surface
+                    Vector3 toObj = (worldLeft - transform.position).normalized;
+                    if (toObj.sqrMagnitude > 0.001f)
+                    {
+                        _leftHand.rotation = Quaternion.LookRotation(toObj, Vector3.up);
+                    }
+
+                    if (_procArms != null)
+                    {
+                        _procArms.SetLeftHandTarget(worldLeft, _leftHand.rotation, 1.0f, true);
+                    }
+                }
+
+                // RIGHT HAND:
+                if (_rightHandGripping)
+                {
+                    // STICKY GRAB: Hand locks directly to the exact contact point on the object — no floating!
+                    Vector3 worldRight = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
+                    _rightHand.position = worldRight;
+
+                    // Orient palm to face the object surface
+                    Vector3 toObj = (worldRight - transform.position).normalized;
+                    if (toObj.sqrMagnitude > 0.001f)
+                    {
+                        _rightHand.rotation = Quaternion.LookRotation(toObj, Vector3.up);
+                    }
+
+                    if (_procArms != null)
+                    {
+                        _procArms.SetRightHandTarget(worldRight, _rightHand.rotation, 1.0f, true);
+                    }
+                }
+
+                // Wind-up animation when charging a throw
+                if (_isChargingThrow)
+                {
+                    float chargePull = _currentThrowCharge * 0.25f;
+                    Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
+                    _leftHand.position -= camFwd * chargePull;
+                    _rightHand.position -= camFwd * chargePull;
+                }
+                return;
+            }
+
+            // When not carrying, Wallclimb drives reaching, pitch tracking, and resting
+            if (_wallClimb != null) return;
+
+            // Standalone fallback if Wallclimb is not attached:
             bool leftClick = _inputReader.GrabLeftHeld || _inputReader.InteractHeld;
             bool rightClick = _inputReader.GrabRightHeld || _inputReader.InteractHeld;
-
             Vector3 restL = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
             Vector3 restR = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
 
-            Vector3 targetLeftPos;
-            Vector3 targetRightPos;
-
-            // Left Hand: if gripping, attach to box. Else if holding click and allowed, reach forward. Else rest.
-            if (_leftHandGripping && _currentCarryable != null)
+            if (leftClick && _canAttemptGrab)
             {
-                Vector3 worldLeft = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
-                targetLeftPos = transform.InverseTransformPoint(worldLeft);
-            }
-            else if (leftClick && _canAttemptGrab)
-            {
-                targetLeftPos = new Vector3(-0.25f, currentHeight, 0.75f);
+                Vector3 targetLeftPos = new Vector3(-0.25f, currentHeight, 0.75f);
+                _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 18f);
+                if (_procArms != null) _procArms.SetLeftHandTarget(_leftHand.position, Quaternion.identity, 0.9f, false);
             }
             else
             {
-                targetLeftPos = restL;
+                _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, restL, Time.deltaTime * 14f);
+                if (_procArms != null) _procArms.LeftWeight = Mathf.MoveTowards(_procArms.LeftWeight, 0f, Time.deltaTime * 10f);
             }
 
-            // Right Hand: if gripping, attach to box. Else if holding click and allowed, reach forward. Else rest.
-            if (_rightHandGripping && _currentCarryable != null)
+            if (rightClick && _canAttemptGrab)
             {
-                Vector3 worldRight = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
-                targetRightPos = transform.InverseTransformPoint(worldRight);
-            }
-            else if (rightClick && _canAttemptGrab)
-            {
-                targetRightPos = new Vector3(0.25f, currentHeight, 0.75f);
+                Vector3 targetRightPos = new Vector3(0.25f, currentHeight, 0.75f);
+                _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 18f);
+                if (_procArms != null) _procArms.SetRightHandTarget(_rightHand.position, Quaternion.identity, 0.9f, false);
             }
             else
             {
-                targetRightPos = restR;
+                _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, restR, Time.deltaTime * 14f);
+                if (_procArms != null) _procArms.RightWeight = Mathf.MoveTowards(_procArms.RightWeight, 0f, Time.deltaTime * 10f);
             }
-
-            // Wind-up animation when charging a throw
-            if (_isChargingThrow)
-            {
-                float chargePull = _currentThrowCharge * 0.25f;
-                targetLeftPos += new Vector3(0f, -0.1f * _currentThrowCharge, -chargePull);
-                targetRightPos += new Vector3(0f, -0.1f * _currentThrowCharge, -chargePull);
-            }
-
-            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 30f);
-            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 30f);
         }
 
         /// <summary>

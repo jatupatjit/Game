@@ -356,7 +356,8 @@ namespace CoopGame.CarrySystem
             // Update player movement speeds based on carrier count
             UpdateAllCarriersSpeedMultiplier();
 
-            // Ignore collision between player and carried object
+            // Only ignore collision between the player's CharacterController and the object
+            // (prevents clipping INTO each other), but keep full world collision active.
             SetCarrierCollisionIgnore(playerTransform, true);
 
             // Wake up Rigidbody with gravity active
@@ -494,19 +495,22 @@ namespace CoopGame.CarrySystem
         {
             if (playerTransform == null) return;
 
-            Collider[] playerColliders = playerTransform.GetComponentsInChildren<Collider>(true);
             if (_ownColliders == null || _ownColliders.Length == 0)
             {
                 _ownColliders = GetComponentsInChildren<Collider>(true);
             }
 
+            // Ensure carried objects retain full physical hitboxes against the player.
+            // Players cannot walk through carried objects — they physically collide and block/push.
+            Collider[] playerColliders = playerTransform.GetComponentsInChildren<Collider>(true);
             foreach (var pCol in playerColliders)
             {
                 foreach (var oCol in _ownColliders)
                 {
                     if (pCol != null && oCol != null)
                     {
-                        Physics.IgnoreCollision(pCol, oCol, ignore);
+                        // Explicitly enforce collision active (never ignore)
+                        Physics.IgnoreCollision(pCol, oCol, false);
                     }
                 }
             }

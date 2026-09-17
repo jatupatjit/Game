@@ -21,10 +21,11 @@ using CoopGame.CarrySystem;
 ///    - Right Hand aims Up, Down, and Right (cannot cross far to the left).
 ///    - Looking left and right allows you to reach further sideways and traverse along the wall.
 /// 4. Wall Jump Boost:
-///    - Pressing Space (Jump) while holding onto the wall triggers a powerful wall jump boost leaping off the wall!
+///    - Pressing Space (Jump) while holding onto the wall triggers a straight UPWARD jump off the wall.
+///    - Jump goes straight UP regardless of camera look direction.
 /// 5. Edge Hold & Top-of-Wall Pull-Up:
-///    - When reaching the top edge, hands hold onto the edge lip first.
-///    - Looking up and pushing forward slides / pulls the character safely onto the top of the wall without phasing.
+///    - When hands are at the top edge, press Space bar to pull up onto the surface.
+///    - No more auto-jump from looking up or pressing W — must be intentional Space press.
 /// 6. Anti-Phasing Protection:
 ///    - Maintains a strict safe distance from wall colliders. Never teleports through colliders.
 /// </summary>
@@ -312,24 +313,16 @@ public class Wallclimb : NetworkBehaviour
         // Block re-gripping right after a wall jump boost until player releases & re-presses the button
         // (no timer — purely input-state driven so re-pressing always works)
 
-        // 5. Left Hand Grip / Release
-        if (leftClick && !_leftHandGripping && _canGrabLeft && !_leftRequireFreshPress && _leftHandCooldown <= 0f)
-        {
-            GripLeftHand(_leftAimHit);
-        }
-        else if (!leftClick && _leftHandGripping)
+        // 5. Left Hand Grip / Release (Gripping is contact-driven when arm reaches the wall)
+        if (!leftClick && _leftHandGripping)
         {
             _leftHandGripping = false;
             _leftHandCooldown = _handReleaseCooldown;
             Debug.Log($"[Wallclimb] Client {OwnerClientId} released LEFT hand.");
         }
 
-        // 6. Right Hand Grip / Release
-        if (rightClick && !_rightHandGripping && _canGrabRight && !_rightRequireFreshPress && _rightHandCooldown <= 0f)
-        {
-            GripRightHand(_rightAimHit);
-        }
-        else if (!rightClick && _rightHandGripping)
+        // 6. Right Hand Grip / Release (Gripping is contact-driven when arm reaches the wall)
+        if (!rightClick && _rightHandGripping)
         {
             _rightHandGripping = false;
             _rightHandCooldown = _handReleaseCooldown;
@@ -345,16 +338,16 @@ public class Wallclimb : NetworkBehaviour
                 _movement.IsClimbing = true;
             }
 
-            // Check for Wall Jump Boost (Space bar)
-            if (_inputReader != null && _inputReader.JumpTriggered)
+            // Check for Top-of-Wall Pull-Up first (Space bar at ledge edge = pull up)
+            if (CheckForTopLedgePullUp())
             {
-                ExecuteWallJumpBoost();
                 return;
             }
 
-            // Check for Top-of-Wall Pull-Up
-            if (CheckForTopLedgePullUp())
+            // Check for Wall Jump Boost (Space bar when NOT at a ledge)
+            if (_inputReader != null && _inputReader.JumpTriggered)
             {
+                ExecuteWallJumpBoost();
                 return;
             }
 
@@ -502,21 +495,28 @@ public class Wallclimb : NetworkBehaviour
             wallNormal = _rightGripNormal;
         }
 
-        // 3. Calculate target body height strictly from W/S input (W = pull UP, S = lower DOWN)
+        // 3. Calculate target body height: W or Looking UP hoists body UP; S or Looking DOWN lowers body
         float moveY = (_inputReader != null) ? _inputReader.MoveInput.y : 0f;
+        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
         float currentHangDist;
 
-        if (moveY > 0.05f)
+        float upPull = 0f;
+        if (moveY > 0.05f) upPull = Mathf.Max(upPull, moveY);
+        if (pitch < -5f) upPull = Mathf.Max(upPull, Mathf.Clamp01(-pitch / 50f));
+
+        float downPull = 0f;
+        if (moveY < -0.05f) downPull = Mathf.Max(downPull, -moveY);
+        if (pitch > 15f) downPull = Mathf.Max(downPull, Mathf.Clamp01((pitch - 15f) / 45f));
+
+        if (upPull > 0.05f)
         {
-            // Pressing 'W': Pulls body UP towards hands! (min hang distance)
-            float t = Mathf.Clamp01(moveY);
-            currentHangDist = Mathf.Lerp(_normalHangDistance, _minHangDistance, t);
+            // Pulls body UP towards hands! (min hang distance)
+            currentHangDist = Mathf.Lerp(_normalHangDistance, _minHangDistance, upPull);
         }
-        else if (moveY < -0.05f)
+        else if (downPull > 0.05f)
         {
-            // Pressing 'S': Lowers body away from hands! (max hang distance)
-            float t = Mathf.Clamp01(-moveY);
-            currentHangDist = Mathf.Lerp(_normalHangDistance, _maxHangDistance, t);
+            // Lowers body away from hands! (max hang distance)
+            currentHangDist = Mathf.Lerp(_normalHangDistance, _maxHangDistance, downPull);
         }
         else
         {
@@ -556,22 +556,46 @@ public class Wallclimb : NetworkBehaviour
     }
 
     /// <summary>
-    /// Executes a powerful Wall Jump Boost off the wall when Space bar is pressed.
+    /// Executes a Wall Jump off the wall when Space bar is pressed.
+    /// When looking UP: jumps straight UP along the wall/ledge with ZERO outward bounce force!
+    /// When looking down or straight: kicks off the wall.
     /// </summary>
     private void ExecuteWallJumpBoost()
     {
-        Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
         Vector3 wallNormal = (_leftHandGripping ? _leftGripNormal : _rightGripNormal);
+        Vector3 wallForward = -wallNormal;
+        wallForward.y = 0f;
+        wallForward.Normalize();
 
-        // Release both hands — require player to release & re-press before gripping again
+        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
+        bool lookingUp = (pitch < -5f); // Negative pitch = looking UP
+
+        // Release both hands
         _leftHandGripping = false;
         _rightHandGripping = false;
-        _leftRequireFreshPress  = true;
-        _rightRequireFreshPress = true;
 
-        // Direction: Upward + away from wall in look direction
-        Vector3 jumpDir = (Vector3.up * 1.35f + camFwd * 0.65f + wallNormal * 0.45f).normalized;
-        Vector3 boostImpulse = jumpDir * _jumpBoostUp + wallNormal * _jumpBoostOut;
+        Vector3 boostImpulse;
+        if (lookingUp)
+        {
+            // Jump STRAIGHT UP along wall / onto ledge with slight forward nudge — ZERO outward bounce!
+            boostImpulse = Vector3.up * _jumpBoostUp + wallForward * 1.5f;
+
+            // When looking up and jumping, DO NOT block re-gripping so player holding LMB/RMB
+            // can grab the top edge or higher wall at the peak of the jump!
+            _leftRequireFreshPress = false;
+            _rightRequireFreshPress = false;
+            _leftHandCooldown = 0.12f;  // Brief momentary delay so it doesn't re-grip the exact same spot immediately
+            _rightHandCooldown = 0.12f;
+        }
+        else
+        {
+            // Looking down or straight ahead: push off the wall
+            boostImpulse = Vector3.up * (_jumpBoostUp * 0.7f) + wallNormal * _jumpBoostOut;
+            _leftRequireFreshPress = true;
+            _rightRequireFreshPress = true;
+            _leftHandCooldown = _handReleaseCooldown;
+            _rightHandCooldown = _handReleaseCooldown;
+        }
 
         if (_movement != null)
         {
@@ -585,14 +609,18 @@ public class Wallclimb : NetworkBehaviour
         }
 
         OnWallJumpBoost?.Invoke();
-        Debug.Log($"[Wallclimb] Client {OwnerClientId} WALL JUMP BOOST executed! Impulse: {boostImpulse}");
+        Debug.Log($"[Wallclimb] Client {OwnerClientId} WALL JUMP BOOST: lookingUp={lookingUp}, impulse={boostImpulse}");
     }
 
     /// <summary>
-    /// Checks if hands are at the top edge of the wall and player is looking up/pushing forward to pull up.
+    /// Checks if hands are at the top edge of the wall and player presses Space bar to pull up.
+    /// Requires explicit Space bar press — no auto-jump from looking up or pressing W.
     /// </summary>
     private bool CheckForTopLedgePullUp()
     {
+        // Only trigger pull-up on explicit Space bar press
+        if (_inputReader == null || !_inputReader.JumpTriggered) return false;
+
         Vector3 wallNormal = (_leftHandGripping ? _leftGripNormal : _rightGripNormal);
         Vector3 wallForward = -wallNormal;
         wallForward.y = 0f;
@@ -612,19 +640,11 @@ public class Wallclimb : NetworkBehaviour
                     _rightHandGripping ? _rightGripPoint.y : 0f
                 );
 
-                // If hands are within 0.25m of ledge height or above it:
-                if (handHeight >= (ledgeHeight - 0.35f))
+                // If hands are within 0.55m of ledge height or above it: pull up on Space!
+                if (handHeight >= (ledgeHeight - 0.55f))
                 {
-                    float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
-                    bool moveForward = (_inputReader != null && _inputReader.MoveInput.y > 0.2f);
-                    bool lookingUp = (pitch < -12f);
-
-                    // If looking up or pressing forward, pull up onto the top!
-                    if (lookingUp || moveForward)
-                    {
-                        StartPullUp(ledgeHit, wallForward);
-                        return true;
-                    }
+                    StartPullUp(ledgeHit, wallForward);
+                    return true;
                 }
             }
         }
@@ -699,15 +719,42 @@ public class Wallclimb : NetworkBehaviour
 
     /// <summary>
     /// Updates the visual transforms of Left and Right hands.
-    /// Gripping hand anchors directly to grip point on the wall.
-    /// Free hand follows aim reach or rests.
+    /// In Human Fall Flat style:
+    /// - Holding mouse button lifts and extends the arm along the 3D camera look direction (pitch & yaw).
+    /// - Looking up lifts arms high above the head; looking down lowers them to the ground.
+    /// - When the hand reaches physical contact with a wall surface, it grips the wall!
+    /// - Gripping hand anchors directly to grip point on the wall.
+    /// - Releasing button releases the grip and smoothly lowers the arm to rest.
     /// </summary>
     private void UpdateHandVisuals()
     {
         ResolveHandReferences();
         if (_leftHand == null || _rightHand == null) return;
 
+        // If carrying an item, PlayerCarry controls the hands — do not interfere
+        if (_playerCarry != null && _playerCarry.IsCarrying) return;
+
+        bool leftHeld = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
+        bool rightHeld = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
+
+        Vector3 chestPos = transform.position + Vector3.up * 1.15f;
+        Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
+        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
+        float yaw = (_cameraController != null) ? _cameraController.Yaw : transform.eulerAngles.y;
+        Vector3 camAimDir = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
+
+        // Reach distance: extends further when looking down (toward legs) or up (overhead)
+        // pitch < 0 = looking up, pitch > 0 = looking down
+        float pitchRad = pitch * Mathf.Deg2Rad;
+        // When looking down (positive pitch), arm reaches further toward feet; up = overhead reach
+        float reachDist = 1.5f + Mathf.Clamp(pitchRad, -0.3f, 0.8f) * 0.5f;
+        Vector3 restL = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
+        Vector3 restR = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
+
+        // =========================================================================
         // LEFT HAND:
+        // =========================================================================
+        Vector3 leftShoulder = chestPos - camRight * (_handLateralSpacing * 0.5f);
         if (_leftHandGripping)
         {
             _leftHand.position = _leftGripPoint;
@@ -715,25 +762,71 @@ public class Wallclimb : NetworkBehaviour
             {
                 _leftHand.rotation = Quaternion.LookRotation(-_leftGripNormal, Vector3.up);
             }
-        }
-        else if (_leftHandCooldown <= 0f && !_leftRequireFreshPress && _canGrabLeft && _inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld))
-        {
-            // Only reach toward wall when NOT on cooldown
-            _leftHand.position = Vector3.Lerp(_leftHand.position, _leftAimHit.point, Time.deltaTime * 25f);
-            if (_leftAimHit.normal.sqrMagnitude > 0.01f)
+            if (_procArms != null)
             {
-                _leftHand.rotation = Quaternion.LookRotation(-_leftAimHit.normal, Vector3.up);
+                _procArms.SetLeftHandTarget(_leftHand.position, _leftHand.rotation, 1.0f, true);
+            }
+        }
+        else if (leftHeld)
+        {
+            Vector3 targetPos;
+            Quaternion targetRot;
+
+            if (_canGrabLeft)
+            {
+                // Wall detected along aim ray — reach towards the wall surface
+                targetPos = _leftAimHit.point;
+                targetRot = Quaternion.LookRotation(-_leftAimHit.normal, Vector3.up);
+
+                _leftHand.position = Vector3.Lerp(_leftHand.position, targetPos, Time.deltaTime * 24f);
+                if (_leftAimHit.normal.sqrMagnitude > 0.01f)
+                {
+                    _leftHand.rotation = Quaternion.Slerp(_leftHand.rotation, targetRot, Time.deltaTime * 20f);
+                }
+
+                // Physical contact check (Human Fall Flat mechanic):
+                // Grip ONLY when hand is within physical contact range of the wall!
+                float distToWall = Vector3.Distance(leftShoulder, _leftAimHit.point);
+                float handDist = Vector3.Distance(_leftHand.position, _leftAimHit.point);
+                if ((distToWall <= 1.05f || handDist <= 0.25f) && !_leftRequireFreshPress && _leftHandCooldown <= 0f)
+                {
+                    GripLeftHand(_leftAimHit);
+                }
+            }
+            else
+            {
+                // Free air reach: follows full camera pitch — arm goes down toward legs when looking down,
+                // overhead when looking up. Origin is shoulder, not chest, for natural human arm arc.
+                targetPos = leftShoulder + camAimDir * reachDist - camRight * 0.08f;
+                // Keep hand from clipping underground
+                if (targetPos.y < transform.position.y + 0.05f)
+                    targetPos.y = transform.position.y + 0.05f;
+                targetRot = Quaternion.LookRotation(camAimDir, Vector3.up);
+
+                _leftHand.position = Vector3.Lerp(_leftHand.position, targetPos, Time.deltaTime * 20f);
+                _leftHand.rotation = Quaternion.Slerp(_leftHand.rotation, targetRot, Time.deltaTime * 18f);
+            }
+
+            if (_procArms != null)
+            {
+                _procArms.SetLeftHandTarget(_leftHand.position, _leftHand.rotation, 1.0f, false);
             }
         }
         else
         {
-            // On cooldown (or no wall) — pull hand back to rest
-            Vector3 restPos = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
-            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, restPos, Time.deltaTime * 18f);
-            _leftHand.localRotation = Quaternion.Slerp(_leftHand.localRotation, Quaternion.identity, Time.deltaTime * 18f);
+            // Button released: smoothly return arm to natural rest pose beside hips
+            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, restL, Time.deltaTime * 14f);
+            _leftHand.localRotation = Quaternion.Slerp(_leftHand.localRotation, Quaternion.identity, Time.deltaTime * 14f);
+            if (_procArms != null)
+            {
+                _procArms.LeftWeight = Mathf.MoveTowards(_procArms.LeftWeight, 0f, Time.deltaTime * 10f);
+            }
         }
 
+        // =========================================================================
         // RIGHT HAND:
+        // =========================================================================
+        Vector3 rightShoulder = chestPos + camRight * (_handLateralSpacing * 0.5f);
         if (_rightHandGripping)
         {
             _rightHand.position = _rightGripPoint;
@@ -741,22 +834,65 @@ public class Wallclimb : NetworkBehaviour
             {
                 _rightHand.rotation = Quaternion.LookRotation(-_rightGripNormal, Vector3.up);
             }
-        }
-        else if (_rightHandCooldown <= 0f && !_rightRequireFreshPress && _canGrabRight && _inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld))
-        {
-            // Only reach toward wall when NOT on cooldown
-            _rightHand.position = Vector3.Lerp(_rightHand.position, _rightAimHit.point, Time.deltaTime * 25f);
-            if (_rightAimHit.normal.sqrMagnitude > 0.01f)
+            if (_procArms != null)
             {
-                _rightHand.rotation = Quaternion.LookRotation(-_rightAimHit.normal, Vector3.up);
+                _procArms.SetRightHandTarget(_rightHand.position, _rightHand.rotation, 1.0f, true);
+            }
+        }
+        else if (rightHeld)
+        {
+            Vector3 targetPos;
+            Quaternion targetRot;
+
+            if (_canGrabRight)
+            {
+                // Wall detected along aim ray — reach towards the wall surface
+                targetPos = _rightAimHit.point;
+                targetRot = Quaternion.LookRotation(-_rightAimHit.normal, Vector3.up);
+
+                _rightHand.position = Vector3.Lerp(_rightHand.position, targetPos, Time.deltaTime * 24f);
+                if (_rightAimHit.normal.sqrMagnitude > 0.01f)
+                {
+                    _rightHand.rotation = Quaternion.Slerp(_rightHand.rotation, targetRot, Time.deltaTime * 20f);
+                }
+
+                // Physical contact check (Human Fall Flat mechanic):
+                // Grip ONLY when hand is within physical contact range of the wall!
+                float distToWall = Vector3.Distance(rightShoulder, _rightAimHit.point);
+                float handDist = Vector3.Distance(_rightHand.position, _rightAimHit.point);
+                if ((distToWall <= 1.05f || handDist <= 0.25f) && !_rightRequireFreshPress && _rightHandCooldown <= 0f)
+                {
+                    GripRightHand(_rightAimHit);
+                }
+            }
+            else
+            {
+                // Free air reach: follows full camera pitch — arm goes down toward legs when looking down,
+                // overhead when looking up. Origin is shoulder, not chest, for natural human arm arc.
+                targetPos = rightShoulder + camAimDir * reachDist + camRight * 0.08f;
+                // Keep hand from clipping underground
+                if (targetPos.y < transform.position.y + 0.05f)
+                    targetPos.y = transform.position.y + 0.05f;
+                targetRot = Quaternion.LookRotation(camAimDir, Vector3.up);
+
+                _rightHand.position = Vector3.Lerp(_rightHand.position, targetPos, Time.deltaTime * 20f);
+                _rightHand.rotation = Quaternion.Slerp(_rightHand.rotation, targetRot, Time.deltaTime * 18f);
+            }
+
+            if (_procArms != null)
+            {
+                _procArms.SetRightHandTarget(_rightHand.position, _rightHand.rotation, 1.0f, false);
             }
         }
         else
         {
-            // On cooldown (or no wall) — pull hand back to rest
-            Vector3 restPos = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
-            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, restPos, Time.deltaTime * 18f);
-            _rightHand.localRotation = Quaternion.Slerp(_rightHand.localRotation, Quaternion.identity, Time.deltaTime * 18f);
+            // Button released: smoothly return arm to natural rest pose beside hips
+            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, restR, Time.deltaTime * 14f);
+            _rightHand.localRotation = Quaternion.Slerp(_rightHand.localRotation, Quaternion.identity, Time.deltaTime * 14f);
+            if (_procArms != null)
+            {
+                _procArms.RightWeight = Mathf.MoveTowards(_procArms.RightWeight, 0f, Time.deltaTime * 10f);
+            }
         }
     }
 

@@ -95,6 +95,7 @@ namespace CoopGame.Player
         private Wallclimb _wallclimb;
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
         private PlayerInputReader _inputReader;
+        private ProceduralPlayerLegs _legs;
         private float _armCyclePhase = 0f;
         private float _walkSwingWeight = 0f;
 
@@ -105,6 +106,7 @@ namespace CoopGame.Player
             _wallclimb = GetComponent<Wallclimb>();
             _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
             _inputReader = GetComponent<PlayerInputReader>();
+            _legs = GetComponent<ProceduralPlayerLegs>();
             EnsureTargetNodesCreated();
             LocateBones();
         }
@@ -115,6 +117,7 @@ namespace CoopGame.Player
             if (_wallclimb == null) _wallclimb = GetComponent<Wallclimb>();
             if (_playerCarry == null) _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
             if (_inputReader == null) _inputReader = GetComponent<PlayerInputReader>();
+            if (_legs == null) _legs = GetComponent<ProceduralPlayerLegs>();
             EnsureTargetNodesCreated();
             LocateBones();
         }
@@ -331,8 +334,9 @@ namespace CoopGame.Player
 
             if (_walkSwingWeight > 0.001f)
             {
-                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.6f, 1.8f);
-                _armCyclePhase += 5.2f * speedFactor * deltaTime * (Mathf.PI * 2.0f);
+                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.4f, 1.8f);
+                float armFreq = (_legs != null) ? (_legs.BaseStrideFrequency * _legs.WalkAnimationSpeed) : 2.0f;
+                _armCyclePhase += armFreq * speedFactor * deltaTime * (Mathf.PI * 2.0f);
                 if (_armCyclePhase > Mathf.PI * 2.0f) _armCyclePhase -= Mathf.PI * 2.0f;
 
                 float sin = Mathf.Sin(_armCyclePhase);
