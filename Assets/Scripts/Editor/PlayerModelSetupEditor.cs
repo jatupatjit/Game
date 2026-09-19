@@ -121,6 +121,33 @@ public static class PlayerModelSetupEditor
             visualGO.transform.localPosition = new Vector3(offsetX, offsetY, offsetZ);
             visualGO.transform.localRotation = Quaternion.identity;
 
+            // Configure accurate hitbox for CharacterController & CapsuleCollider matching 1.95m model
+            CharacterController cc = playerRoot.GetComponent<CharacterController>();
+            if (cc != null)
+            {
+                SerializedObject soCC = new SerializedObject(cc);
+                var hProp = soCC.FindProperty("m_Height");
+                var rProp = soCC.FindProperty("m_Radius");
+                var cProp = soCC.FindProperty("m_Center");
+                if (hProp != null) hProp.floatValue = 1.95f;
+                if (rProp != null) rProp.floatValue = 0.30f;
+                if (cProp != null) cProp.vector3Value = new Vector3(0f, -0.025f, 0f);
+                soCC.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            CapsuleCollider capCol = playerRoot.GetComponent<CapsuleCollider>();
+            if (capCol != null)
+            {
+                SerializedObject soCap = new SerializedObject(capCol);
+                var hProp = soCap.FindProperty("m_Height");
+                var rProp = soCap.FindProperty("m_Radius");
+                var cProp = soCap.FindProperty("m_Center");
+                if (hProp != null) hProp.floatValue = 1.95f;
+                if (rProp != null) rProp.floatValue = 0.30f;
+                if (cProp != null) cProp.vector3Value = new Vector3(0f, -0.025f, 0f);
+                soCap.ApplyModifiedPropertiesWithoutUndo();
+            }
+
             // 3. Find SkinnedMeshRenderer (for body tinting & camera shadows)
             Renderer bodyRenderer = visualGO.GetComponentInChildren<SkinnedMeshRenderer>();
             if (bodyRenderer == null && childRenderers.Length > 0)

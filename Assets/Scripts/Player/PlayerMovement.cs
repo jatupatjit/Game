@@ -58,6 +58,9 @@ namespace CoopGame.Player
         // Cached components
         private CharacterController _characterController;
         private PlayerStamina _stamina;
+        private PlayerInputReader _inputReader;
+        private Wallclimb _wallclimb;
+        private CoopGame.CarrySystem.PlayerCarry _playerCarry;
 
         // Current velocity vectors
         private Vector3 _horizontalVelocity;
@@ -66,6 +69,7 @@ namespace CoopGame.Player
         // Platforming timer counters
         private float _coyoteTimer;
         private float _jumpBufferTimer;
+        private bool _isAligningBodyToCamera = false;
 
         /// <summary>
         /// External multiplier to scale movement speed.
@@ -101,6 +105,9 @@ namespace CoopGame.Player
         {
             _characterController = GetComponent<CharacterController>();
             _stamina = GetComponent<PlayerStamina>();
+            _inputReader = GetComponent<PlayerInputReader>();
+            _wallclimb = GetComponent<Wallclimb>();
+            _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
         }
 
         /// <summary>
@@ -155,11 +162,51 @@ namespace CoopGame.Player
             float rate = (targetHorizontalVelocity.sqrMagnitude > 0.01f) ? _acceleration : _deceleration;
             _horizontalVelocity = Vector3.MoveTowards(_horizontalVelocity, targetHorizontalVelocity, rate * deltaTime);
 
-            // 4. Smooth Rotation Towards Movement Direction
-            if (desiredMoveDirection.sqrMagnitude > 0.001f)
+            // 4. Smooth Rotation (Human Fall Flat mechanics)
+            if (_inputReader == null) _inputReader = GetComponent<PlayerInputReader>();
+            if (_wallclimb == null) _wallclimb = GetComponent<Wallclimb>();
+            if (_playerCarry == null) _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+
+            bool isReachingOrAiming = false;
+            if (_inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.GrabRightHeld || _inputReader.InteractHeld))
             {
+                isReachingOrAiming = true;
+            }
+            if (_playerCarry != null && _playerCarry.IsCarrying)
+            {
+                isReachingOrAiming = true;
+            }
+            if (_wallclimb != null && (_wallclimb.LeftHandGripping || _wallclimb.RightHandGripping || _wallclimb.IsAimingAtWall))
+            {
+                isReachingOrAiming = true;
+            }
+
+            if (isReachingOrAiming)
+            {
+                // While holding Left/Right Click or interacting/carrying: character body always rotates to face the camera look direction
+                if (cameraForward.sqrMagnitude > 0.001f)
+                {
+                    Quaternion targetRotation = Quaternion.LookRotation(cameraForward, Vector3.up);
+                    transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, _rotationSpeed * deltaTime);
+                }
+            }
+            else if (desiredMoveDirection.sqrMagnitude > 0.001f)
+            {
+                // Moving without reaching: rotate towards movement direction
+                _isAligningBodyToCamera = false;
                 Quaternion targetRotation = Quaternion.LookRotation(desiredMoveDirection, Vector3.up);
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, _rotationSpeed * deltaTime);
+            }
+            else if (cameraForward.sqrMagnitude > 0.001f)
+            {
+                // Idle (not moving, not reaching): if looking left or right too far (> 65 degrees), turn body to face camera direction like Human Fall Flat
+                float angle = Vector3.Angle(transform.forward, cameraForward);
+                if (angle > 65.0f || _isAligningBodyToCamera)
+                {
+                    _isAligningBodyToCamera = angle > 5.0f;
+                    Quaternion targetRotation = Quaternion.LookRotation(cameraForward, Vector3.up);
+                    transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, (_rotationSpeed * 0.75f) * deltaTime);
+                }
             }
 
             // 5. Vertical Physics & Jumping

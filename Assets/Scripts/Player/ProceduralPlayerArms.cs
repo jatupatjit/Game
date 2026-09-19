@@ -411,8 +411,9 @@ namespace CoopGame.Player
                 _targetRightRot = _rightTargetTransform.rotation;
             }
 
-            // 1. Solve Left Arm IK (Elbow bends outward to the left, back, and slightly down)
-            Vector3 bendHintL = -transform.right * 0.5f - transform.forward * 0.3f - transform.up * 0.2f;
+            // 1. Solve Left Arm IK (Elbow bends outward to the left, slightly back/down)
+            bool isOverheadL = (_targetLeftPos.y > _upperArmL.position.y + 0.15f);
+            Vector3 bendHintL = -transform.right * 0.5f - (isOverheadL ? transform.forward * 0.05f : (transform.forward * 0.25f + transform.up * 0.15f));
             Vector3 poleL = _upperArmL.position + bendHintL;
             SolveTwoBoneIK(
                 _upperArmL, _lowerArmL, _wristL,
@@ -423,8 +424,9 @@ namespace CoopGame.Player
                 true
             );
 
-            // 2. Solve Right Arm IK (Elbow bends outward to the right, back, and slightly down)
-            Vector3 bendHintR = transform.right * 0.5f - transform.forward * 0.3f - transform.up * 0.2f;
+            // 2. Solve Right Arm IK (Elbow bends outward to the right, slightly back/down)
+            bool isOverheadR = (_targetRightPos.y > _upperArmR.position.y + 0.15f);
+            Vector3 bendHintR = transform.right * 0.5f - (isOverheadR ? transform.forward * 0.05f : (transform.forward * 0.25f + transform.up * 0.15f));
             Vector3 poleR = _upperArmR.position + bendHintR;
             SolveTwoBoneIK(
                 _upperArmR, _lowerArmR, _wristR,
@@ -459,13 +461,21 @@ namespace CoopGame.Player
                 return;
             }
 
-            // Anti-penetration constraint: Clamp target in front of the shoulder plane so arm never bends backwards through the body
+            // Anti-penetration constraint: Target must always stay in front of the torso plane and not cross the chest
             Vector3 localTarget = transform.InverseTransformPoint(targetPos);
-            if (localTarget.z < -0.05f)
+            if (localTarget.z < 0.08f)
             {
-                localTarget.z = -0.05f;
-                targetPos = transform.TransformPoint(localTarget);
+                localTarget.z = 0.08f;
             }
+            if (isLeftArm)
+            {
+                if (localTarget.x > -0.05f) localTarget.x = -0.05f;
+            }
+            else
+            {
+                if (localTarget.x < 0.05f) localTarget.x = 0.05f;
+            }
+            targetPos = transform.TransformPoint(localTarget);
 
             root.localRotation = baseRotRoot;
             mid.localRotation = baseRotMid;
@@ -498,11 +508,20 @@ namespace CoopGame.Player
             float bendSign = isLeftArm ? 1.0f : -1.0f;
             Vector3 desiredUpperDir = Quaternion.AngleAxis(angleA * bendSign, planeNormal) * dirTarget;
 
+            // Ensure desired upper arm direction never points backwards behind the body
+            Vector3 localUpper = transform.InverseTransformDirection(desiredUpperDir);
+            if (localUpper.z < 0.02f)
+            {
+                localUpper.z = 0.02f;
+                localUpper.Normalize();
+                desiredUpperDir = transform.TransformDirection(localUpper);
+            }
+
             // Direct forward-aligned rotation construction to eliminate 180-degree flip singularity
             Vector3 upperBoneZ = Vector3.ProjectOnPlane(transform.forward, desiredUpperDir).normalized;
             if (upperBoneZ.sqrMagnitude < 0.001f)
             {
-                upperBoneZ = Vector3.ProjectOnPlane(isLeftArm ? -transform.right : transform.right, desiredUpperDir).normalized;
+                upperBoneZ = transform.forward;
             }
             Quaternion targetWorldRoot = Quaternion.LookRotation(upperBoneZ, desiredUpperDir);
 
@@ -511,6 +530,14 @@ namespace CoopGame.Player
             // 2. Desired Lower Arm direction
             Vector3 desiredElbowPos = shoulderPos + desiredUpperDir * l1;
             Vector3 desiredLowerDir = (targetPos - desiredElbowPos).normalized;
+
+            Vector3 localLower = transform.InverseTransformDirection(desiredLowerDir);
+            if (localLower.z < 0.01f)
+            {
+                localLower.z = 0.01f;
+                localLower.Normalize();
+                desiredLowerDir = transform.TransformDirection(localLower);
+            }
 
             Vector3 lowerBoneZ = Vector3.ProjectOnPlane(transform.forward, desiredLowerDir).normalized;
             if (lowerBoneZ.sqrMagnitude < 0.001f)

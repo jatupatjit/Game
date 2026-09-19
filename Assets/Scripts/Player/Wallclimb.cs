@@ -338,13 +338,7 @@ public class Wallclimb : NetworkBehaviour
                 _movement.IsClimbing = true;
             }
 
-            // Check for Top-of-Wall Pull-Up first (Space bar at ledge edge = pull up)
-            if (CheckForTopLedgePullUp())
-            {
-                return;
-            }
-
-            // Check for Wall Jump Boost (Space bar when NOT at a ledge)
+            // Check for Wall Jump Boost (Space bar)
             if (_inputReader != null && _inputReader.JumpTriggered)
             {
                 ExecuteWallJumpBoost();
@@ -384,21 +378,14 @@ public class Wallclimb : NetworkBehaviour
         LocateCamera();
 
         Vector3 chestPos = transform.position + Vector3.up * 1.15f;
-        Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
-        Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
-        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
-        float yaw = (_cameraController != null) ? _cameraController.Yaw : transform.eulerAngles.y;
-
-        // Camera aim vector in 3D
-        Vector3 camAimDir = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
+        GetAimDirections(out Vector3 leftAimDir, out Vector3 rightAimDir);
 
         bool notExhausted = (_stamina == null || !_stamina.IsExhausted);
 
         // -------------------------------------------------------------
         // LEFT HAND AIM:
         // -------------------------------------------------------------
-        Vector3 leftShoulder = chestPos - camRight * (_handLateralSpacing * 0.5f);
-        Vector3 leftAimDir = camAimDir;
+        Vector3 leftShoulder = chestPos - transform.right * (_handLateralSpacing * 0.5f);
 
         Ray leftRay = new Ray(leftShoulder, leftAimDir);
         if (Physics.Raycast(leftRay, out RaycastHit lHit, _maxScanDistance, _wallLayers, QueryTriggerInteraction.Ignore))
@@ -417,8 +404,7 @@ public class Wallclimb : NetworkBehaviour
         // -------------------------------------------------------------
         // RIGHT HAND AIM:
         // -------------------------------------------------------------
-        Vector3 rightShoulder = chestPos + camRight * (_handLateralSpacing * 0.5f);
-        Vector3 rightAimDir = camAimDir;
+        Vector3 rightShoulder = chestPos + transform.right * (_handLateralSpacing * 0.5f);
 
         Ray rightRay = new Ray(rightShoulder, rightAimDir);
         if (Physics.Raycast(rightRay, out RaycastHit rHit, _maxScanDistance, _wallLayers, QueryTriggerInteraction.Ignore))
@@ -433,6 +419,50 @@ public class Wallclimb : NetworkBehaviour
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Computes safe aim directions for Left and Right hands.
+    /// Strictly prevents arms from reaching backwards behind the torso,
+    /// and smoothly redirects overhead or backward look into lifting straight up into the sky.
+    /// </summary>
+    private void GetAimDirections(out Vector3 aimDirL, out Vector3 aimDirR)
+    {
+        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
+        float yaw = (_cameraController != null) ? _cameraController.Yaw : transform.eulerAngles.y;
+        Vector3 camAimDir = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
+
+        Vector3 localAim = transform.InverseTransformDirection(camAimDir);
+
+        // Anti-backward & sky-lift: arms never reach behind the character's back
+        if (localAim.z < 0.1f || pitch < -5f)
+        {
+            if (pitch < -5f)
+            {
+                // Looking up: smoothly blend towards pure overhead reach into the sky
+                float upFactor = Mathf.Clamp01(-pitch / 55f);
+                localAim.y = Mathf.Lerp(localAim.y, 0.96f, upFactor);
+                localAim.z = Mathf.Lerp(Mathf.Max(0.12f, localAim.z), 0.22f, upFactor);
+            }
+            else
+            {
+                // Aiming behind while standing: redirect to sky lift instead of reaching behind the spine
+                localAim.y = Mathf.Max(localAim.y, 0.88f);
+                localAim.z = 0.15f;
+            }
+        }
+
+        // Left Hand Aim Direction (flared slightly left, never crossing right midline)
+        Vector3 localAimL = localAim;
+        localAimL.x = Mathf.Min(localAimL.x, 0.02f) - 0.08f;
+        localAimL.Normalize();
+        aimDirL = transform.TransformDirection(localAimL);
+
+        // Right Hand Aim Direction (flared slightly right, never crossing left midline)
+        Vector3 localAimR = localAim;
+        localAimR.x = Mathf.Max(localAimR.x, -0.02f) + 0.08f;
+        localAimR.Normalize();
+        aimDirR = transform.TransformDirection(localAimR);
     }
 
     private void GripLeftHand(RaycastHit hit)
@@ -738,23 +768,22 @@ public class Wallclimb : NetworkBehaviour
         bool rightHeld = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
 
         Vector3 chestPos = transform.position + Vector3.up * 1.15f;
-        Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
-        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
-        float yaw = (_cameraController != null) ? _cameraController.Yaw : transform.eulerAngles.y;
-        Vector3 camAimDir = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
+        GetAimDirections(out Vector3 aimDirL, out Vector3 aimDirR);
 
-        // Reach distance: extends further when looking down (toward legs) or up (overhead)
-        // pitch < 0 = looking up, pitch > 0 = looking down
+        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
         float pitchRad = pitch * Mathf.Deg2Rad;
         // When looking down (positive pitch), arm reaches further toward feet; up = overhead reach
-        float reachDist = 1.5f + Mathf.Clamp(pitchRad, -0.3f, 0.8f) * 0.5f;
+        float reachDist = 1.35f + Mathf.Clamp(pitchRad, -0.3f, 0.8f) * 0.4f;
         Vector3 restL = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
         Vector3 restR = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
+
+        // Calculate body-anchored shoulders
+        Vector3 leftShoulder = chestPos - transform.right * (_handLateralSpacing * 0.5f);
+        Vector3 rightShoulder = chestPos + transform.right * (_handLateralSpacing * 0.5f);
 
         // =========================================================================
         // LEFT HAND:
         // =========================================================================
-        Vector3 leftShoulder = chestPos - camRight * (_handLateralSpacing * 0.5f);
         if (_leftHandGripping)
         {
             _leftHand.position = _leftGripPoint;
@@ -795,13 +824,13 @@ public class Wallclimb : NetworkBehaviour
             }
             else
             {
-                // Free air reach: follows full camera pitch — arm goes down toward legs when looking down,
-                // overhead when looking up. Origin is shoulder, not chest, for natural human arm arc.
-                targetPos = leftShoulder + camAimDir * reachDist - camRight * 0.08f;
+                // Free air reach: follows pitch/aim — never reaches behind body, lifts straight up to sky overhead
+                targetPos = leftShoulder + aimDirL * reachDist;
                 // Keep hand from clipping underground
                 if (targetPos.y < transform.position.y + 0.05f)
                     targetPos.y = transform.position.y + 0.05f;
-                targetRot = Quaternion.LookRotation(camAimDir, Vector3.up);
+                Vector3 upHintL = (aimDirL.y > 0.88f) ? transform.forward : Vector3.up;
+                targetRot = Quaternion.LookRotation(aimDirL, upHintL);
 
                 _leftHand.position = Vector3.Lerp(_leftHand.position, targetPos, Time.deltaTime * 20f);
                 _leftHand.rotation = Quaternion.Slerp(_leftHand.rotation, targetRot, Time.deltaTime * 18f);
@@ -826,7 +855,6 @@ public class Wallclimb : NetworkBehaviour
         // =========================================================================
         // RIGHT HAND:
         // =========================================================================
-        Vector3 rightShoulder = chestPos + camRight * (_handLateralSpacing * 0.5f);
         if (_rightHandGripping)
         {
             _rightHand.position = _rightGripPoint;
@@ -867,13 +895,13 @@ public class Wallclimb : NetworkBehaviour
             }
             else
             {
-                // Free air reach: follows full camera pitch — arm goes down toward legs when looking down,
-                // overhead when looking up. Origin is shoulder, not chest, for natural human arm arc.
-                targetPos = rightShoulder + camAimDir * reachDist + camRight * 0.08f;
+                // Free air reach: follows pitch/aim — never reaches behind body, lifts straight up to sky overhead
+                targetPos = rightShoulder + aimDirR * reachDist;
                 // Keep hand from clipping underground
                 if (targetPos.y < transform.position.y + 0.05f)
                     targetPos.y = transform.position.y + 0.05f;
-                targetRot = Quaternion.LookRotation(camAimDir, Vector3.up);
+                Vector3 upHintR = (aimDirR.y > 0.88f) ? transform.forward : Vector3.up;
+                targetRot = Quaternion.LookRotation(aimDirR, upHintR);
 
                 _rightHand.position = Vector3.Lerp(_rightHand.position, targetPos, Time.deltaTime * 20f);
                 _rightHand.rotation = Quaternion.Slerp(_rightHand.rotation, targetRot, Time.deltaTime * 18f);
