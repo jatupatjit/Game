@@ -82,6 +82,7 @@ namespace CoopGame.Player
 
         // Cached colliders on this player to ignore during occlusion check
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
+        private CoopGame.CarrySystem.PlayerCarry _playerCarry;
 
         /// <summary>
         /// Current vertical pitch angle in degrees (-35 = looking up, +70 = looking down).
@@ -157,6 +158,8 @@ namespace CoopGame.Player
             {
                 _selfColliders.Add(cc);
             }
+
+            _playerCarry = GetComponentInParent<CoopGame.CarrySystem.PlayerCarry>() ?? GetComponent<CoopGame.CarrySystem.PlayerCarry>();
         }
 
         private void Start()
@@ -340,6 +343,20 @@ namespace CoopGame.Player
                 {
                     if (_selfColliders.Contains(hit.collider)) continue;
                     if (hit.collider.transform.root == transform.root) continue;
+
+                    // Ignore any carried object belonging to this player
+                    if (_playerCarry == null)
+                    {
+                        _playerCarry = GetComponentInParent<CoopGame.CarrySystem.PlayerCarry>() ?? GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+                    }
+                    if (_playerCarry != null && _playerCarry.CurrentCarryable != null)
+                    {
+                        if (hit.collider.transform.root == _playerCarry.CurrentCarryable.transform.root) continue;
+                    }
+
+                    // Ignore any CarryableObject currently being carried
+                    var carryable = hit.collider.GetComponentInParent<CoopGame.CarrySystem.CarryableObject>();
+                    if (carryable != null && carryable.IsCarried) continue;
 
                     if (hit.distance < closestValidHitDistance)
                     {

@@ -158,12 +158,26 @@ namespace CoopGame.CarrySystem
         private bool _canAttemptGrab = true;
 
         // Exposed properties
-        public bool IsCarrying => _leftHandGripping || _rightHandGripping;
-        public bool LeftHandGripping => _leftHandGripping;
-        public bool RightHandGripping => _rightHandGripping;
+        public bool IsCarrying => IsOwner 
+            ? (_leftHandGripping || _rightHandGripping) 
+            : ((_netHandState.Value & ((1 << 0) | (1 << 1))) != 0);
+        public bool LeftHandGripping => IsOwner 
+            ? _leftHandGripping 
+            : ((_netHandState.Value & (1 << 0)) != 0);
+        public bool RightHandGripping => IsOwner 
+            ? _rightHandGripping 
+            : ((_netHandState.Value & (1 << 1)) != 0);
+        public bool LeftHandReaching => IsOwner 
+            ? (_inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld)) 
+            : ((_netHandState.Value & (1 << 2)) != 0);
+        public bool RightHandReaching => IsOwner 
+            ? (_inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld)) 
+            : ((_netHandState.Value & (1 << 3)) != 0);
         public CarryableObject CurrentCarryable => _currentCarryable;
         public float CurrentThrowCharge => _currentThrowCharge;
-        public bool IsChargingThrow => _isChargingThrow;
+        public bool IsChargingThrow => IsOwner 
+            ? _isChargingThrow 
+            : ((_netHandState.Value & (1 << 4)) != 0);
         public PlayerStamina Stamina => _stamina;
         public Transform LeftHand => _leftHand;
         public Transform RightHand => _rightHand;
@@ -1088,6 +1102,18 @@ namespace CoopGame.CarrySystem
 
             _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 20f);
             _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 20f);
+
+            if (_procArms != null)
+            {
+                if (leftGrip || leftReach)
+                {
+                    _procArms.SetLeftHandTarget(_leftHand.position, _leftHand.rotation, 1.0f, leftGrip);
+                }
+                if (rightGrip || rightReach)
+                {
+                    _procArms.SetRightHandTarget(_rightHand.position, _rightHand.rotation, 1.0f, rightGrip);
+                }
+            }
         }
 
         #region Server RPCs
@@ -1198,7 +1224,8 @@ namespace CoopGame.CarrySystem
                 _movement.SpeedMultiplier = 1.0f;
             }
 
-            SetLocalCollisionIgnore(_currentCarryable, true);
+            // Maintain physical collision between player and carried object so player cannot penetrate/walk inside
+            SetLocalCollisionIgnore(_currentCarryable, false);
 
             Debug.Log($"[PlayerCarry] Client {OwnerClientId} attached to '{_currentCarryable.name}' (Socket #{socketIndex}) | Gravity: ACTIVE");
         }

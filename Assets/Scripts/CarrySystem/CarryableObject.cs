@@ -80,6 +80,9 @@ namespace CoopGame.CarrySystem
 
         // ICarryable implementation
         public bool CanBeCarried => _activeCarriers.Count < MaxCarriers;
+        public bool IsCarried => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+            ? (SyncedCarrierCount.Value > 0)
+            : (_activeCarriers.Count > 0);
         public int CurrentCarrierCount => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             ? Mathf.Max(1, SyncedCarrierCount.Value)
             : Mathf.Max(1, _activeCarriers.Count);
@@ -328,7 +331,7 @@ namespace CoopGame.CarrySystem
             {
                 Vector3 toObj = transform.position - playerTransform.position;
                 toObj.y = 0f;
-                initialDist = Mathf.Clamp(toObj.magnitude, 0.7f, _carryForwardDistance);
+                initialDist = Mathf.Clamp(toObj.magnitude, 1.1f, _carryForwardDistance);
             }
 
             _occupiedSockets.Add(socketIndex);

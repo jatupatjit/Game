@@ -163,10 +163,18 @@ public class Wallclimb : NetworkBehaviour
     public event Action OnClimbSlipped;
 
     // Public Properties
-    public bool IsClimbing => (_leftHandGripping || _rightHandGripping || _isPullingUp);
-    public bool LeftHandGripping => _leftHandGripping;
-    public bool RightHandGripping => _rightHandGripping;
-    public bool IsPullingUp => _isPullingUp;
+    public bool IsClimbing => IsOwner 
+        ? (_leftHandGripping || _rightHandGripping || _isPullingUp) 
+        : (_netClimbHandState.Value != 0);
+    public bool LeftHandGripping => IsOwner 
+        ? _leftHandGripping 
+        : ((_netClimbHandState.Value & (1 << 0)) != 0);
+    public bool RightHandGripping => IsOwner 
+        ? _rightHandGripping 
+        : ((_netClimbHandState.Value & (1 << 1)) != 0);
+    public bool IsPullingUp => IsOwner 
+        ? _isPullingUp 
+        : ((_netClimbHandState.Value & (1 << 2)) != 0);
     public bool IsAimingAtWall => _isAimingAtWall;
     public LayerMask WallLayers => _wallLayers;
 
@@ -1028,6 +1036,12 @@ public class Wallclimb : NetworkBehaviour
 
         _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeft, Time.deltaTime * 20f);
         _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRight, Time.deltaTime * 20f);
+
+        if (_procArms != null)
+        {
+            if (leftGrip) _procArms.SetLeftHandTarget(_leftHand.position, _leftHand.rotation, 1.0f, true);
+            if (rightGrip) _procArms.SetRightHandTarget(_rightHand.position, _rightHand.rotation, 1.0f, true);
+        }
     }
 
     private void HideMarkers()

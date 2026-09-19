@@ -384,8 +384,8 @@ namespace CoopGame.Player
 
             if (_playerCarry != null)
             {
-                if (_playerCarry.LeftHandGripping) leftActive = true;
-                if (_playerCarry.RightHandGripping) rightActive = true;
+                if (_playerCarry.LeftHandGripping || _playerCarry.LeftHandReaching) leftActive = true;
+                if (_playerCarry.RightHandGripping || _playerCarry.RightHandReaching) rightActive = true;
             }
 
             if (_inputReader != null)

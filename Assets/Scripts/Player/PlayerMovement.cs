@@ -71,6 +71,11 @@ namespace CoopGame.Player
         private float _jumpBufferTimer;
         private bool _isAligningBodyToCamera = false;
 
+        // Proxy tracking for remote clients across network
+        private Vector3 _lastWorldPosition;
+        private float _proxySpeed = 0f;
+        private Unity.Netcode.NetworkObject _netObject;
+
         /// <summary>
         /// External multiplier to scale movement speed.
         /// Essential for Steps 2 & 3:
@@ -89,12 +94,32 @@ namespace CoopGame.Player
         /// <summary>
         /// Exposes whether the character is currently touching the ground.
         /// </summary>
-        public bool IsGrounded => _characterController != null && _characterController.isGrounded;
+        public bool IsGrounded
+        {
+            get
+            {
+                if (_characterController != null && _characterController.enabled)
+                {
+                    return _characterController.isGrounded;
+                }
+                return Physics.Raycast(transform.position + Vector3.up * 0.2f, Vector3.down, 0.45f, ~0, QueryTriggerInteraction.Ignore);
+            }
+        }
 
         /// <summary>
         /// Current horizontal speed magnitude. Useful for animation blend trees.
         /// </summary>
-        public float CurrentSpeed => _horizontalVelocity.magnitude;
+        public float CurrentSpeed
+        {
+            get
+            {
+                if (_netObject != null && !_netObject.IsOwner)
+                {
+                    return _proxySpeed;
+                }
+                return _horizontalVelocity.magnitude;
+            }
+        }
 
         /// <summary>
         /// Total 3D movement velocity vector. Used to transfer momentum to thrown objects.
@@ -108,6 +133,31 @@ namespace CoopGame.Player
             _inputReader = GetComponent<PlayerInputReader>();
             _wallclimb = GetComponent<Wallclimb>();
             _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+            _netObject = GetComponent<Unity.Netcode.NetworkObject>();
+        }
+
+        private void Start()
+        {
+            _lastWorldPosition = transform.position;
+            if (_netObject == null) _netObject = GetComponent<Unity.Netcode.NetworkObject>();
+        }
+
+        private void Update()
+        {
+            // On remote proxies, compute speed and velocity from network displacement
+            if (_netObject != null && !_netObject.IsOwner)
+            {
+                float dt = Time.deltaTime;
+                if (dt > 0.0001f)
+                {
+                    Vector3 delta = transform.position - _lastWorldPosition;
+                    delta.y = 0f;
+                    float instantSpeed = delta.magnitude / dt;
+                    _proxySpeed = Mathf.Lerp(_proxySpeed, instantSpeed, dt * 12.0f);
+                    _horizontalVelocity = delta / dt;
+                }
+                _lastWorldPosition = transform.position;
+            }
         }
 
         /// <summary>
