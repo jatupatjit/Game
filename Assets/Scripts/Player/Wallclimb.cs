@@ -797,7 +797,7 @@ public class Wallclimb : NetworkBehaviour
             _leftHand.position = _leftGripPoint;
             if (_leftGripNormal.sqrMagnitude > 0.01f)
             {
-                _leftHand.rotation = Quaternion.LookRotation(-_leftGripNormal, Vector3.up);
+                _leftHand.rotation = Quaternion.LookRotation(_leftGripNormal, Vector3.up);
             }
             if (_procArms != null)
             {
@@ -813,7 +813,7 @@ public class Wallclimb : NetworkBehaviour
             {
                 // Wall detected along aim ray — reach towards the wall surface
                 targetPos = _leftAimHit.point;
-                targetRot = Quaternion.LookRotation(-_leftAimHit.normal, Vector3.up);
+                targetRot = Quaternion.LookRotation(_leftAimHit.normal, Vector3.up);
 
                 _leftHand.position = Vector3.Lerp(_leftHand.position, targetPos, Time.deltaTime * 24f);
                 if (_leftAimHit.normal.sqrMagnitude > 0.01f)
@@ -838,7 +838,7 @@ public class Wallclimb : NetworkBehaviour
                 if (targetPos.y < transform.position.y + 0.05f)
                     targetPos.y = transform.position.y + 0.05f;
                 Vector3 upHintL = (aimDirL.y > 0.88f) ? transform.forward : Vector3.up;
-                targetRot = Quaternion.LookRotation(aimDirL, upHintL);
+                targetRot = Quaternion.LookRotation(upHintL, aimDirL);
 
                 _leftHand.position = Vector3.Lerp(_leftHand.position, targetPos, Time.deltaTime * 20f);
                 _leftHand.rotation = Quaternion.Slerp(_leftHand.rotation, targetRot, Time.deltaTime * 18f);
@@ -868,7 +868,7 @@ public class Wallclimb : NetworkBehaviour
             _rightHand.position = _rightGripPoint;
             if (_rightGripNormal.sqrMagnitude > 0.01f)
             {
-                _rightHand.rotation = Quaternion.LookRotation(-_rightGripNormal, Vector3.up);
+                _rightHand.rotation = Quaternion.LookRotation(_rightGripNormal, Vector3.up);
             }
             if (_procArms != null)
             {
@@ -884,7 +884,7 @@ public class Wallclimb : NetworkBehaviour
             {
                 // Wall detected along aim ray — reach towards the wall surface
                 targetPos = _rightAimHit.point;
-                targetRot = Quaternion.LookRotation(-_rightAimHit.normal, Vector3.up);
+                targetRot = Quaternion.LookRotation(_rightAimHit.normal, Vector3.up);
 
                 _rightHand.position = Vector3.Lerp(_rightHand.position, targetPos, Time.deltaTime * 24f);
                 if (_rightAimHit.normal.sqrMagnitude > 0.01f)
@@ -909,7 +909,7 @@ public class Wallclimb : NetworkBehaviour
                 if (targetPos.y < transform.position.y + 0.05f)
                     targetPos.y = transform.position.y + 0.05f;
                 Vector3 upHintR = (aimDirR.y > 0.88f) ? transform.forward : Vector3.up;
-                targetRot = Quaternion.LookRotation(aimDirR, upHintR);
+                targetRot = Quaternion.LookRotation(upHintR, aimDirR);
 
                 _rightHand.position = Vector3.Lerp(_rightHand.position, targetPos, Time.deltaTime * 20f);
                 _rightHand.rotation = Quaternion.Slerp(_rightHand.rotation, targetRot, Time.deltaTime * 18f);
@@ -1034,13 +1034,15 @@ public class Wallclimb : NetworkBehaviour
         Vector3 targetLeft = leftGrip ? new Vector3(-_handLateralSpacing, 1.25f, 0.52f) : _leftHandRest;
         Vector3 targetRight = rightGrip ? new Vector3(_handLateralSpacing, 1.25f, 0.52f) : _rightHandRest;
 
+        Quaternion climbRot = Quaternion.LookRotation(-transform.forward, Vector3.up);
+
         _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeft, Time.deltaTime * 20f);
         _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRight, Time.deltaTime * 20f);
 
         if (_procArms != null)
         {
-            if (leftGrip) _procArms.SetLeftHandTarget(_leftHand.position, _leftHand.rotation, 1.0f, true);
-            if (rightGrip) _procArms.SetRightHandTarget(_rightHand.position, _rightHand.rotation, 1.0f, true);
+            if (leftGrip) _procArms.SetLeftHandTarget(_leftHand.position, climbRot, 1.0f, true);
+            if (rightGrip) _procArms.SetRightHandTarget(_rightHand.position, climbRot, 1.0f, true);
         }
     }
 

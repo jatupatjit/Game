@@ -27,10 +27,10 @@ namespace CoopGame.CarrySystem
 
         [Header("Hold Positioning (1 Player)")]
         [Tooltip("Distance in front of the player when held by 1 person")]
-        [SerializeField] private float _carryForwardDistance = 1.3f;
+        [SerializeField] private float _carryForwardDistance = 0.65f;
 
         [Tooltip("Height above the player's ground position (waist/chest level)")]
-        [SerializeField] private float _carryHeightOffset = 0.8f;
+        [SerializeField] private float _carryHeightOffset = 1.05f;
 
         [Header("Co-op Movement Settings")]
         [Tooltip("Speed multiplier applied to player when carrying alone (heavy feel)")]

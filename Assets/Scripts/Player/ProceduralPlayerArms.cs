@@ -1,27 +1,89 @@
+using System;
 using UnityEngine;
 
 namespace CoopGame.Player
 {
     /// <summary>
     /// ProceduralPlayerArms drives the actual rigged skeleton arms (UpperArm -> LowerArm -> Wrist)
-    /// of Rigged_character_.fbx using pure rotation-based Analytic Two-Bone Inverse Kinematics (IK).
+    /// and finger bones of Rigged_character_.fbx using pure rotation-based Analytic Two-Bone Inverse Kinematics (IK)
+    /// and natural procedural finger flexion / fist clenching (การกำมือ).
     /// 
     /// Features:
-    /// 1. True Rigged Bone Control (No Mesh Tearing / No Ribbon Stretch):
-    ///    - Rotates only bone joints (UpperArm, LowerArm, Wrist) to preserve local bone hierarchy.
-    ///    - Left Arm: UpperArmR -> LowerArm.R -> Wrist.R (spatial left at -X).
-    ///    - Right Arm: UpperArmL -> LowerArm.L -> Wrist.L (spatial right at +X).
-    /// 2. Smooth Natural Rest & Reach:
-    ///    - When idle (weight = 0), bones sit 100% in natural rest pose beside hips.
+    /// 1. Singularity-Free Orthogonal Arm IK (Smooth Up/Down Raising & Lowering):
+    ///    - Uses strictly orthogonal bend-plane cross vectors (planeNormal x dirTarget).
+    ///    - Zero gimbal flips or twists when raising arms up, aiming forward, or lowering down.
+    /// 2. Selective Finger Grip (กำมือเฉพาะเวลาปีนหรือยกของจริง):
+    ///    - When raising arms in air / aiming: Hands stay OPEN and relaxed (แบมือ).
+    ///    - When ACTUALLY climbing a wall or carrying an object: Fingers smoothly CLENCH A FIST (กำมือ).
+    /// 3. Solid Palm Integrity:
+    ///    - Metacarpal bones (handL..., handR...) stay locked at rest pose, preserving solid palm topology.
+    ///    - Only knuckle (joint1) and distal (joint2) phalanges curl along natural -X hinge axis.
+    /// 4. Smooth Natural Rest & Reach:
+    ///    - When idle (weight = 0), bones sit 100% in natural rest pose beside hips with open hands.
     ///    - When reaching / gripping, smoothly blends from rest pose to target with zero snapping.
-    /// 3. Palm Surface Alignment:
-    ///    - Aligns wrist rotation to wall normal or carried item surface only when actively gripping.
-    /// 4. Full Multiplayer & Color Tinting:
+    /// 5. Full Multiplayer & Color Tinting:
     ///    - Tints the SkinnedMeshRenderer (body + gloves) to match player ID colors.
     /// </summary>
     [DisallowMultipleComponent]
     public class ProceduralPlayerArms : MonoBehaviour
     {
+        [System.Serializable]
+        public class FingerPhalanges
+        {
+            public string fingerName;
+            public Transform joint1; // e.g. L.Index1 (Knuckle)
+            public Transform joint2; // e.g. L.Index2 (Distal)
+            public bool isThumb = false;
+            public bool isLeftHand = true;
+
+            private Quaternion _initRot1 = Quaternion.identity;
+            private Quaternion _initRot2 = Quaternion.identity;
+            private bool _initialized = false;
+
+            public void CacheInitialRotations()
+            {
+                if (joint1 != null) _initRot1 = joint1.localRotation;
+                if (joint2 != null) _initRot2 = joint2.localRotation;
+                _initialized = true;
+            }
+
+            public void ApplyCurl(float gripWeight, float maxAngle)
+            {
+                if (!_initialized) CacheInitialRotations();
+
+                if (gripWeight <= 0.001f)
+                {
+                    if (joint1 != null) joint1.localRotation = _initRot1;
+                    if (joint2 != null) joint2.localRotation = _initRot2;
+                    return;
+                }
+
+                float angle = maxAngle * gripWeight;
+
+                if (isThumb)
+                {
+                    // Thumb folds inward and across palm
+                    float thumbAngle1 = angle * 0.70f;
+                    float thumbAngle2 = angle * 0.85f;
+
+                    Vector3 curlAxis1 = isLeftHand ? new Vector3(-1f, 0f, -0.30f).normalized : new Vector3(-1f, 0f, 0.30f).normalized;
+                    Vector3 curlAxis2 = new Vector3(-1f, 0f, 0f);
+
+                    if (joint1 != null) joint1.localRotation = _initRot1 * Quaternion.AngleAxis(thumbAngle1, curlAxis1);
+                    if (joint2 != null) joint2.localRotation = _initRot2 * Quaternion.AngleAxis(thumbAngle2, curlAxis2);
+                }
+                else
+                {
+                    // Clean, natural local -X rotation (hinge flexion into palm)
+                    float curl1 = angle * 0.70f;
+                    float curl2 = angle * 0.95f;
+
+                    if (joint1 != null) joint1.localRotation = _initRot1 * Quaternion.Euler(-curl1, 0f, 0f);
+                    if (joint2 != null) joint2.localRotation = _initRot2 * Quaternion.Euler(-curl2, 0f, 0f);
+                }
+            }
+        }
+
         [Header("Rigged Skeleton Transforms")]
         [SerializeField] private Transform _characterVisual;
         [SerializeField] private Transform _upperArmL;
@@ -42,6 +104,24 @@ namespace CoopGame.Player
 
         [Range(0f, 1f)]
         [SerializeField] private float _rightWeight = 0f;
+
+        [Header("Finger Grip & Fist Settings (การกำมือ)")]
+        [Tooltip("Max curl angle in degrees for Index, Middle, and Pinky fingers when gripping/lifting")]
+        [SerializeField] private float _fingerCurlAngle = 48.0f;
+
+        [Tooltip("Max curl angle in degrees for Thumb when gripping")]
+        [SerializeField] private float _thumbCurlAngle = 32.0f;
+
+        [Tooltip("Speed of smooth grip / fist transition")]
+        [SerializeField] private float _gripTransitionSpeed = 14.0f;
+
+        // Finger joint chains (4 fingers per hand)
+        private FingerPhalanges[] _leftFingers;
+        private FingerPhalanges[] _rightFingers;
+
+        // Current grip weights (0 = open hand, 1 = clenched fist)
+        private float _currentLeftGrip = 0f;
+        private float _currentRightGrip = 0f;
 
         // Wrist override flags (only align wrist rotation when actively gripping surfaces)
         public bool LeftOverrideWrist { get; set; } = false;
@@ -81,6 +161,8 @@ namespace CoopGame.Player
 
         public float LeftWeight { get => _leftWeight; set => _leftWeight = Mathf.Clamp01(value); }
         public float RightWeight { get => _rightWeight; set => _rightWeight = Mathf.Clamp01(value); }
+        public float LeftGripWeight => _currentLeftGrip;
+        public float RightGripWeight => _currentRightGrip;
 
         // Natural rest offsets beside hips in Player local space matching Rigged_character_.fbx
         public static readonly Vector3 LeftHandRestLocal = new Vector3(-0.43f, -0.30f, 0.01f);
@@ -236,12 +318,70 @@ namespace CoopGame.Player
                     if (_rightUpperLen < 0.05f) _rightUpperLen = 0.23f;
                     if (_rightLowerLen < 0.05f) _rightLowerLen = 0.17f;
                 }
+
+                LocateFingerBones();
             }
+        }
+
+        private void LocateFingerBones()
+        {
+            if (_characterVisual == null) return;
+
+            // Locate Left Hand finger phalanges (under _wristL)
+            _leftFingers = new FingerPhalanges[]
+            {
+                CreateFingerPhalanges(_wristL, "Index", false, true),
+                CreateFingerPhalanges(_wristL, "Middle", false, true),
+                CreateFingerPhalanges(_wristL, "Pinky", false, true),
+                CreateFingerPhalanges(_wristL, "thumb", true, true)
+            };
+
+            // Locate Right Hand finger phalanges (under _wristR)
+            _rightFingers = new FingerPhalanges[]
+            {
+                CreateFingerPhalanges(_wristR, "Index", false, false),
+                CreateFingerPhalanges(_wristR, "Middle", false, false),
+                CreateFingerPhalanges(_wristR, "Pinky", false, false),
+                CreateFingerPhalanges(_wristR, "thumb", true, false)
+            };
+
+            foreach (var f in _leftFingers) if (f != null) f.CacheInitialRotations();
+            foreach (var f in _rightFingers) if (f != null) f.CacheInitialRotations();
+        }
+
+        private FingerPhalanges CreateFingerPhalanges(Transform wrist, string keyword, bool isThumb, bool isLeft)
+        {
+            if (wrist == null) return null;
+
+            // Find joint 1 and joint 2 by name under the wrist
+            Transform j1 = FindChildContaining(wrist, keyword + "1");
+            Transform j2 = FindChildContaining(wrist, keyword + "2");
+
+            return new FingerPhalanges
+            {
+                fingerName = keyword,
+                joint1 = j1,
+                joint2 = j2,
+                isThumb = isThumb,
+                isLeftHand = isLeft
+            };
+        }
+
+        private static Transform FindChildContaining(Transform parent, string keyword)
+        {
+            if (parent == null) return null;
+            if (parent.name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0) return parent;
+            foreach (Transform child in parent)
+            {
+                Transform found = FindChildContaining(child, keyword);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private static Transform FindChildRecursive(Transform parent, string name)
         {
-            if (parent.name == name) return parent;
+            if (parent.name.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0) return parent;
             foreach (Transform child in parent)
             {
                 Transform found = FindChildRecursive(child, name);
@@ -372,32 +512,86 @@ namespace CoopGame.Player
                 idleLowerR = Quaternion.Inverse(transform.rotation) * idleWorldMidR;
             }
 
-            // Dynamic IK weight blending based on climbing, carrying, or grab input
+            // 1. Arm Reaching / Aiming IK Weights
             bool leftActive = false;
             bool rightActive = false;
 
+            // 2. Fist Clenching / Gripping: ONLY when ACTUALLY climbing or ACTUALLY carrying!
+            bool leftGripping = false;
+            bool rightGripping = false;
+
+            // Climbing check
             if (_wallclimb != null)
             {
-                if (_wallclimb.LeftHandGripping || _wallclimb.IsPullingUp) leftActive = true;
-                if (_wallclimb.RightHandGripping || _wallclimb.IsPullingUp) rightActive = true;
+                if (_wallclimb.LeftHandGripping || _wallclimb.IsPullingUp)
+                {
+                    leftActive = true;
+                    leftGripping = true;
+                }
+                if (_wallclimb.RightHandGripping || _wallclimb.IsPullingUp)
+                {
+                    rightActive = true;
+                    rightGripping = true;
+                }
             }
 
+            // Carrying check
             if (_playerCarry != null)
             {
-                if (_playerCarry.LeftHandGripping || _playerCarry.LeftHandReaching) leftActive = true;
-                if (_playerCarry.RightHandGripping || _playerCarry.RightHandReaching) rightActive = true;
+                if (_playerCarry.LeftHandGripping)
+                {
+                    leftActive = true;
+                    leftGripping = true;
+                }
+                else if (_playerCarry.IsCarrying && _playerCarry.LeftHandReaching)
+                {
+                    leftActive = true;
+                    leftGripping = true;
+                }
+                else if (_playerCarry.LeftHandReaching)
+                {
+                    leftActive = true; // Reaching in air: fingers stay open!
+                }
+
+                if (_playerCarry.RightHandGripping)
+                {
+                    rightActive = true;
+                    rightGripping = true;
+                }
+                else if (_playerCarry.IsCarrying && _playerCarry.RightHandReaching)
+                {
+                    rightActive = true;
+                    rightGripping = true;
+                }
+                else if (_playerCarry.RightHandReaching)
+                {
+                    rightActive = true; // Reaching in air: fingers stay open!
+                }
             }
 
+            // Manual user grab input (reaching arms to aim)
             if (_inputReader != null)
             {
-                if (_inputReader.GrabLeftHeld || _inputReader.InteractHeld) leftActive = true;
-                if (_inputReader.GrabRightHeld || _inputReader.InteractHeld) rightActive = true;
+                if (_inputReader.GrabLeftHeld || _inputReader.InteractHeld)
+                {
+                    leftActive = true; // Reaching arm to aim
+                }
+                if (_inputReader.GrabRightHeld || _inputReader.InteractHeld)
+                {
+                    rightActive = true; // Reaching arm to aim
+                }
             }
 
             float targetWeightL = leftActive ? 1.0f : 0.0f;
             float targetWeightR = rightActive ? 1.0f : 0.0f;
             _leftWeight = Mathf.MoveTowards(_leftWeight, targetWeightL, deltaTime * (targetWeightL > 0.5f ? 15.0f : 10.0f));
             _rightWeight = Mathf.MoveTowards(_rightWeight, targetWeightR, deltaTime * (targetWeightR > 0.5f ? 15.0f : 10.0f));
+
+            // Smooth finger grip / fist clenching
+            float targetGripL = leftGripping ? 1.0f : 0.0f;
+            float targetGripR = rightGripping ? 1.0f : 0.0f;
+            _currentLeftGrip = Mathf.MoveTowards(_currentLeftGrip, targetGripL, deltaTime * _gripTransitionSpeed);
+            _currentRightGrip = Mathf.MoveTowards(_currentRightGrip, targetGripR, deltaTime * _gripTransitionSpeed);
 
             // Sync targets if set via transform
             if (_leftTargetTransform != null)
@@ -436,11 +630,37 @@ namespace CoopGame.Player
                 _rightWeight,
                 false
             );
+
+            // 3. Apply Anatomically Correct Finger Flexion / Fist Clench (การกำมือ)
+            ApplyFingerGrips();
+        }
+
+        private void ApplyFingerGrips()
+        {
+            // Left Hand fingers
+            if (_leftFingers != null)
+            {
+                foreach (var f in _leftFingers)
+                {
+                    if (f == null) continue;
+                    f.ApplyCurl(_currentLeftGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
+                }
+            }
+
+            // Right Hand fingers
+            if (_rightFingers != null)
+            {
+                foreach (var f in _rightFingers)
+                {
+                    if (f == null) continue;
+                    f.ApplyCurl(_currentRightGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
+                }
+            }
         }
 
         /// <summary>
-        /// Pure Rotation-Based Analytic Law of Cosines Two-Bone IK with direct forward-aligned orientation.
-        /// Rotates only joints with zero translation, preserving rigged mesh topology with zero gimbal roll twist at all angles.
+        /// Pure Rotation-Based Analytic Law of Cosines Two-Bone IK with strictly orthogonal singularity-free frames.
+        /// Preserves rigged mesh topology with zero gimbal roll twist at all arm elevation angles.
         /// </summary>
         private void SolveTwoBoneIK(
             Transform root, Transform mid, Transform tip,
@@ -517,13 +737,14 @@ namespace CoopGame.Player
                 desiredUpperDir = transform.TransformDirection(localUpper);
             }
 
-            // Direct forward-aligned rotation construction to eliminate 180-degree flip singularity
-            Vector3 upperBoneZ = Vector3.ProjectOnPlane(transform.forward, desiredUpperDir).normalized;
-            if (upperBoneZ.sqrMagnitude < 0.001f)
+            // Natural anterior reference (bicep / front of arm faces forward/upward, eliminating axial shoulder twist)
+            Vector3 upRef = (desiredUpperDir.y > 0.85f) ? -transform.forward : (desiredUpperDir.y < -0.85f ? transform.forward : transform.up);
+            Vector3 upperBoneFwd = Vector3.ProjectOnPlane(upRef, desiredUpperDir).normalized;
+            if (upperBoneFwd.sqrMagnitude < 0.001f)
             {
-                upperBoneZ = transform.forward;
+                upperBoneFwd = transform.forward;
             }
-            Quaternion targetWorldRoot = Quaternion.LookRotation(upperBoneZ, desiredUpperDir);
+            Quaternion targetWorldRoot = Quaternion.LookRotation(upperBoneFwd, desiredUpperDir);
 
             root.rotation = Quaternion.Slerp(restWorldRoot, targetWorldRoot, weight);
 
@@ -539,12 +760,12 @@ namespace CoopGame.Player
                 desiredLowerDir = transform.TransformDirection(localLower);
             }
 
-            Vector3 lowerBoneZ = Vector3.ProjectOnPlane(transform.forward, desiredLowerDir).normalized;
-            if (lowerBoneZ.sqrMagnitude < 0.001f)
+            Vector3 lowerBoneFwd = Vector3.ProjectOnPlane(upperBoneFwd, desiredLowerDir).normalized;
+            if (lowerBoneFwd.sqrMagnitude < 0.001f)
             {
-                lowerBoneZ = upperBoneZ;
+                lowerBoneFwd = upperBoneFwd;
             }
-            Quaternion targetWorldMid = Quaternion.LookRotation(lowerBoneZ, desiredLowerDir);
+            Quaternion targetWorldMid = Quaternion.LookRotation(lowerBoneFwd, desiredLowerDir);
 
             mid.rotation = Quaternion.Slerp(restWorldMid, targetWorldMid, weight);
 
@@ -556,4 +777,3 @@ namespace CoopGame.Player
         }
     }
 }
-

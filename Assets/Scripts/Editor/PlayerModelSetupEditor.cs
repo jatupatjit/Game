@@ -268,9 +268,9 @@ public static class PlayerModelSetupEditor
                 var normLiftProp = soCarry.FindProperty("_normalLiftHeight");
                 var minLiftProp = soCarry.FindProperty("_minLiftHeight");
                 if (grabProp != null) grabProp.floatValue = 1.6f;
-                if (maxLiftProp != null) maxLiftProp.floatValue = 1.7f;
-                if (normLiftProp != null) normLiftProp.floatValue = 0.85f;
-                if (minLiftProp != null) minLiftProp.floatValue = 0.25f;
+                if (maxLiftProp != null) maxLiftProp.floatValue = 2.2f;
+                if (normLiftProp != null) normLiftProp.floatValue = 1.05f;
+                if (minLiftProp != null) minLiftProp.floatValue = 0.45f;
                 soCarry.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -318,10 +318,10 @@ public static class PlayerModelSetupEditor
                     SerializedObject so = new SerializedObject(carryable);
                     var fwdProp = so.FindProperty("_carryForwardDistance");
                     var hProp = so.FindProperty("_carryHeightOffset");
-                    if (fwdProp != null) fwdProp.floatValue = 0.72f;
-                    if (hProp != null) hProp.floatValue = 0.0f;
+                    if (fwdProp != null) fwdProp.floatValue = 0.65f;
+                    if (hProp != null) hProp.floatValue = 1.05f;
                     so.ApplyModifiedPropertiesWithoutUndo();
-                    Debug.Log($"[PlayerModelSetup] CarryablePackage updated: forward=0.72, height=0.0");
+                    Debug.Log($"[PlayerModelSetup] CarryablePackage updated: forward=0.65, height=1.05");
                 }
             }
         }

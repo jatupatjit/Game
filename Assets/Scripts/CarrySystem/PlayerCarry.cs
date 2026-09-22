@@ -44,13 +44,13 @@ namespace CoopGame.CarrySystem
 
         [Header("Dynamic Vertical Lift Range (Mouse Up/Down)")]
         [Tooltip("Maximum lift height when looking all the way up (meters above feet)")]
-        [SerializeField] private float _maxLiftHeight = 2.4f;
+        [SerializeField] private float _maxLiftHeight = 2.2f;
 
         [Tooltip("Normal carry height when looking straight ahead")]
-        [SerializeField] private float _normalLiftHeight = 0.95f;
+        [SerializeField] private float _normalLiftHeight = 1.05f;
 
         [Tooltip("Minimum carry height when looking down into carts/ground")]
-        [SerializeField] private float _minLiftHeight = 0.20f;
+        [SerializeField] private float _minLiftHeight = 0.45f;
 
         [Header("Procedural Hands")]
         [Tooltip("Visual transform for Left Hand. Generated automatically if empty.")]
@@ -132,8 +132,8 @@ namespace CoopGame.CarrySystem
         private Vector3 _lastAimRightPoint = Vector3.zero;
 
         // Cached surface contact points in carried object local space
-        private Vector3 _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.4f);
-        private Vector3 _currentLocalContactRight = new Vector3(0.25f, 0f, -0.4f);
+        private Vector3 _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.35f);
+        private Vector3 _currentLocalContactRight = new Vector3(0.25f, 0f, -0.35f);
 
         // Hand rest offsets (local to player)
         private readonly Vector3 _leftHandRest = new Vector3(-0.35f, 0.5f, 0.1f);
@@ -559,7 +559,9 @@ namespace CoopGame.CarrySystem
                 _leftHandGripping = true;
                 if (_lastAimLeftPoint != Vector3.zero)
                 {
-                    _currentLocalContactLeft = target.transform.InverseTransformPoint(_lastAimLeftPoint);
+                    Vector3 localPt = target.transform.InverseTransformPoint(_lastAimLeftPoint);
+                    if (localPt.z > 0.05f) localPt.z = 0.05f;
+                    _currentLocalContactLeft = localPt;
                 }
                 else
                 {
@@ -571,7 +573,9 @@ namespace CoopGame.CarrySystem
                 _rightHandGripping = true;
                 if (_lastAimRightPoint != Vector3.zero)
                 {
-                    _currentLocalContactRight = target.transform.InverseTransformPoint(_lastAimRightPoint);
+                    Vector3 localPt = target.transform.InverseTransformPoint(_lastAimRightPoint);
+                    if (localPt.z > 0.05f) localPt.z = 0.05f;
+                    _currentLocalContactRight = localPt;
                 }
                 else
                 {
@@ -945,43 +949,52 @@ namespace CoopGame.CarrySystem
             // When actively carrying an object, attach hands firmly to the object's contact points
             if (_currentCarryable != null)
             {
+                Vector3 handFwd = (transform.forward + Vector3.up * 0.12f).normalized;
+                Quaternion leftRot = Quaternion.LookRotation(-transform.right, handFwd);
+                Quaternion rightRot = Quaternion.LookRotation(transform.right, handFwd);
+
+                Vector3 chestPos = transform.position + Vector3.up * 1.25f;
+                Vector3 leftShoulder = chestPos - transform.right * 0.18f;
+                Vector3 rightShoulder = chestPos + transform.right * 0.18f;
+                const float maxArmReach = 0.44f;
+
                 // LEFT HAND:
                 if (_leftHandGripping)
                 {
-                    // STICKY GRAB: Hand locks directly to the exact contact point on the object — no floating!
+                    // Lock directly to the contact point on the object, clamped to physical arm reach
                     Vector3 worldLeft = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
-                    _leftHand.position = worldLeft;
-
-                    // Orient palm to face the object surface
-                    Vector3 toObj = (worldLeft - transform.position).normalized;
-                    if (toObj.sqrMagnitude > 0.001f)
+                    Vector3 toHandL = worldLeft - leftShoulder;
+                    if (toHandL.magnitude > maxArmReach)
                     {
-                        _leftHand.rotation = Quaternion.LookRotation(toObj, Vector3.up);
+                        worldLeft = leftShoulder + toHandL.normalized * maxArmReach;
                     }
+
+                    _leftHand.position = worldLeft;
+                    _leftHand.rotation = leftRot;
 
                     if (_procArms != null)
                     {
-                        _procArms.SetLeftHandTarget(worldLeft, _leftHand.rotation, 1.0f, true);
+                        _procArms.SetLeftHandTarget(worldLeft, leftRot, 1.0f, true);
                     }
                 }
 
                 // RIGHT HAND:
                 if (_rightHandGripping)
                 {
-                    // STICKY GRAB: Hand locks directly to the exact contact point on the object — no floating!
+                    // Lock directly to the contact point on the object, clamped to physical arm reach
                     Vector3 worldRight = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
-                    _rightHand.position = worldRight;
-
-                    // Orient palm to face the object surface
-                    Vector3 toObj = (worldRight - transform.position).normalized;
-                    if (toObj.sqrMagnitude > 0.001f)
+                    Vector3 toHandR = worldRight - rightShoulder;
+                    if (toHandR.magnitude > maxArmReach)
                     {
-                        _rightHand.rotation = Quaternion.LookRotation(toObj, Vector3.up);
+                        worldRight = rightShoulder + toHandR.normalized * maxArmReach;
                     }
+
+                    _rightHand.position = worldRight;
+                    _rightHand.rotation = rightRot;
 
                     if (_procArms != null)
                     {
-                        _procArms.SetRightHandTarget(worldRight, _rightHand.rotation, 1.0f, true);
+                        _procArms.SetRightHandTarget(worldRight, rightRot, 1.0f, true);
                     }
                 }
 
@@ -1056,14 +1069,19 @@ namespace CoopGame.CarrySystem
             Vector3 targetLeftPos;
             Vector3 targetRightPos;
 
+            Vector3 handFwd = (transform.forward + Vector3.up * 0.12f).normalized;
+            Quaternion leftRot = Quaternion.LookRotation(-transform.right, handFwd);
+            Quaternion rightRot = Quaternion.LookRotation(transform.right, handFwd);
+
             // Left Hand:
             if (leftGrip && _currentCarryable != null)
             {
                 Vector3 objPos = _currentCarryable.transform.position;
                 Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
-                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 1.2f);
+                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 0.44f);
                 Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
                 targetLeftPos = forwardNorm * reachDist + new Vector3(-0.25f, 0f, 0f);
+                _leftHand.rotation = leftRot;
             }
             else if (leftReach || leftGrip)
             {
@@ -1080,9 +1098,10 @@ namespace CoopGame.CarrySystem
             {
                 Vector3 objPos = _currentCarryable.transform.position;
                 Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
-                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 1.2f);
+                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 0.44f);
                 Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
                 targetRightPos = forwardNorm * reachDist + new Vector3(0.25f, 0f, 0f);
+                _rightHand.rotation = rightRot;
             }
             else if (rightReach || rightGrip)
             {
@@ -1107,11 +1126,11 @@ namespace CoopGame.CarrySystem
             {
                 if (leftGrip || leftReach)
                 {
-                    _procArms.SetLeftHandTarget(_leftHand.position, _leftHand.rotation, 1.0f, leftGrip);
+                    _procArms.SetLeftHandTarget(_leftHand.position, leftRot, 1.0f, leftGrip);
                 }
                 if (rightGrip || rightReach)
                 {
-                    _procArms.SetRightHandTarget(_rightHand.position, _rightHand.rotation, 1.0f, rightGrip);
+                    _procArms.SetRightHandTarget(_rightHand.position, rightRot, 1.0f, rightGrip);
                 }
             }
         }
@@ -1266,8 +1285,8 @@ namespace CoopGame.CarrySystem
             _assignedSocketIndex = -1;
             _isChargingThrow = false;
             _currentThrowCharge = 0f;
-            _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.4f);
-            _currentLocalContactRight = new Vector3(0.25f, 0f, -0.4f);
+            _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.35f);
+            _currentLocalContactRight = new Vector3(0.25f, 0f, -0.35f);
 
             if (_movement != null && IsOwner)
             {
