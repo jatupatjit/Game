@@ -19,11 +19,11 @@ namespace CoopGame.Player
         [SerializeField] private float _maxStamina = 100.0f;
 
         [Header("Exertion & Drain Rates (Points/Sec)")]
-        [Tooltip("Stamina drain per second when carrying with both hands")]
-        [SerializeField] private float _twoHandDrainRate = 8.0f;
+        [Tooltip("Stamina drain per second when carrying with both hands (Solo carry: 2.0f/s)")]
+        [SerializeField] private float _twoHandDrainRate = 2.0f;
 
-        [Tooltip("Stamina drain per second when carrying with one hand (3x heavier strain!)")]
-        [SerializeField] private float _oneHandDrainRate = 24.0f;
+        [Tooltip("Stamina drain per second when carrying with one hand (3.5f/s)")]
+        [SerializeField] private float _oneHandDrainRate = 3.5f;
 
         [Tooltip("Baseline object mass in kg where no extra weight penalty applies")]
         [SerializeField] private float _baseMass = 10.0f;
@@ -99,31 +99,54 @@ namespace CoopGame.Player
         }
 
         /// <summary>
+        /// Regenerates stamina points actively (e.g. during co-op carry or resting).
+        /// </summary>
+        public void RegenerateStamina(float deltaTime)
+        {
+            if (_currentStamina < _maxStamina)
+            {
+                float prev = _currentStamina;
+                _currentStamina = Mathf.Min(_maxStamina, _currentStamina + _recoveryRate * deltaTime);
+
+                if (!Mathf.Approximately(prev, _currentStamina))
+                {
+                    OnStaminaChanged?.Invoke(_currentStamina, _maxStamina);
+                }
+
+                if (_isExhausted && _currentStamina >= _maxStamina * _exhaustionRecoveryPercent)
+                {
+                    _isExhausted = false;
+                    OnRecoveredFromExhaustion?.Invoke();
+                }
+            }
+        }
+
+        /// <summary>
         /// Applies continuous stamina drain while lifting or holding objects.
-        /// - One-handed carry strains muscles 3x faster than two-handed carry.
-        /// - Mass scaling: heavy objects increase drain.
-        /// - Co-op Synergy: having friends lift the object together divides the drain and gives a synergy bonus!
+        /// - Solo carry (1 player): 2.0f/s (two-handed) or 3.5f/s (one-handed).
+        /// - Co-op carry (2+ players): 0 stamina drain and actively regenerates stamina!
         /// </summary>
         /// <param name="isOneHanded">True if only one hand is holding the object</param>
         /// <param name="objectMass">Mass of the object in kg</param>
         /// <param name="carrierCount">Number of players currently carrying this object</param>
         public void DrainStaminaContinuous(bool isOneHanded, float objectMass, int carrierCount = 1)
         {
+            // Co-op carry (2+ players): zero drain & active stamina regeneration
+            if (carrierCount >= 2)
+            {
+                RegenerateStamina(Time.deltaTime);
+                return;
+            }
+
             _wasDrainingThisFrame = true;
             _lastExertionTime = Time.time;
 
             float baseRate = isOneHanded ? _oneHandDrainRate : _twoHandDrainRate;
 
-            // Shared mass among all carriers
-            int validCarriers = Mathf.Max(1, carrierCount);
-            float sharedMass = objectMass / validCarriers;
-            float massExcess = Mathf.Max(0f, sharedMass - _baseMass);
+            float massExcess = Mathf.Max(0f, objectMass - _baseMass);
             float massScale = 1.0f + (massExcess * _massDrainMultiplier);
 
-            // Co-op factor: 1 player = 1.0, 2 players = 0.425 (less than half!), 3 players = 0.28, 4 players = 0.21
-            float coOpFactor = (validCarriers > 1) ? (1.0f / validCarriers) * _coopSynergyMultiplier : 1.0f;
-
-            float totalDrain = baseRate * massScale * coOpFactor * Time.deltaTime;
+            float totalDrain = baseRate * massScale * Time.deltaTime;
 
             ApplyDrain(totalDrain);
         }

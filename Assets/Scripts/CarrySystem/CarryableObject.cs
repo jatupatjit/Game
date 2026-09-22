@@ -43,9 +43,9 @@ namespace CoopGame.CarrySystem
         [SerializeField] private float _rotationSpeed = 360.0f;
 
         // Cached components
-        private Rigidbody _rigidbody;
-        private Collider[] _ownColliders;
-        private CarryableOutline _outline;
+        protected Rigidbody _rigidbody;
+        protected Collider[] _ownColliders;
+        protected CarryableOutline _outline;
 
         public CarryableOutline Outline => _outline;
 
@@ -89,7 +89,7 @@ namespace CoopGame.CarrySystem
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
         public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
 
-        private void Awake()
+        protected virtual void Awake()
         {
             _rigidbody = GetComponent<Rigidbody>();
             _rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
@@ -147,7 +147,7 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        private void FixedUpdate()
+        protected virtual void FixedUpdate()
         {
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return;
@@ -391,7 +391,7 @@ namespace CoopGame.CarrySystem
             return false;
         }
 
-        public void DetachCarrier(ulong clientId)
+        public virtual void DetachCarrier(ulong clientId)
         {
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return;
@@ -428,10 +428,22 @@ namespace CoopGame.CarrySystem
         }
 
         /// <summary>
+        /// Detaches all carriers currently holding this object.
+        /// </summary>
+        public virtual void DetachAllCarriers()
+        {
+            var carrierIds = new List<ulong>(_activeCarriers.Keys);
+            foreach (var id in carrierIds)
+            {
+                DetachCarrier(id);
+            }
+        }
+
+        /// <summary>
         /// Detaches the carrier and applies launch velocity and angular tumbling impulse.
         /// Server-authoritative physics execution.
         /// </summary>
-        public void ThrowObject(ulong clientId, Vector3 linearVelocity, Vector3 angularVelocity)
+        public virtual void ThrowObject(ulong clientId, Vector3 linearVelocity, Vector3 angularVelocity)
         {
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return;

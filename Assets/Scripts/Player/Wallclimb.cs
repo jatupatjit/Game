@@ -38,11 +38,11 @@ public class Wallclimb : NetworkBehaviour
     [Tooltip("Maximum physical reach distance from shoulders to wall surface.")]
     [SerializeField] private float _handReachDistance = 2.0f;
 
-    [Tooltip("Stamina drained per second while holding with both hands.")]
-    [SerializeField] private float _twoHandStaminaDrain = 8.0f;
+    [Tooltip("Stamina drained per second while holding with both hands (1.5f/s).")]
+    [SerializeField] private float _twoHandStaminaDrain = 1.5f;
 
-    [Tooltip("Stamina drained per second while holding with only one hand.")]
-    [SerializeField] private float _oneHandStaminaDrain = 22.0f;
+    [Tooltip("Stamina drained per second while holding with only one hand (3.5f/s).")]
+    [SerializeField] private float _oneHandStaminaDrain = 3.5f;
 
     [Tooltip("Layer mask representing climbable walls.")]
     [SerializeField] private LayerMask _wallLayers = 1 << 3;
@@ -67,8 +67,8 @@ public class Wallclimb : NetworkBehaviour
     [Tooltip("Outward / camera push velocity applied during wall jump boost.")]
     [SerializeField] private float _jumpBoostOut = 4.5f;
 
-    [Tooltip("Stamina cost for executing a wall jump boost.")]
-    [SerializeField] private float _jumpBoostStaminaCost = 14.0f;
+    [Tooltip("Stamina cost for executing a wall jump boost (10.0f).")]
+    [SerializeField] private float _jumpBoostStaminaCost = 10.0f;
 
     [Header("Reticle & Marker Visuals")]
     [Tooltip("Visual marker for Left Hand contact on wall surface.")]
