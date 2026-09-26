@@ -710,8 +710,7 @@ public class Wallclimb : NetworkBehaviour
 
     /// <summary>
     /// Executes a Wall Jump off the wall when Space bar is pressed.
-    /// When looking UP: jumps straight UP along the wall/ledge with ZERO outward bounce force!
-    /// When looking down or straight: kicks off the wall.
+    /// Always jumps straight UP along the wall with a slight forward nudge — no outward kick-off!
     /// </summary>
     private void ExecuteWallJumpBoost()
     {
@@ -720,35 +719,18 @@ public class Wallclimb : NetworkBehaviour
         wallForward.y = 0f;
         wallForward.Normalize();
 
-        float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
-        bool lookingUp = (pitch < -5f); // Negative pitch = looking UP
-
         // Release both hands
         _leftHandGripping = false;
         _rightHandGripping = false;
 
-        Vector3 boostImpulse;
-        if (lookingUp)
-        {
-            // Jump STRAIGHT UP along wall / onto ledge with slight forward nudge — ZERO outward bounce!
-            boostImpulse = Vector3.up * _jumpBoostUp + wallForward * 1.5f;
+        // Always jump STRAIGHT UP with slight forward nudge — same as the old "looking up" behavior
+        Vector3 boostImpulse = Vector3.up * _jumpBoostUp + wallForward * 1.5f;
 
-            // When looking up and jumping, DO NOT block re-gripping so player holding LMB/RMB
-            // can grab the top edge or higher wall at the peak of the jump!
-            _leftRequireFreshPress = false;
-            _rightRequireFreshPress = false;
-            _leftHandCooldown = 0.12f;  // Brief momentary delay so it doesn't re-grip the exact same spot immediately
-            _rightHandCooldown = 0.12f;
-        }
-        else
-        {
-            // Looking down or straight ahead: push off the wall
-            boostImpulse = Vector3.up * (_jumpBoostUp * 0.7f) + wallNormal * _jumpBoostOut;
-            _leftRequireFreshPress = true;
-            _rightRequireFreshPress = true;
-            _leftHandCooldown = _handReleaseCooldown;
-            _rightHandCooldown = _handReleaseCooldown;
-        }
+        // Allow re-gripping immediately so player can grab a higher spot at the peak of the jump
+        _leftRequireFreshPress = false;
+        _rightRequireFreshPress = false;
+        _leftHandCooldown = 0.12f;  // Brief delay so it doesn't re-grip the exact same spot immediately
+        _rightHandCooldown = 0.12f;
 
         if (_movement != null)
         {
@@ -762,7 +744,7 @@ public class Wallclimb : NetworkBehaviour
         }
 
         OnWallJumpBoost?.Invoke();
-        Debug.Log($"[Wallclimb] Client {OwnerClientId} WALL JUMP BOOST: lookingUp={lookingUp}, impulse={boostImpulse}");
+        Debug.Log($"[Wallclimb] Client {OwnerClientId} WALL JUMP BOOST (straight up): impulse={boostImpulse}");
     }
 
     /// <summary>
