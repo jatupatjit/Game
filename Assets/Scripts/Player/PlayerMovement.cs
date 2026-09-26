@@ -161,7 +161,7 @@ namespace CoopGame.Player
         }
 
         /// <summary>
-        /// Call this every frame with the desired movement input, camera heading, and jump request.
+        /// Call this once per physics step with cached movement input, camera heading, and jump request.
         /// </summary>
         /// <param name="moveInput">Normalized 2D input from joystick / WASD (X = lateral, Y = forward/backward)</param>
         /// <param name="cameraForward">Horizontal forward vector of the camera</param>
@@ -185,7 +185,7 @@ namespace CoopGame.Player
                 return;
             }
 
-            float deltaTime = Time.deltaTime;
+            float deltaTime = Time.fixedDeltaTime;
 
             // 1. Update Platforming Timers (Coyote time & Jump buffer)
             UpdateTimers(deltaTime, jumpRequested);

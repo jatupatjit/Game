@@ -27,6 +27,14 @@ namespace CoopGame.Player
         [SerializeField] private CharacterController _characterController;
         [SerializeField] private CoopGame.CarrySystem.PlayerCarry _playerCarry;
 
+        private Wallclimb _wallclimb;
+        private Vector2 _moveInput;
+        private Vector3 _moveForward;
+        private Vector3 _moveRight;
+        private bool _sprintHeld;
+        private bool _jumpPending;
+        private bool _wallJumpConsumedThisFrame;
+
         [Header("Visuals (Optional)")]
         [Tooltip("Renderer to tint with distinct player colors for easy multiplayer visual identification")]
         [SerializeField] private Renderer _playerRenderer;
@@ -47,6 +55,7 @@ namespace CoopGame.Player
             if (_cameraController == null) _cameraController = GetComponent<PlayerCameraController>();
             if (_characterController == null) _characterController = GetComponent<CharacterController>();
             if (_playerCarry == null) _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+            _wallclimb = GetComponent<Wallclimb>();
 
             EnsureCharacterModelAttached();
         }
@@ -171,6 +180,11 @@ namespace CoopGame.Player
                 // We MUST activate the camera, input listeners, and local CharacterController.
                 _inputReader.enabled = true;
                 _inputReader.EnableInput();
+                if (_wallclimb != null)
+                {
+                    _wallclimb.OnWallJumpBoost -= ClearPendingJump;
+                    _wallclimb.OnWallJumpBoost += ClearPendingJump;
+                }
 
                 if (_cameraController != null)
                 {
@@ -237,7 +251,10 @@ namespace CoopGame.Player
 
             if (IsOwner)
             {
+                if (_wallclimb != null)
+                    _wallclimb.OnWallJumpBoost -= ClearPendingJump;
                 _inputReader.DisableInput();
+                ClearMovementInput();
                 if (_cameraController != null)
                     _cameraController.SetOwnershipState(false);
                 Cursor.lockState = CursorLockMode.None;
@@ -248,6 +265,8 @@ namespace CoopGame.Player
 
         private void OnDestroy()
         {
+            if (_wallclimb != null)
+                _wallclimb.OnWallJumpBoost -= ClearPendingJump;
             if (IsOwner)
             {
                 Cursor.lockState = CursorLockMode.None;
@@ -285,17 +304,47 @@ namespace CoopGame.Player
                 _cameraController.UpdateLookInput(_inputReader.LookInput);
             }
 
-            // 2. Drive movement using camera heading and input reader values
-            Vector3 camForward = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
-            Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
+            // Cache render-frame input; the CharacterController moves in FixedUpdate.
+            _moveInput = _inputReader.MoveInput;
+            _moveForward = _cameraController != null ? _cameraController.HorizontalForward : transform.forward;
+            _moveRight = _cameraController != null ? _cameraController.HorizontalRight : transform.right;
+            _sprintHeld = _inputReader.SprintHeld;
+            _jumpPending |= _inputReader.JumpTriggered && !_wallJumpConsumedThisFrame;
+        }
 
-            _movement.ProcessMovement(
-                _inputReader.MoveInput,
-                camForward,
-                camRight,
-                _inputReader.SprintHeld,
-                _inputReader.JumpTriggered
-            );
+        private void LateUpdate()
+        {
+            _wallJumpConsumedThisFrame = false;
+        }
+
+        private void FixedUpdate()
+        {
+            if (!IsOwner || _movement == null || !_movement.enabled)
+                return;
+
+            if (CoopGame.Network.PauseMenu.IsPaused)
+            {
+                ClearMovementInput();
+                return;
+            }
+
+            bool jump = _jumpPending && (_wallclimb == null || !_wallclimb.IsClimbing);
+            _jumpPending = false;
+            _movement.ProcessMovement(_moveInput, _moveForward, _moveRight, _sprintHeld, jump);
+        }
+
+        private void ClearPendingJump()
+        {
+            _jumpPending = false;
+            _wallJumpConsumedThisFrame = true;
+        }
+
+        private void ClearMovementInput()
+        {
+            _moveInput = Vector2.zero;
+            _sprintHeld = false;
+            _jumpPending = false;
+            _wallJumpConsumedThisFrame = false;
         }
 
         /// <summary>
