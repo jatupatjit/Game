@@ -1053,12 +1053,31 @@ public static class RoomCodeHUDBuilder
 [InitializeOnLoad]
 public static class AutoSceneUIInstaller
 {
+    private const string LobbyScenePath = "Assets/Scenes/SampleScene.unity";
+
+    private static bool IsLobbyScene()
+    {
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        return scene.isLoaded && scene.path == LobbyScenePath;
+    }
+
+    private static T FindInLobbyScene<T>() where T : Component
+    {
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            var component = root.GetComponentInChildren<T>(true);
+            if (component != null) return component;
+        }
+        return null;
+    }
+
     static AutoSceneUIInstaller()
     {
         EditorApplication.delayCall += () =>
         {
             if (!EditorApplication.isPlayingOrWillChangePlaymode &&
-                UnityEngine.SceneManagement.SceneManager.GetActiveScene().isLoaded)
+                IsLobbyScene())
             {
                 if (NeedsBuild())
                 {
@@ -1070,16 +1089,18 @@ public static class AutoSceneUIInstaller
 
     public static bool NeedsBuild()
     {
-        var lobby = Object.FindFirstObjectByType<LobbyUI>();
+        if (!IsLobbyScene()) return false;
+
+        var lobby = FindInLobbyScene<LobbyUI>();
         if (lobby == null || lobby.transform.childCount == 0) return true;
 
-        var pause = Object.FindFirstObjectByType<PauseMenu>();
+        var pause = FindInLobbyScene<PauseMenu>();
         if (pause == null || pause.transform.childCount == 0) return true;
 
-        var hud = Object.FindFirstObjectByType<RoomCodeHUD>();
+        var hud = FindInLobbyScene<RoomCodeHUD>();
         if (hud == null || hud.transform.childCount == 0) return true;
 
-        var es = Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
+        var es = FindInLobbyScene<UnityEngine.EventSystems.EventSystem>();
         if (es == null) return true;
 
         return false;
@@ -1088,6 +1109,12 @@ public static class AutoSceneUIInstaller
     [MenuItem("CoopGame/Build All UI in Scene")]
     public static void BuildAll()
     {
+        if (!IsLobbyScene())
+        {
+            Debug.LogWarning("[AutoSceneUIInstaller] Lobby UI can only be built in SampleScene.");
+            return;
+        }
+
         EnsureEventSystem();
         EnsureLobbyUI();
         EnsurePauseMenu();
@@ -1106,7 +1133,7 @@ public static class AutoSceneUIInstaller
 
     private static void EnsureEventSystem()
     {
-        var es = Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
+        var es = FindInLobbyScene<UnityEngine.EventSystems.EventSystem>();
         if (es == null)
         {
             var go = new GameObject("EventSystem");
@@ -1126,7 +1153,7 @@ public static class AutoSceneUIInstaller
 
     private static void EnsureLobbyUI()
     {
-        var lobby = Object.FindFirstObjectByType<LobbyUI>();
+        var lobby = FindInLobbyScene<LobbyUI>();
         if (lobby == null)
         {
             var go = new GameObject("LobbyUI");
@@ -1138,7 +1165,7 @@ public static class AutoSceneUIInstaller
 
     private static void EnsurePauseMenu()
     {
-        var pause = Object.FindFirstObjectByType<PauseMenu>();
+        var pause = FindInLobbyScene<PauseMenu>();
         if (pause == null)
         {
             var go = new GameObject("PauseMenu");
@@ -1150,7 +1177,7 @@ public static class AutoSceneUIInstaller
 
     private static void EnsureRoomCodeHUD()
     {
-        var hud = Object.FindFirstObjectByType<RoomCodeHUD>();
+        var hud = FindInLobbyScene<RoomCodeHUD>();
         if (hud == null)
         {
             var go = new GameObject("RoomCodeHUD");

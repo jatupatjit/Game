@@ -200,7 +200,7 @@ namespace CoopGame.Network
                 var nm = NetworkManager.Singleton;
                 if (nm != null && (nm.IsClient || nm.IsServer)) nm.Shutdown();
                 UnityEngine.SceneManagement.SceneManager.LoadScene(
-                    UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+                    "SampleScene");
             }
         }
 

@@ -313,6 +313,9 @@ namespace CoopGame.CarrySystem
                 return;
             }
 
+            if (_leftMarker == null || _rightMarker == null)
+                EnsureDualMarkersCreated();
+
             // 1. Calculate dynamic lift height from camera pitch (Mouse Up / Down)
             float currentHoldHeight = _normalLiftHeight;
             if (_cameraController != null)
@@ -1413,6 +1416,7 @@ namespace CoopGame.CarrySystem
             {
                 GameObject lObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 lObj.name = "LeftHandAimMarker";
+                lObj.transform.SetParent(transform, false);
                 lObj.transform.localScale = new Vector3(0.12f, 0.003f, 0.12f);
                 Collider col = lObj.GetComponent<Collider>();
                 if (col != null) DestroyImmediate(col);
@@ -1436,6 +1440,7 @@ namespace CoopGame.CarrySystem
             {
                 GameObject rObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 rObj.name = "RightHandAimMarker";
+                rObj.transform.SetParent(transform, false);
                 rObj.transform.localScale = new Vector3(0.12f, 0.003f, 0.12f);
                 Collider col = rObj.GetComponent<Collider>();
                 if (col != null) DestroyImmediate(col);

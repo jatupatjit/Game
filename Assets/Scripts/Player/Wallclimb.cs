@@ -44,7 +44,7 @@ public class Wallclimb : NetworkBehaviour
     [Tooltip("Stamina drained per second while holding with only one hand (3.5f/s).")]
     [SerializeField] private float _oneHandStaminaDrain = 3.5f;
 
-    [Tooltip("Layer mask representing climbable walls.")]
+    [Tooltip("Additional climbable layers. All solid world layers except Ignore Raycast and UI are scanned by default.")]
     [SerializeField] private LayerMask _wallLayers = 1 << 3;
 
     [Header("Pitch Lift Mechanics (Human Fall Flat Style)")]
@@ -122,6 +122,12 @@ public class Wallclimb : NetworkBehaviour
     private Vector3 _rightGripPoint;
     private Vector3 _leftGripNormal = Vector3.back;
     private Vector3 _rightGripNormal = Vector3.back;
+    private Collider _leftGripCollider;
+    private Collider _rightGripCollider;
+    private Vector3 _leftGripLocalPoint;
+    private Vector3 _rightGripLocalPoint;
+    private Vector3 _leftGripLocalNormal;
+    private Vector3 _rightGripLocalNormal;
 
     // Aim hits
     private bool _canGrabLeft = false;
@@ -129,6 +135,8 @@ public class Wallclimb : NetworkBehaviour
     private RaycastHit _leftAimHit;
     private RaycastHit _rightAimHit;
     private bool _isAimingAtWall = false;
+    private bool _jumpPending;
+    private readonly RaycastHit[] _surfaceHits = new RaycastHit[24];
 
     // Pull-up state
     private bool _isPullingUp = false;
@@ -176,7 +184,7 @@ public class Wallclimb : NetworkBehaviour
         ? _isPullingUp 
         : ((_netClimbHandState.Value & (1 << 2)) != 0);
     public bool IsAimingAtWall => _isAimingAtWall;
-    public LayerMask WallLayers => _wallLayers;
+    public LayerMask WallLayers => _wallLayers | (Physics.DefaultRaycastLayers & ~(1 << 5));
 
     private void Awake()
     {
@@ -272,19 +280,45 @@ public class Wallclimb : NetworkBehaviour
             return;
         }
 
+        if (_leftClimbMarker == null || _rightClimbMarker == null)
+            EnsureMarkersCreated();
+
+        _jumpPending |= _inputReader != null && _inputReader.JumpTriggered;
+
+        if (_isPullingUp)
+        {
+            UpdatePullUpVisuals();
+            return;
+        }
+
+        UpdateHandMarkers();
+        UpdateHandVisuals();
+    }
+
+    private void FixedUpdate()
+    {
+        bool isLocalOwner = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening) ? IsOwner : true;
+        if (!isLocalOwner)
+            return;
+        if (CoopGame.Network.PauseMenu.IsPaused)
+        {
+            _jumpPending = false;
+            return;
+        }
+
         if (_slipCooldownTimer > 0f)
         {
-            _slipCooldownTimer -= Time.deltaTime;
+            _slipCooldownTimer -= Time.fixedDeltaTime;
         }
 
         if (_leftHandCooldown > 0f)
         {
-            _leftHandCooldown -= Time.deltaTime;
+            _leftHandCooldown -= Time.fixedDeltaTime;
         }
 
         if (_rightHandCooldown > 0f)
         {
-            _rightHandCooldown -= Time.deltaTime;
+            _rightHandCooldown -= Time.fixedDeltaTime;
         }
 
         // Clear "require fresh press" as soon as the button is physically released
@@ -297,17 +331,17 @@ public class Wallclimb : NetworkBehaviour
         if (_isPullingUp)
         {
             UpdatePullUp();
+            SyncNetworkState();
             return;
         }
+
+        RefreshGripAnchors();
 
         // 2. Scan for walls independently for Left and Right hands
         ScanHandAims(out _canGrabLeft, out _canGrabRight, out _leftAimHit, out _rightAimHit);
         _isAimingAtWall = (_canGrabLeft || _canGrabRight || _leftHandGripping || _rightHandGripping);
 
-        // 3. Update reticle markers
-        UpdateHandMarkers();
-
-        // 4. Read player inputs
+        // 3. Read cached player inputs
         bool leftClick = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
         bool rightClick = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
         bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying);
@@ -315,6 +349,7 @@ public class Wallclimb : NetworkBehaviour
         if (carryingItem || _slipCooldownTimer > 0f)
         {
             if (IsClimbing) ReleaseAllGrips();
+            _jumpPending = false;
             return;
         }
 
@@ -337,6 +372,23 @@ public class Wallclimb : NetworkBehaviour
             Debug.Log($"[Wallclimb] Client {OwnerClientId} released RIGHT hand.");
         }
 
+        // The visual hand approaches the contact in Update; only the physics step commits a grip.
+        Vector3 chestPos = transform.position + Vector3.up * 1.15f;
+        if (leftClick && !_leftHandGripping && _canGrabLeft && !_leftRequireFreshPress && _leftHandCooldown <= 0f)
+        {
+            Vector3 shoulder = chestPos - transform.right * (_handLateralSpacing * 0.5f);
+            if (Vector3.Distance(shoulder, _leftAimHit.point) <= 1.05f ||
+                (_leftHand != null && Vector3.Distance(_leftHand.position, _leftAimHit.point) <= 0.25f))
+                GripLeftHand(_leftAimHit);
+        }
+        if (rightClick && !_rightHandGripping && _canGrabRight && !_rightRequireFreshPress && _rightHandCooldown <= 0f)
+        {
+            Vector3 shoulder = chestPos + transform.right * (_handLateralSpacing * 0.5f);
+            if (Vector3.Distance(shoulder, _rightAimHit.point) <= 1.05f ||
+                (_rightHand != null && Vector3.Distance(_rightHand.position, _rightAimHit.point) <= 0.25f))
+                GripRightHand(_rightAimHit);
+        }
+
         // 7. Process active climbing physics
         if (_leftHandGripping || _rightHandGripping)
         {
@@ -347,9 +399,11 @@ public class Wallclimb : NetworkBehaviour
             }
 
             // Check for Wall Jump Boost (Space bar)
-            if (_inputReader != null && _inputReader.JumpTriggered)
+            if (_jumpPending)
             {
-                ExecuteWallJumpBoost();
+                _jumpPending = false;
+                if (!CheckForTopLedgePullUp())
+                    ExecuteWallJumpBoost();
                 return;
             }
 
@@ -364,10 +418,9 @@ public class Wallclimb : NetworkBehaviour
             }
         }
 
-        // 8. Update hand visual transforms
-        UpdateHandVisuals();
+        _jumpPending = false;
 
-        // 9. Synchronize network state for proxies
+        // 8. Synchronize network state for proxies
         SyncNetworkState();
     }
 
@@ -395,17 +448,15 @@ public class Wallclimb : NetworkBehaviour
         // -------------------------------------------------------------
         Vector3 leftShoulder = chestPos - transform.right * (_handLateralSpacing * 0.5f);
 
-        Ray leftRay = new Ray(leftShoulder, leftAimDir);
-        if (Physics.Raycast(leftRay, out RaycastHit lHit, _maxScanDistance, _wallLayers, QueryTriggerInteraction.Ignore))
+        if (TryFindSurfaceHit(leftShoulder, leftAimDir, false, out RaycastHit lHit) ||
+            (_characterController != null && !_characterController.isGrounded &&
+             TryFindSurfaceHit(leftShoulder, Vector3.ProjectOnPlane(leftAimDir, Vector3.up).normalized, true, out lHit)))
         {
-            if (lHit.collider.transform.root != transform.root && Vector3.Angle(lHit.normal, Vector3.up) >= 45f)
+            float dist = Vector3.Distance(leftShoulder, lHit.point);
+            if (dist <= _handReachDistance && notExhausted)
             {
-                float dist = Vector3.Distance(leftShoulder, lHit.point);
-                if (dist <= _handReachDistance && notExhausted)
-                {
-                    canLeft = true;
-                    leftHit = lHit;
-                }
+                canLeft = true;
+                leftHit = lHit;
             }
         }
 
@@ -414,19 +465,52 @@ public class Wallclimb : NetworkBehaviour
         // -------------------------------------------------------------
         Vector3 rightShoulder = chestPos + transform.right * (_handLateralSpacing * 0.5f);
 
-        Ray rightRay = new Ray(rightShoulder, rightAimDir);
-        if (Physics.Raycast(rightRay, out RaycastHit rHit, _maxScanDistance, _wallLayers, QueryTriggerInteraction.Ignore))
+        if (TryFindSurfaceHit(rightShoulder, rightAimDir, false, out RaycastHit rHit) ||
+            (_characterController != null && !_characterController.isGrounded &&
+             TryFindSurfaceHit(rightShoulder, Vector3.ProjectOnPlane(rightAimDir, Vector3.up).normalized, true, out rHit)))
         {
-            if (rHit.collider.transform.root != transform.root && Vector3.Angle(rHit.normal, Vector3.up) >= 45f)
+            float dist = Vector3.Distance(rightShoulder, rHit.point);
+            if (dist <= _handReachDistance && notExhausted)
             {
-                float dist = Vector3.Distance(rightShoulder, rHit.point);
-                if (dist <= _handReachDistance && notExhausted)
-                {
-                    canRight = true;
-                    rightHit = rHit;
-                }
+                canRight = true;
+                rightHit = rHit;
             }
         }
+    }
+
+    private bool TryFindSurfaceHit(Vector3 origin, Vector3 direction, bool forgiving, out RaycastHit result)
+    {
+        result = default;
+        if (direction.sqrMagnitude < 0.01f)
+            return false;
+
+        Ray ray = new Ray(origin, direction);
+        int mask = WallLayers;
+        float distance = Mathf.Min(_maxScanDistance, _handReachDistance);
+        int count = forgiving
+            ? Physics.SphereCastNonAlloc(ray, 0.12f, _surfaceHits, distance, mask, QueryTriggerInteraction.Ignore)
+            : Physics.RaycastNonAlloc(ray, _surfaceHits, distance, mask, QueryTriggerInteraction.Ignore);
+
+        float nearest = float.MaxValue;
+        for (int i = 0; i < count; i++)
+        {
+            RaycastHit hit = _surfaceHits[i];
+            Collider col = hit.collider;
+            if (col == null || col.transform.root == transform.root ||
+                col.gameObject.layer == 5 ||
+                col.GetComponentInParent<NetworkPlayer>() != null ||
+                col.GetComponentInParent<CarryableObject>() != null ||
+                (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) ||
+                Mathf.Abs(hit.normal.y) > 0.7f)
+                continue;
+
+            if (hit.distance < nearest)
+            {
+                nearest = hit.distance;
+                result = hit;
+            }
+        }
+        return result.collider != null;
     }
 
     /// <summary>
@@ -476,6 +560,9 @@ public class Wallclimb : NetworkBehaviour
     private void GripLeftHand(RaycastHit hit)
     {
         _leftHandGripping = true;
+        _leftGripCollider = hit.collider;
+        _leftGripLocalPoint = hit.collider.transform.InverseTransformPoint(hit.point);
+        _leftGripLocalNormal = hit.collider.transform.InverseTransformDirection(hit.normal);
         _leftGripPoint = hit.point;
         _leftGripNormal = hit.normal;
         OnClimbStarted?.Invoke();
@@ -485,10 +572,38 @@ public class Wallclimb : NetworkBehaviour
     private void GripRightHand(RaycastHit hit)
     {
         _rightHandGripping = true;
+        _rightGripCollider = hit.collider;
+        _rightGripLocalPoint = hit.collider.transform.InverseTransformPoint(hit.point);
+        _rightGripLocalNormal = hit.collider.transform.InverseTransformDirection(hit.normal);
         _rightGripPoint = hit.point;
         _rightGripNormal = hit.normal;
         OnClimbStarted?.Invoke();
         Debug.Log($"[Wallclimb] Client {OwnerClientId} gripped wall with RIGHT hand at {_rightGripPoint:F2}");
+    }
+
+    private void RefreshGripAnchors()
+    {
+        if (_leftHandGripping)
+        {
+            if (_leftGripCollider == null || !_leftGripCollider.enabled || !_leftGripCollider.gameObject.activeInHierarchy)
+                _leftHandGripping = false;
+            else
+            {
+                _leftGripPoint = _leftGripCollider.transform.TransformPoint(_leftGripLocalPoint);
+                _leftGripNormal = _leftGripCollider.transform.TransformDirection(_leftGripLocalNormal).normalized;
+            }
+        }
+
+        if (_rightHandGripping)
+        {
+            if (_rightGripCollider == null || !_rightGripCollider.enabled || !_rightGripCollider.gameObject.activeInHierarchy)
+                _rightHandGripping = false;
+            else
+            {
+                _rightGripPoint = _rightGripCollider.transform.TransformPoint(_rightGripLocalPoint);
+                _rightGripNormal = _rightGripCollider.transform.TransformDirection(_rightGripLocalNormal).normalized;
+            }
+        }
     }
 
     /// <summary>
@@ -496,7 +611,7 @@ public class Wallclimb : NetworkBehaviour
     /// </summary>
     private void ExecuteClimbPhysics()
     {
-        float deltaTime = Time.deltaTime;
+        float deltaTime = Time.fixedDeltaTime;
 
         // 1. Stamina Drain: One-handed hang strains muscles ~3x faster than two-handed!
         if (_stamina != null)
@@ -656,9 +771,6 @@ public class Wallclimb : NetworkBehaviour
     /// </summary>
     private bool CheckForTopLedgePullUp()
     {
-        // Only trigger pull-up on explicit Space bar press
-        if (_inputReader == null || !_inputReader.JumpTriggered) return false;
-
         Vector3 wallNormal = (_leftHandGripping ? _leftGripNormal : _rightGripNormal);
         Vector3 wallForward = -wallNormal;
         wallForward.y = 0f;
@@ -666,28 +778,39 @@ public class Wallclimb : NetworkBehaviour
 
         // Downward raycast probe starting high above the player to find top flat ledge
         float probeHighY = transform.position.y + 2.6f;
-        Vector3 probeOrigin = new Vector3(transform.position.x, probeHighY, transform.position.z) + wallForward * 0.40f;
-
-        if (Physics.Raycast(probeOrigin, Vector3.down, out RaycastHit ledgeHit, 3.2f, _wallLayers | (1 << 0), QueryTriggerInteraction.Ignore))
+        float radius = (_characterController != null) ? _characterController.radius : 0.5f;
+        Vector3 probeOrigin = new Vector3(transform.position.x, probeHighY, transform.position.z)
+                              + wallForward * (radius + 0.40f);
+        int count = Physics.RaycastNonAlloc(probeOrigin, Vector3.down, _surfaceHits, 3.2f,
+                                            WallLayers, QueryTriggerInteraction.Ignore);
+        float handHeight = Mathf.Max(
+            _leftHandGripping ? _leftGripPoint.y : float.NegativeInfinity,
+            _rightHandGripping ? _rightGripPoint.y : float.NegativeInfinity);
+        float nearest = float.MaxValue;
+        RaycastHit ledgeHit = default;
+        for (int i = 0; i < count; i++)
         {
-            if (Vector3.Angle(ledgeHit.normal, Vector3.up) <= 45f)
-            {
-                float ledgeHeight = ledgeHit.point.y;
-                float handHeight = Mathf.Max(
-                    _leftHandGripping ? _leftGripPoint.y : 0f,
-                    _rightHandGripping ? _rightGripPoint.y : 0f
-                );
+            RaycastHit hit = _surfaceHits[i];
+            Collider col = hit.collider;
+            if (col == null || col.transform.root == transform.root || col.gameObject.layer == 5 ||
+                col.GetComponentInParent<NetworkPlayer>() != null ||
+                col.GetComponentInParent<CarryableObject>() != null ||
+                (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) ||
+                hit.normal.y < 0.7f || handHeight < hit.point.y - 0.55f ||
+                hit.point.y < transform.position.y - 0.2f)
+                continue;
 
-                // If hands are within 0.55m of ledge height or above it: pull up on Space!
-                if (handHeight >= (ledgeHeight - 0.55f))
-                {
-                    StartPullUp(ledgeHit, wallForward);
-                    return true;
-                }
+            if (hit.distance < nearest)
+            {
+                nearest = hit.distance;
+                ledgeHit = hit;
             }
         }
+        if (ledgeHit.collider == null)
+            return false;
 
-        return false;
+        StartPullUp(ledgeHit, wallForward);
+        return true;
     }
 
     private void StartPullUp(RaycastHit ledgeHit, Vector3 wallForward)
@@ -706,16 +829,14 @@ public class Wallclimb : NetworkBehaviour
         _rightHandGripping = false;
 
         HideMarkers();
+        OnWallJumpBoost?.Invoke(); // Consume the same buffered jump in NetworkPlayer.
         Debug.Log($"[Wallclimb] Client {OwnerClientId} PULLING UP onto top surface at Y={_pullUpTargetPos.y:F2}");
     }
 
     private void UpdatePullUp()
     {
-        _pullUpTimer += Time.deltaTime;
+        _pullUpTimer += Time.fixedDeltaTime;
         float t = Mathf.Clamp01(_pullUpTimer / Mathf.Max(0.01f, _pullUpDuration));
-
-        Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
-        Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
 
         // Vertical arc: rises smoothly above the ledge
         float heightArc = Mathf.Sin(t * Mathf.PI) * 0.12f;
@@ -735,7 +856,21 @@ public class Wallclimb : NetworkBehaviour
             _characterController.Move(displacement);
         }
 
-        // Animate hands sliding onto the top surface
+        if (t >= 1.0f)
+        {
+            _isPullingUp = false;
+            if (_movement != null) _movement.IsClimbing = false;
+            Debug.Log($"[Wallclimb] Client {OwnerClientId} successfully landed on top of the wall!");
+        }
+    }
+
+    private void UpdatePullUpVisuals()
+    {
+        float t = Mathf.Clamp01(_pullUpTimer / Mathf.Max(0.01f, _pullUpDuration));
+        Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
+        Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
+
+        // Animate hands sliding onto the top surface.
         if (_leftHand != null && _rightHand != null)
         {
             float handSlide = Mathf.Lerp(0f, 0.35f, t);
@@ -747,12 +882,6 @@ public class Wallclimb : NetworkBehaviour
             _rightHand.position = Vector3.Lerp(_rightHand.position, worldRight, Time.deltaTime * 25f);
         }
 
-        if (t >= 1.0f)
-        {
-            _isPullingUp = false;
-            if (_movement != null) _movement.IsClimbing = false;
-            Debug.Log($"[Wallclimb] Client {OwnerClientId} successfully landed on top of the wall!");
-        }
     }
 
     /// <summary>
@@ -821,14 +950,6 @@ public class Wallclimb : NetworkBehaviour
                     _leftHand.rotation = Quaternion.Slerp(_leftHand.rotation, targetRot, Time.deltaTime * 20f);
                 }
 
-                // Physical contact check (Human Fall Flat mechanic):
-                // Grip ONLY when hand is within physical contact range of the wall!
-                float distToWall = Vector3.Distance(leftShoulder, _leftAimHit.point);
-                float handDist = Vector3.Distance(_leftHand.position, _leftAimHit.point);
-                if ((distToWall <= 1.05f || handDist <= 0.25f) && !_leftRequireFreshPress && _leftHandCooldown <= 0f)
-                {
-                    GripLeftHand(_leftAimHit);
-                }
             }
             else
             {
@@ -892,14 +1013,6 @@ public class Wallclimb : NetworkBehaviour
                     _rightHand.rotation = Quaternion.Slerp(_rightHand.rotation, targetRot, Time.deltaTime * 20f);
                 }
 
-                // Physical contact check (Human Fall Flat mechanic):
-                // Grip ONLY when hand is within physical contact range of the wall!
-                float distToWall = Vector3.Distance(rightShoulder, _rightAimHit.point);
-                float handDist = Vector3.Distance(_rightHand.position, _rightAimHit.point);
-                if ((distToWall <= 1.05f || handDist <= 0.25f) && !_rightRequireFreshPress && _rightHandCooldown <= 0f)
-                {
-                    GripRightHand(_rightAimHit);
-                }
             }
             else
             {
@@ -1087,9 +1200,10 @@ public class Wallclimb : NetworkBehaviour
 
         if (_leftClimbMarker == null)
         {
-            GameObject lObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            lObj.name = "LeftWallClimbMarker";
-            lObj.transform.localScale = new Vector3(0.14f, 0.003f, 0.14f);
+                GameObject lObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                lObj.name = "LeftWallClimbMarker";
+                lObj.transform.SetParent(transform, false);
+                lObj.transform.localScale = new Vector3(0.14f, 0.003f, 0.14f);
             Collider col = lObj.GetComponent<Collider>();
             if (col != null) DestroyImmediate(col);
 
@@ -1109,9 +1223,10 @@ public class Wallclimb : NetworkBehaviour
 
         if (_rightClimbMarker == null)
         {
-            GameObject rObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            rObj.name = "RightWallClimbMarker";
-            rObj.transform.localScale = new Vector3(0.14f, 0.003f, 0.14f);
+                GameObject rObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                rObj.name = "RightWallClimbMarker";
+                rObj.transform.SetParent(transform, false);
+                rObj.transform.localScale = new Vector3(0.14f, 0.003f, 0.14f);
             Collider col = rObj.GetComponent<Collider>();
             if (col != null) DestroyImmediate(col);
 

@@ -21,6 +21,7 @@ namespace CoopGame.Player
     ///    - Decoupled from player transform at runtime to eliminate rotation jitter.
     /// </summary>
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(60)]
     public class PlayerCameraController : MonoBehaviour
     {
         [Header("References")]
@@ -84,6 +85,7 @@ namespace CoopGame.Player
         // Cached colliders on this player to ignore during occlusion check
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
+        private BonelessCharacterPhysics _bodyMotion;
 
         /// <summary>
         /// Current vertical pitch angle in degrees (-35 = looking up, +70 = looking down).
@@ -161,6 +163,7 @@ namespace CoopGame.Player
             }
 
             _playerCarry = GetComponentInParent<CoopGame.CarrySystem.PlayerCarry>() ?? GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+            _bodyMotion = GetComponentInChildren<BonelessCharacterPhysics>(true);
         }
 
         // Cursor lock state
@@ -335,6 +338,10 @@ namespace CoopGame.Player
 
             // 2. Eye/Pivot position
             Vector3 pivotPosition = _cameraPivot.position + (Vector3.up * _pivotHeightOffset);
+            if (_bodyMotion == null)
+                _bodyMotion = GetComponentInChildren<BonelessCharacterPhysics>(true);
+            if (_bodyMotion != null && _bodyMotion.HasRenderedRootPosition)
+                pivotPosition += _bodyMotion.RenderedRootPosition - transform.position;
 
             // 3. Smoothly interpolate zoom distance
             _currentDistance = Mathf.Lerp(_currentDistance, _desiredDistance, Time.deltaTime * _zoomSpeed);

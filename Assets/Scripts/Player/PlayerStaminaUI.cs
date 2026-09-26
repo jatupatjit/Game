@@ -115,7 +115,7 @@ namespace CoopGame.Player
 
         private void EnsureHUDCreated()
         {
-            if (_isHudCreated) return;
+            if (_isHudCreated && _canvas != null && _hudCanvasGroup != null) return;
             _isHudCreated = true;
 
             EnsureWhiteSprite();
@@ -125,6 +125,7 @@ namespace CoopGame.Player
         public override void OnNetworkDespawn()
         {
             base.OnNetworkDespawn();
+            _isHudCreated = false;
             if (_hudCanvasGroup != null && _hudCanvasGroup.gameObject != null)
             {
                 Destroy(_hudCanvasGroup.gameObject);
@@ -156,6 +157,10 @@ namespace CoopGame.Player
 
         private void Update()
         {
+            // A scene transition destroys the scene-owned canvas while the network player survives.
+            if (IsSpawned && IsOwner && _isHudCreated && (_canvas == null || _hudCanvasGroup == null))
+                EnsureHUDCreated();
+
             if (_stamina == null) return;
 
             float targetNormStamina = _stamina.NormalizedStamina;

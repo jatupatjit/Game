@@ -629,6 +629,15 @@ namespace CoopGame.Network
         /// </summary>
         public void DisconnectAndReturnToLobby()
         {
+            if (_returningToLobby) return;
+            StartCoroutine(DisconnectAndReturnToLobbyRoutine());
+        }
+
+        private bool _returningToLobby;
+
+        private System.Collections.IEnumerator DisconnectAndReturnToLobbyRoutine()
+        {
+            _returningToLobby = true;
             Debug.Log("[SteamLobbyManager] Disconnecting and returning to clean Lobby state...");
 
             // 1. Restore Cursor immediately
@@ -655,12 +664,17 @@ namespace CoopGame.Network
                 nm.Shutdown();
             }
 
-            // 5. Reload scene to reset all physical GameObjects, colliders, and NGO state cleanly
-            string activeSceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            if (!string.IsNullOrEmpty(activeSceneName))
+            // Let NGO finish its shutdown callbacks before replacing the persistent
+            // NetworkManager with the one authored in SampleScene.
+            yield return null;
+            if (nm != null)
             {
-                UnityEngine.SceneManagement.SceneManager.LoadScene(activeSceneName);
+                Destroy(nm.gameObject);
+                yield return null;
             }
+
+            UnityEngine.SceneManagement.SceneManager.LoadScene("SampleScene");
+            _returningToLobby = false;
         }
 
         #endregion

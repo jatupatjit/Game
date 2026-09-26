@@ -1,6 +1,7 @@
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 namespace CoopGame.Network
 {
@@ -48,6 +49,10 @@ namespace CoopGame.Network
 
         private void Update()
         {
+            // Matchmaking controls belong to the lobby scene only. Level scenes have
+            // their own gameplay HUD and PauseMenu, so never show a join-code fallback.
+            if (SceneManager.GetActiveScene().name != "SampleScene") return;
+
             // Read ESC from New Input System
             bool escPressed = false;
             if (Keyboard.current != null)
@@ -116,7 +121,7 @@ namespace CoopGame.Network
 
         private void OnGUI()
         {
-            if (!_showHUD) return;
+            if (!_showHUD || SceneManager.GetActiveScene().name != "SampleScene") return;
 
             NetworkManager networkManager = NetworkManager.Singleton;
             SteamLobbyManager steamManager = SteamLobbyManager.EnsureInstance();

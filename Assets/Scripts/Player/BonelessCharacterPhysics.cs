@@ -1,3 +1,4 @@
+using Unity.Netcode;
 using UnityEngine;
 
 namespace CoopGame.Player
@@ -22,6 +23,7 @@ namespace CoopGame.Player
     ///    - Tilts towards gripping hands when wall-climbing.
     /// </summary>
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(50)]
     public class BonelessCharacterPhysics : MonoBehaviour
     {
         [Header("Squash & Stretch (Elastic Spring)")]
@@ -73,6 +75,20 @@ namespace CoopGame.Player
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
         private Wallclimb _wallClimb;
         private Transform _rootTransform;
+        private NetworkObject _networkObject;
+
+        private Vector3 _previousPhysicsPosition;
+        private Vector3 _currentPhysicsPosition;
+        private Quaternion _previousPhysicsRotation;
+        private Quaternion _currentPhysicsRotation;
+        private float _fixedTurnRate;
+        private bool _hasPhysicsPose;
+
+        public Vector3 RenderedRootPosition { get; private set; }
+        public bool HasRenderedRootPosition => _hasPhysicsPose && UsesLocalPhysics;
+
+        private bool UsesLocalPhysics =>
+            _networkObject == null || !_networkObject.IsSpawned || _networkObject.IsOwner;
 
         // Base local transform caches
         private Vector3 _baseLocalPosition;
@@ -100,6 +116,7 @@ namespace CoopGame.Player
             _characterController = _rootTransform.GetComponent<CharacterController>();
             _playerCarry = _rootTransform.GetComponent<CoopGame.CarrySystem.PlayerCarry>();
             _wallClimb = _rootTransform.GetComponent<Wallclimb>();
+            _networkObject = _rootTransform.GetComponent<NetworkObject>();
 
             _baseLocalPosition = transform.localPosition;
             _baseLocalRotation = transform.localRotation;
@@ -107,6 +124,34 @@ namespace CoopGame.Player
 
             _lastRootPosition = _rootTransform.position;
             _lastRootYaw = _rootTransform.eulerAngles.y;
+            _previousPhysicsPosition = _currentPhysicsPosition = _rootTransform.position;
+            _previousPhysicsRotation = _currentPhysicsRotation = _rootTransform.rotation;
+            RenderedRootPosition = _rootTransform.position;
+        }
+
+        private void FixedUpdate()
+        {
+            if (!UsesLocalPhysics)
+                return;
+
+            Vector3 position = _rootTransform.position;
+            Quaternion rotation = _rootTransform.rotation;
+            if (!_hasPhysicsPose || (position - _currentPhysicsPosition).sqrMagnitude > 4f ||
+                Quaternion.Angle(rotation, _currentPhysicsRotation) > 90f)
+            {
+                _previousPhysicsPosition = _currentPhysicsPosition = position;
+                _previousPhysicsRotation = _currentPhysicsRotation = rotation;
+                _fixedTurnRate = 0f;
+                _hasPhysicsPose = true;
+                return;
+            }
+
+            _previousPhysicsPosition = _currentPhysicsPosition;
+            _previousPhysicsRotation = _currentPhysicsRotation;
+            _currentPhysicsPosition = position;
+            _currentPhysicsRotation = rotation;
+            _fixedTurnRate = Mathf.DeltaAngle(_previousPhysicsRotation.eulerAngles.y,
+                _currentPhysicsRotation.eulerAngles.y) / Time.fixedDeltaTime;
         }
 
         private void LateUpdate()
@@ -114,16 +159,34 @@ namespace CoopGame.Player
             float dt = Time.deltaTime;
             if (dt <= 0.0001f) return;
 
-            // Calculate actual velocities relative to root orientation
-            Vector3 worldDisplacement = (_rootTransform.position - _lastRootPosition) / dt;
+            // Fixed-step owner motion has zero displacement on some render frames and a
+            // large displacement on others. Use its stable physics velocity for animation.
+            bool usesLocalPhysics = UsesLocalPhysics;
+            Vector3 worldVelocity = usesLocalPhysics && _movement != null
+                ? _movement.Velocity
+                : (_rootTransform.position - _lastRootPosition) / dt;
             _lastRootPosition = _rootTransform.position;
 
-            Vector3 localVelocity = _rootTransform.InverseTransformDirection(worldDisplacement);
+            Vector3 localVelocity = _rootTransform.InverseTransformDirection(worldVelocity);
             float currentSpeed = new Vector2(localVelocity.x, localVelocity.z).magnitude;
 
             float currentYaw = _rootTransform.eulerAngles.y;
-            float angularYawDelta = Mathf.DeltaAngle(_lastRootYaw, currentYaw) / dt;
+            float angularYawDelta = usesLocalPhysics
+                ? _fixedTurnRate
+                : Mathf.DeltaAngle(_lastRootYaw, currentYaw) / dt;
             _lastRootYaw = currentYaw;
+
+            Vector3 renderedPosition = _rootTransform.position;
+            Quaternion renderedRotation = _rootTransform.rotation;
+            if (usesLocalPhysics && _hasPhysicsPose &&
+                (_wallClimb == null || !_wallClimb.IsClimbing) &&
+                (_rootTransform.position - _currentPhysicsPosition).sqrMagnitude <= 4f)
+            {
+                float alpha = Mathf.Clamp01((Time.time - Time.fixedTime) / Time.fixedDeltaTime);
+                renderedPosition = Vector3.Lerp(_previousPhysicsPosition, _currentPhysicsPosition, alpha);
+                renderedRotation = Quaternion.Slerp(_previousPhysicsRotation, _currentPhysicsRotation, alpha);
+            }
+            RenderedRootPosition = renderedPosition;
 
             bool isGrounded = (_characterController != null) ? _characterController.isGrounded : true;
 
@@ -133,7 +196,7 @@ namespace CoopGame.Player
             // Landing impact detection
             if (isGrounded && !_wasGrounded)
             {
-                float fallSpeed = Mathf.Abs(worldDisplacement.y);
+                float fallSpeed = Mathf.Abs(worldVelocity.y);
                 float impact = Mathf.Clamp(fallSpeed * 0.04f, 0.05f, _maxLandSquash);
                 _scaleYVelocity -= impact * 28f; // Compress downward
             }
@@ -142,7 +205,7 @@ namespace CoopGame.Player
             if (!isGrounded)
             {
                 // In air: stretch vertically proportional to vertical speed
-                float airStretch = Mathf.Clamp(-worldDisplacement.y * _airStretchMultiplier, -_maxAirStretch, _maxAirStretch);
+                float airStretch = Mathf.Clamp(-worldVelocity.y * _airStretchMultiplier, -_maxAirStretch, _maxAirStretch);
                 targetScaleY = 1.0f + airStretch;
             }
 
@@ -186,7 +249,9 @@ namespace CoopGame.Player
 
             // Apply vertical bobbing offset + ground squash offset (keeps feet on ground when squashed)
             float squashHeightOffset = (_currentScaleY - 1.0f) * 0.5f;
-            transform.localPosition = _baseLocalPosition + Vector3.up * (verticalBob + squashHeightOffset);
+            Vector3 renderOffset = _rootTransform.InverseTransformVector(renderedPosition - _rootTransform.position);
+            transform.localPosition = _baseLocalPosition + renderOffset +
+                                      Vector3.up * (verticalBob + squashHeightOffset);
 
             // ─────────────────────────────────────────────────────────────────
             // 3. Inertial Torso Lean & Tilt
@@ -223,7 +288,8 @@ namespace CoopGame.Player
 
             // Combine base rotation with inertial lean and waddle roll
             Quaternion leanRot = Quaternion.Euler(_currentTilt.x, 0f, _currentTilt.y + rollWaddle);
-            transform.localRotation = _baseLocalRotation * leanRot;
+            Quaternion renderRotationOffset = Quaternion.Inverse(_rootTransform.rotation) * renderedRotation;
+            transform.localRotation = renderRotationOffset * _baseLocalRotation * leanRot;
 
             _wasGrounded = isGrounded;
         }
