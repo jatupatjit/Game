@@ -123,7 +123,16 @@ namespace CoopGame.Network
         {
             if (!_showHUD || SceneManager.GetActiveScene().name != "SampleScene") return;
 
+            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             NetworkManager networkManager = NetworkManager.Singleton;
+            bool sessionActive = networkManager != null && (networkManager.IsClient || networkManager.IsServer || networkManager.IsHost);
+
+            // Lobby and hosting are only allowed in SampleScene. In gameplay screens (like Level01), suppress lobby HUD
+            if (sceneName != "SampleScene" && !sessionActive)
+            {
+                return;
+            }
+
             SteamLobbyManager steamManager = SteamLobbyManager.EnsureInstance();
 
             if (networkManager == null)
@@ -133,8 +142,6 @@ namespace CoopGame.Network
                 GUILayout.EndArea();
                 return;
             }
-
-            bool sessionActive = networkManager.IsClient || networkManager.IsServer || networkManager.IsHost;
 
             if (!sessionActive)
             {
