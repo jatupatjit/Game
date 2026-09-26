@@ -17,6 +17,7 @@ namespace CoopGame.Network
         [Header("Interaction")]
         [SerializeField, Min(0.5f)] private float _interactionDistance = 2.5f;
         [SerializeField] private Transform _interactionPoint;
+        [SerializeField] private GameObject _interactionPrompt;
 
         [Header("Portal")]
         [SerializeField] private GameObject _portalVisualRoot;
@@ -40,6 +41,13 @@ namespace CoopGame.Network
             if (_interactionPoint == null)
                 _interactionPoint = transform;
 
+            if (_interactionPrompt == null && _interactionPoint.parent != null)
+            {
+                Transform prompt = _interactionPoint.parent.Find("Interaction Prompt");
+                if (prompt != null)
+                    _interactionPrompt = prompt.gameObject;
+            }
+
             if (_portalEntryZone == null)
                 _portalEntryZone = GetComponentInChildren<Collider>(true);
         }
@@ -49,12 +57,24 @@ namespace CoopGame.Network
             base.OnNetworkSpawn();
             _portalActivated.OnValueChanged += OnPortalActivatedChanged;
             ApplyPortalState(_portalActivated.Value);
+            SetInteractionPromptVisible(false);
             StartCoroutine(BindLocalPlayerInput());
+        }
+
+        private void Update()
+        {
+            bool canInteract = IsSpawned && !_portalActivated.Value &&
+                               _localPlayerTransform != null && _interactionPoint != null;
+            bool isNearby = canInteract &&
+                            (_localPlayerTransform.position - _interactionPoint.position).sqrMagnitude <=
+                            _interactionDistance * _interactionDistance;
+            SetInteractionPromptVisible(isNearby);
         }
 
         public override void OnNetworkDespawn()
         {
             _portalActivated.OnValueChanged -= OnPortalActivatedChanged;
+            SetInteractionPromptVisible(false);
             UnbindLocalPlayerInput();
             base.OnNetworkDespawn();
         }
@@ -143,8 +163,7 @@ namespace CoopGame.Network
                 Vector3.Distance(sender.PlayerObject.transform.position, _interactionPoint.position) > _interactionDistance)
                 return;
 
-            if (string.IsNullOrWhiteSpace(_destinationSceneName) ||
-                !Application.CanStreamedLevelBeLoaded(_destinationSceneName))
+            if (!TryGetDestinationScenePath(out _))
             {
                 Debug.LogError($"[LobbyPortalGate] Destination scene '{_destinationSceneName}' is missing or not included in Build Settings.", this);
                 return;
@@ -170,7 +189,14 @@ namespace CoopGame.Network
                 yield break;
             }
 
-            SceneEventProgressStatus status = manager.SceneManager.LoadScene(_destinationSceneName, LoadSceneMode.Single);
+            if (!TryGetDestinationScenePath(out string scenePath))
+            {
+                Debug.LogError($"[LobbyPortalGate] Destination scene '{_destinationSceneName}' is no longer available in Build Settings.", this);
+                _sceneLoadRequested = false;
+                yield break;
+            }
+
+            SceneEventProgressStatus status = manager.SceneManager.LoadScene(scenePath, LoadSceneMode.Single);
             if (status != SceneEventProgressStatus.Started)
             {
                 Debug.LogError($"[LobbyPortalGate] NGO failed to start scene load for '{_destinationSceneName}': {status}.", this);
@@ -181,12 +207,41 @@ namespace CoopGame.Network
         private void OnPortalActivatedChanged(bool previousValue, bool newValue)
         {
             ApplyPortalState(newValue);
+            if (newValue)
+                SetInteractionPromptVisible(false);
+        }
+
+        private void SetInteractionPromptVisible(bool visible)
+        {
+            if (_interactionPrompt != null && _interactionPrompt.activeSelf != visible)
+                _interactionPrompt.SetActive(visible);
         }
 
         private void ApplyPortalState(bool active)
         {
             if (_portalVisualRoot != null)
                 _portalVisualRoot.SetActive(active);
+        }
+
+        private bool TryGetDestinationScenePath(out string destinationPath)
+        {
+            destinationPath = null;
+            if (string.IsNullOrWhiteSpace(_destinationSceneName))
+                return false;
+
+            for (int index = 0; index < SceneManager.sceneCountInBuildSettings; index++)
+            {
+                string scenePath = SceneUtility.GetScenePathByBuildIndex(index);
+                string sceneName = System.IO.Path.GetFileNameWithoutExtension(scenePath);
+                if (string.Equals(sceneName, _destinationSceneName, System.StringComparison.Ordinal) &&
+                    Application.CanStreamedLevelBeLoaded(index))
+                {
+                    destinationPath = scenePath;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void OnValidate()
