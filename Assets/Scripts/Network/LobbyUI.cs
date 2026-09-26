@@ -63,6 +63,15 @@ namespace CoopGame.Network
 
         private void Awake()
         {
+            // Only allow LobbyUI in SampleScene (lobby/menu scene)
+            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (!string.IsNullOrEmpty(sceneName) && sceneName != "SampleScene")
+            {
+                gameObject.SetActive(false);
+                Destroy(gameObject);
+                return;
+            }
+
             SteamLobbyManager.EnsureInstance();
 
             if (_canvas == null) _canvas = GetComponent<Canvas>();
