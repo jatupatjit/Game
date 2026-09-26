@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 namespace CoopGame.Player
 {
@@ -162,15 +163,6 @@ namespace CoopGame.Player
             _playerCarry = GetComponentInParent<CoopGame.CarrySystem.PlayerCarry>() ?? GetComponent<CoopGame.CarrySystem.PlayerCarry>();
         }
 
-        private void Start()
-        {
-            // Decouple camera from player hierarchy at runtime to prevent feedback loops
-            if (_playerCamera != null && _playerCamera.transform.parent != null)
-            {
-                _playerCamera.transform.SetParent(null);
-            }
-        }
-
         // Cursor lock state
         private bool _isCursorLocked = true;
 
@@ -185,10 +177,23 @@ namespace CoopGame.Player
             if (isOwner)
             {
                 LocalInstance = this;
+                if (_playerCamera != null)
+                {
+                    // The player survives NGO single-scene loads. Its detached camera must
+                    // survive too, or LateUpdate will keep a reference to a destroyed Camera.
+                    _playerCamera.transform.SetParent(null);
+                    DontDestroyOnLoad(_playerCamera.gameObject);
+                }
+
+                SceneManager.sceneLoaded -= OnSceneLoaded;
+                SceneManager.sceneLoaded += OnSceneLoaded;
+                DisableSceneCameras();
             }
-            else if (LocalInstance == this)
+            else
             {
-                LocalInstance = null;
+                SceneManager.sceneLoaded -= OnSceneLoaded;
+                if (LocalInstance == this)
+                    LocalInstance = null;
             }
 
             if (_playerCamera != null)
@@ -210,6 +215,22 @@ namespace CoopGame.Player
             if (isOwner)
             {
                 SetCursorLock(true);
+            }
+        }
+
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (LocalInstance == this)
+                DisableSceneCameras();
+        }
+
+        private void DisableSceneCameras()
+        {
+            Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+            foreach (Camera camera in cameras)
+            {
+                if (camera != _playerCamera && camera.gameObject.name.Contains("Main Camera"))
+                    camera.gameObject.SetActive(false);
             }
         }
 
@@ -397,6 +418,7 @@ namespace CoopGame.Player
 
         private void OnDestroy()
         {
+            SceneManager.sceneLoaded -= OnSceneLoaded;
             if (LocalInstance == this)
             {
                 LocalInstance = null;

@@ -238,6 +238,8 @@ namespace CoopGame.Player
             if (IsOwner)
             {
                 _inputReader.DisableInput();
+                if (_cameraController != null)
+                    _cameraController.SetOwnershipState(false);
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
                 RestoreSceneCamera();

@@ -9,9 +9,7 @@ namespace CoopGame.Player
     /// and natural procedural finger flexion / fist clenching (การกำมือ).
     /// 
     /// Features:
-    /// 1. Singularity-Free Orthogonal Arm IK (Smooth Up/Down Raising & Lowering):
-    ///    - Uses strictly orthogonal bend-plane cross vectors (planeNormal x dirTarget).
-    ///    - Zero gimbal flips or twists when raising arms up, aiming forward, or lowering down.
+    /// 1. Pole-directed two-bone IK with a continuous anterior reference for stable shoulders.
     /// 2. Selective Finger Grip (กำมือเฉพาะเวลาปีนหรือยกของจริง):
     ///    - When raising arms in air / aiming: Hands stay OPEN and relaxed (แบมือ).
     ///    - When ACTUALLY climbing a wall or carrying an object: Fingers smoothly CLENCH A FIST (กำมือ).
@@ -25,6 +23,7 @@ namespace CoopGame.Player
     ///    - Tints the SkinnedMeshRenderer (body + gloves) to match player ID colors.
     /// </summary>
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(110)]
     public class ProceduralPlayerArms : MonoBehaviour
     {
         [System.Serializable]
@@ -180,6 +179,8 @@ namespace CoopGame.Player
         private ProceduralPlayerLegs _legs;
         private float _armCyclePhase = 0f;
         private float _walkSwingWeight = 0f;
+        private float _requestedLeftWeight = 1f;
+        private float _requestedRightWeight = 1f;
 
         private void Awake()
         {
@@ -397,7 +398,7 @@ namespace CoopGame.Player
         {
             _targetLeftPos = worldPos;
             _targetLeftRot = worldRot;
-            _leftWeight = Mathf.Clamp01(weight);
+            _requestedLeftWeight = Mathf.Clamp01(weight);
             LeftOverrideWrist = overrideWrist;
             if (_leftTargetTransform != null)
             {
@@ -413,7 +414,7 @@ namespace CoopGame.Player
         {
             _targetRightPos = worldPos;
             _targetRightRot = worldRot;
-            _rightWeight = Mathf.Clamp01(weight);
+            _requestedRightWeight = Mathf.Clamp01(weight);
             RightOverrideWrist = overrideWrist;
             if (_rightTargetTransform != null)
             {
@@ -459,13 +460,15 @@ namespace CoopGame.Player
             }
 
             float deltaTime = Time.deltaTime;
-            float currentSpeed = (_movement != null) ? _movement.CurrentSpeed : 0f;
+            float currentSpeed = _legs != null ? _legs.SmoothedSpeed
+                : (_movement != null ? _movement.CurrentSpeed : 0f);
             bool isGrounded = (_movement != null) && _movement.IsGrounded;
             bool isClimbing = (_wallclimb != null) && _wallclimb.IsClimbing;
 
             // Locomotion swing calculation (world pitch rotation around transform.right to eliminate bone-roll twist)
-            float targetSwingWeight = (isGrounded && !isClimbing && currentSpeed > 0.1f) ? 1.0f : 0.0f;
-            _walkSwingWeight = Mathf.MoveTowards(_walkSwingWeight, targetSwingWeight, deltaTime * 6.0f);
+            float targetSwingWeight = _legs != null ? _legs.StrideWeight
+                : (isGrounded && !isClimbing ? Mathf.InverseLerp(0.15f, 1.5f, currentSpeed) : 0f);
+            _walkSwingWeight = Mathf.MoveTowards(_walkSwingWeight, targetSwingWeight, deltaTime * 8.0f);
 
             Quaternion idleUpperL = _restUpperRotL;
             Quaternion idleUpperR = _restUpperRotR;
@@ -474,21 +477,27 @@ namespace CoopGame.Player
 
             if (_walkSwingWeight > 0.001f)
             {
-                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.4f, 1.8f);
-                float armFreq = (_legs != null) ? (_legs.BaseStrideFrequency * _legs.WalkAnimationSpeed) : 2.0f;
-                _armCyclePhase += armFreq * speedFactor * deltaTime * (Mathf.PI * 2.0f);
-                if (_armCyclePhase > Mathf.PI * 2.0f) _armCyclePhase -= Mathf.PI * 2.0f;
+                if (_legs != null)
+                {
+                    _armCyclePhase = _legs.CyclePhase;
+                }
+                else if (currentSpeed > 0.1f)
+                {
+                    float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.3f, 1.6f);
+                    _armCyclePhase = Mathf.Repeat(_armCyclePhase + 2.0f * speedFactor * deltaTime *
+                        (Mathf.PI * 2.0f), Mathf.PI * 2.0f);
+                }
 
                 float sin = Mathf.Sin(_armCyclePhase);
 
-                // Expressive, visible swing amplitude: ~36° on normal walk, ramping up to ~52° on sprint!
-                float maxSwingAngle = Mathf.Lerp(36.0f, 52.0f, Mathf.Clamp01((currentSpeed - 2.0f) / 6.0f));
+                // Keep the arm swing restrained and synchronized to the opposite leg.
+                float maxSwingAngle = Mathf.Lerp(22.0f, 36.0f, Mathf.Clamp01((currentSpeed - 2.0f) / 6.0f));
                 float swingAngleL = -sin * maxSwingAngle * _walkSwingWeight;
                 float swingAngleR = sin * maxSwingAngle * _walkSwingWeight;
 
                 // Subtle organic lateral roll (arms flare slightly outward on backswing)
-                float lateralL = Mathf.Clamp01(sin) * 5.0f * _walkSwingWeight;
-                float lateralR = Mathf.Clamp01(-sin) * 5.0f * _walkSwingWeight;
+                float lateralL = Mathf.Clamp01(sin) * 3.0f * _walkSwingWeight;
+                float lateralR = Mathf.Clamp01(-sin) * 3.0f * _walkSwingWeight;
 
                 // Apply upper arm swing
                 Quaternion restWorldL = transform.rotation * _restUpperRotL;
@@ -500,8 +509,8 @@ namespace CoopGame.Player
                 idleUpperR = Quaternion.Inverse(transform.rotation) * idleWorldR;
 
                 // Natural forearm elbow flexion when arm swings forward
-                float elbowFlexL = Mathf.Max(0f, -sin) * 20.0f * _walkSwingWeight;
-                float elbowFlexR = Mathf.Max(0f, sin) * 20.0f * _walkSwingWeight;
+                float elbowFlexL = Mathf.Max(0f, -sin) * 16.0f * _walkSwingWeight;
+                float elbowFlexR = Mathf.Max(0f, sin) * 16.0f * _walkSwingWeight;
 
                 Quaternion restWorldMidL = transform.rotation * _initLowerRotL;
                 Quaternion idleWorldMidL = Quaternion.AngleAxis(elbowFlexL, transform.right) * restWorldMidL;
@@ -582,8 +591,8 @@ namespace CoopGame.Player
                 }
             }
 
-            float targetWeightL = leftActive ? 1.0f : 0.0f;
-            float targetWeightR = rightActive ? 1.0f : 0.0f;
+            float targetWeightL = leftActive ? _requestedLeftWeight : 0.0f;
+            float targetWeightR = rightActive ? _requestedRightWeight : 0.0f;
             _leftWeight = Mathf.MoveTowards(_leftWeight, targetWeightL, deltaTime * (targetWeightL > 0.5f ? 15.0f : 10.0f));
             _rightWeight = Mathf.MoveTowards(_rightWeight, targetWeightR, deltaTime * (targetWeightR > 0.5f ? 15.0f : 10.0f));
 
@@ -659,8 +668,7 @@ namespace CoopGame.Player
         }
 
         /// <summary>
-        /// Pure Rotation-Based Analytic Law of Cosines Two-Bone IK with strictly orthogonal singularity-free frames.
-        /// Preserves rigged mesh topology with zero gimbal roll twist at all arm elevation angles.
+        /// Rotation-based analytic two-bone IK with a pole-directed elbow and stable anterior axes.
         /// </summary>
         private void SolveTwoBoneIK(
             Transform root, Transform mid, Transform tip,
@@ -708,8 +716,12 @@ namespace CoopGame.Player
             float totalLen = l1 + l2;
 
             Vector3 toTarget = targetPos - shoulderPos;
-            float dist = Mathf.Clamp(toTarget.magnitude, 0.001f, totalLen * 0.999f);
-            Vector3 dirTarget = toTarget.normalized;
+            float rawDistance = toTarget.magnitude;
+            Vector3 dirTarget = rawDistance > 0.0001f ? toTarget / rawDistance : transform.forward;
+            float minReach = Mathf.Abs(l1 - l2) + 0.005f;
+            float maxReach = totalLen - 0.005f;
+            float dist = Mathf.Clamp(rawDistance, minReach, maxReach);
+            Vector3 reachableTarget = shoulderPos + dirTarget * dist;
 
             // Law of Cosines angles
             float cosA = Mathf.Clamp((l1 * l1 + dist * dist - l2 * l2) / (2f * l1 * dist), -1f, 1f);
@@ -725,46 +737,38 @@ namespace CoopGame.Player
             planeNormal.Normalize();
 
             // 1. Desired Upper Arm direction (bending outward along bend plane)
-            float bendSign = isLeftArm ? 1.0f : -1.0f;
-            Vector3 desiredUpperDir = Quaternion.AngleAxis(angleA * bendSign, planeNormal) * dirTarget;
-
-            // Ensure desired upper arm direction never points backwards behind the body
-            Vector3 localUpper = transform.InverseTransformDirection(desiredUpperDir);
-            if (localUpper.z < 0.02f)
-            {
-                localUpper.z = 0.02f;
-                localUpper.Normalize();
-                desiredUpperDir = transform.TransformDirection(localUpper);
-            }
+            // The pole already encodes left or right; reversing the angle folds one elbow inward.
+            Vector3 desiredUpperDir = Quaternion.AngleAxis(angleA, planeNormal) * dirTarget;
 
             // Natural anterior reference (bicep / front of arm faces forward/upward, eliminating axial shoulder twist)
-            Vector3 upRef = (desiredUpperDir.y > 0.85f) ? -transform.forward : (desiredUpperDir.y < -0.85f ? transform.forward : transform.up);
-            Vector3 upperBoneFwd = Vector3.ProjectOnPlane(upRef, desiredUpperDir).normalized;
+            float verticalBlend = Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(0.55f, 0.95f, Mathf.Abs(desiredUpperDir.y)));
+            Vector3 verticalRef = desiredUpperDir.y >= 0f ? -transform.forward : transform.forward;
+            Vector3 anteriorRef = Vector3.Slerp(transform.up, verticalRef, verticalBlend);
+            Vector3 upperBoneFwd = Vector3.ProjectOnPlane(anteriorRef, desiredUpperDir);
             if (upperBoneFwd.sqrMagnitude < 0.001f)
             {
-                upperBoneFwd = transform.forward;
+                upperBoneFwd = Vector3.ProjectOnPlane(transform.forward, desiredUpperDir);
             }
+            if (upperBoneFwd.sqrMagnitude < 0.001f)
+                upperBoneFwd = Vector3.ProjectOnPlane(transform.right, desiredUpperDir);
+            upperBoneFwd.Normalize();
             Quaternion targetWorldRoot = Quaternion.LookRotation(upperBoneFwd, desiredUpperDir);
 
             root.rotation = Quaternion.Slerp(restWorldRoot, targetWorldRoot, weight);
 
             // 2. Desired Lower Arm direction
             Vector3 desiredElbowPos = shoulderPos + desiredUpperDir * l1;
-            Vector3 desiredLowerDir = (targetPos - desiredElbowPos).normalized;
+            Vector3 desiredLowerDir = (reachableTarget - desiredElbowPos).normalized;
 
-            Vector3 localLower = transform.InverseTransformDirection(desiredLowerDir);
-            if (localLower.z < 0.01f)
-            {
-                localLower.z = 0.01f;
-                localLower.Normalize();
-                desiredLowerDir = transform.TransformDirection(localLower);
-            }
-
-            Vector3 lowerBoneFwd = Vector3.ProjectOnPlane(upperBoneFwd, desiredLowerDir).normalized;
+            Vector3 lowerBoneFwd = Vector3.ProjectOnPlane(upperBoneFwd, desiredLowerDir);
             if (lowerBoneFwd.sqrMagnitude < 0.001f)
             {
-                lowerBoneFwd = upperBoneFwd;
+                lowerBoneFwd = Vector3.ProjectOnPlane(transform.up, desiredLowerDir);
             }
+            if (lowerBoneFwd.sqrMagnitude < 0.001f)
+                lowerBoneFwd = Vector3.ProjectOnPlane(transform.right, desiredLowerDir);
+            lowerBoneFwd.Normalize();
             Quaternion targetWorldMid = Quaternion.LookRotation(lowerBoneFwd, desiredLowerDir);
 
             mid.rotation = Quaternion.Slerp(restWorldMid, targetWorldMid, weight);

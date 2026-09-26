@@ -18,6 +18,7 @@ namespace CoopGame.Player
     ///    - Blends smoothly back to initial rest rotations when stopping.
     /// </summary>
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(100)]
     public class ProceduralPlayerLegs : MonoBehaviour
     {
         [Header("Rigged Leg Transforms")]
@@ -71,6 +72,12 @@ namespace CoopGame.Player
         private bool _bonesInitialized = false;
         private float _cyclePhase = 0f;
         private float _strideWeight = 0f;
+        private float _smoothedSpeed;
+        private float _speedSmoothVelocity;
+
+        public float CyclePhase => _cyclePhase;
+        public float StrideWeight => _strideWeight;
+        public float SmoothedSpeed => _smoothedSpeed;
 
         // Cached player components
         private PlayerMovement _movement;
@@ -147,21 +154,28 @@ namespace CoopGame.Player
             }
 
             float deltaTime = Time.deltaTime;
-            float currentSpeed = (_movement != null) ? _movement.CurrentSpeed : 0f;
             bool isGrounded = (_movement != null) && _movement.IsGrounded;
             bool isClimbing = (_wallclimb != null) && _wallclimb.IsClimbing;
+            float targetSpeed = isGrounded && !isClimbing && _movement != null
+                ? _movement.CurrentSpeed : 0f;
+            _smoothedSpeed = Mathf.SmoothDamp(_smoothedSpeed, targetSpeed,
+                ref _speedSmoothVelocity, 0.12f, Mathf.Infinity, deltaTime);
 
-            // Target locomotion weight: 1 when moving on ground, 0 when idle/air/climbing
-            float targetWeight = (isGrounded && !isClimbing && currentSpeed > 0.1f) ? 1.0f : 0.0f;
-            _strideWeight = Mathf.MoveTowards(_strideWeight, targetWeight, deltaTime * 8.0f);
+            // Fade the gait in with actual speed, instead of switching it on at one threshold.
+            float targetWeight = isGrounded && !isClimbing
+                ? Mathf.InverseLerp(0.15f, 1.5f, _smoothedSpeed) : 0f;
+            _strideWeight = Mathf.MoveTowards(_strideWeight, targetWeight, deltaTime * 6.0f);
 
             if (_strideWeight > 0.001f)
             {
                 // Advance stride cycle phase proportional to character speed and walk animation speed slider
-                float speedFactor = Mathf.Clamp(currentSpeed / 5.0f, 0.4f, 1.8f);
-                float stepFreq = _baseStrideFrequency * speedFactor * _walkAnimationSpeed;
-                _cyclePhase += stepFreq * deltaTime * (Mathf.PI * 2.0f);
-                if (_cyclePhase > Mathf.PI * 2.0f) _cyclePhase -= Mathf.PI * 2.0f;
+                if (_smoothedSpeed > 0.1f)
+                {
+                    float speedFactor = Mathf.Clamp(_smoothedSpeed / 5.0f, 0.3f, 1.6f);
+                    float stepFreq = _baseStrideFrequency * speedFactor * _walkAnimationSpeed;
+                    _cyclePhase = Mathf.Repeat(_cyclePhase + stepFreq * deltaTime * (Mathf.PI * 2.0f),
+                        Mathf.PI * 2.0f);
+                }
 
                 float sinL = Mathf.Sin(_cyclePhase);
                 float sinR = -sinL;
