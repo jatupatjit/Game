@@ -65,6 +65,7 @@ namespace CoopGame.Network
 
         private float _lastRetryTime = 0f;
         private bool _callbacksRegistered = false;
+        private bool _creatingHostLobby;
 
         // Cached Transports
         private FacepunchTransport _facepunchTransport;
@@ -166,9 +167,10 @@ namespace CoopGame.Network
         /// </summary>
         public void InitializeSteam(bool force = false)
         {
-            if (SteamClient.IsValid && !force)
+            if (SteamClient.IsValid)
             {
                 StatusMessage = "Ready";
+                RegisterSteamCallbacks();
                 return;
             }
 
@@ -390,7 +392,7 @@ namespace CoopGame.Network
             if (nm == null) return;
 
             // If we are the Host, we already started Host upon creating lobby
-            if (nm.IsHost || nm.IsServer) return;
+            if (_creatingHostLobby || nm.IsHost || nm.IsServer) return;
 
             // If we are a joining client:
             string hostSteamIdStr = lobby.GetData(HostAddressKey);
@@ -440,6 +442,7 @@ namespace CoopGame.Network
         /// </summary>
         public async void HostSteamLobby(int maxMembers = 4)
         {
+            if (_creatingHostLobby) return;
             if (!IsSteamInitialized)
             {
                 StatusMessage = "Cannot host Steam lobby: Steam is not running!";
@@ -450,18 +453,33 @@ namespace CoopGame.Network
             SetTransportType(TransportType.Steam);
 
             NetworkManager nm = NetworkManager.Singleton;
-            if (nm == null) return;
+            if (nm == null || nm.IsListening) return;
 
-            StatusMessage = "Creating Steam Lobby...";
-            Lobby? lobby = await SteamMatchmaking.CreateLobbyAsync(maxMembers);
-            if (lobby.HasValue)
+            _creatingHostLobby = true;
+            try
             {
-                nm.StartHost();
+                StatusMessage = "Creating Steam Lobby...";
+                Lobby? lobby = await SteamMatchmaking.CreateLobbyAsync(maxMembers);
+                if (lobby.HasValue && nm != null && !nm.IsListening)
+                {
+                    if (!nm.StartHost())
+                    {
+                        lobby.Value.Leave();
+                        StatusMessage = "Failed to start the network host.";
+                        Debug.LogError("[SteamLobbyManager] NetworkManager.StartHost failed after creating the Steam lobby.");
+                    }
+                }
+                else if (!lobby.HasValue)
+                {
+                    StatusMessage = "Failed to create Steam Lobby async.";
+                }
             }
-            else
+            catch (Exception exception)
             {
-                StatusMessage = "Failed to create Steam Lobby async.";
+                StatusMessage = "Failed to create Steam Lobby.";
+                Debug.LogException(exception);
             }
+            finally { _creatingHostLobby = false; }
         }
 
         /// <summary>

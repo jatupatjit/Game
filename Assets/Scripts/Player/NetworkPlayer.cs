@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace CoopGame.Player
 {
@@ -34,6 +35,11 @@ namespace CoopGame.Player
         private bool _sprintHeld;
         private bool _jumpPending;
         private bool _wallJumpConsumedThisFrame;
+        [Header("Fall Respawn")]
+        [SerializeField] private float _fallLimitY = -15f;
+        private Vector3 _respawnPosition;
+        private Quaternion _respawnRotation;
+        private bool _sceneSpawnPending;
 
         [Header("Visuals (Optional)")]
         [Tooltip("Renderer to tint with distinct player colors for easy multiplayer visual identification")]
@@ -175,6 +181,7 @@ namespace CoopGame.Player
             // =========================================================================
             if (IsOwner)
             {
+                SceneManager.sceneLoaded += OnGameplaySceneLoaded;
                 // [Local Owner Client Logic]
                 // This instance represents the human sitting at THIS computer/screen.
                 // We MUST activate the camera, input listeners, and local CharacterController.
@@ -217,6 +224,7 @@ namespace CoopGame.Player
 
                 _characterController.enabled = true;
                 _movement.enabled = true;
+                SetRespawnPointForScene(SceneManager.GetActiveScene());
 
                 Debug.Log($"[NetworkPlayer] Local Player initialized with Owner ClientId: {OwnerClientId} at {transform.position}");
             }
@@ -251,6 +259,7 @@ namespace CoopGame.Player
 
             if (IsOwner)
             {
+                SceneManager.sceneLoaded -= OnGameplaySceneLoaded;
                 if (_wallclimb != null)
                     _wallclimb.OnWallJumpBoost -= ClearPendingJump;
                 _inputReader.DisableInput();
@@ -265,6 +274,7 @@ namespace CoopGame.Player
 
         private void OnDestroy()
         {
+            SceneManager.sceneLoaded -= OnGameplaySceneLoaded;
             if (_wallclimb != null)
                 _wallclimb.OnWallJumpBoost -= ClearPendingJump;
             if (IsOwner)
@@ -322,7 +332,20 @@ namespace CoopGame.Player
             if (!IsOwner || _movement == null || !_movement.enabled)
                 return;
 
-            if (CoopGame.Network.PauseMenu.IsPaused)
+            if (_sceneSpawnPending)
+            {
+                _sceneSpawnPending = false;
+                RespawnAtStart();
+                return;
+            }
+
+            if (transform.position.y < _fallLimitY)
+            {
+                RespawnAtStart();
+                return;
+            }
+
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible)
             {
                 ClearMovementInput();
                 return;
@@ -331,6 +354,55 @@ namespace CoopGame.Player
             bool jump = _jumpPending && (_wallclimb == null || !_wallclimb.IsClimbing);
             _jumpPending = false;
             _movement.ProcessMovement(_moveInput, _moveForward, _moveRight, _sprintHeld, jump);
+        }
+
+        private void OnGameplaySceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (IsOwner && mode == LoadSceneMode.Single)
+                _sceneSpawnPending = SetRespawnPointForScene(scene);
+        }
+
+        private bool SetRespawnPointForScene(Scene scene)
+        {
+            GameObject start = null;
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                if (root.name == "PlayerStart")
+                {
+                    start = root;
+                    break;
+                }
+            }
+
+            if (start != null)
+            {
+                Vector3 offset = (OwnerClientId % 4) switch
+                {
+                    1 => new Vector3(2f, 0f, 0f),
+                    2 => new Vector3(-2f, 0f, 0f),
+                    3 => new Vector3(0f, 0f, -2f),
+                    _ => Vector3.zero
+                };
+                _respawnPosition = start.transform.TransformPoint(offset);
+                _respawnRotation = start.transform.rotation;
+                return true;
+            }
+
+            _respawnPosition = transform.position;
+            _respawnRotation = transform.rotation;
+            return false;
+        }
+
+        private void RespawnAtStart()
+        {
+            _playerCarry?.DropForRespawn();
+            _wallclimb?.ResetForRespawn();
+            ClearMovementInput();
+            _movement.ResetVelocity();
+            _characterController.enabled = false;
+            transform.SetPositionAndRotation(_respawnPosition, _respawnRotation);
+            _characterController.enabled = true;
+            GetComponent<PlayerStamina>()?.ResetStamina();
         }
 
         private void ClearPendingJump()

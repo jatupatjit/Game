@@ -269,6 +269,7 @@ namespace CoopGame.Player
         /// </summary>
         private void HandleCursorToggle()
         {
+            if (CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             // If game is not paused and cursor is currently unlocked, clicking on the game viewport re-locks cursor
             if (Cursor.lockState != CursorLockMode.Locked && !CoopGame.Network.PauseMenu.IsPaused)
             {

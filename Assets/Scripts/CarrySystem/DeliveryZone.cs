@@ -27,7 +27,6 @@ namespace CoopGame.CarrySystem
     /// </summary>
     [SelectionBase]
     [DisallowMultipleComponent]
-    [ExecuteAlways]
     public class DeliveryZone : MonoBehaviour
     {
         [Header("Delivery Target (Configure in Inspector)")]
@@ -89,7 +88,8 @@ namespace CoopGame.CarrySystem
         private Color _currentColor;
         private CapsuleCollider _triggerCollider;
         private MaterialPropertyBlock _propBlock;
-        private Material _ringMaterialInstance;
+        private Material _generatedRingMaterial;
+        private Rigidbody _pendingFreeze;
         private static readonly int ColorPropId = Shader.PropertyToID("_Color");
         private static readonly int BaseColorPropId = Shader.PropertyToID("_BaseColor");
 
@@ -138,11 +138,11 @@ namespace CoopGame.CarrySystem
 
         private void OnDestroy()
         {
-            if (_ringMaterialInstance != null)
+            if (_generatedRingMaterial != null)
             {
-                if (Application.isPlaying) Destroy(_ringMaterialInstance);
-                else DestroyImmediate(_ringMaterialInstance);
-                _ringMaterialInstance = null;
+                if (Application.isPlaying) Destroy(_generatedRingMaterial);
+                else DestroyImmediate(_generatedRingMaterial);
+                _generatedRingMaterial = null;
             }
         }
 
@@ -182,13 +182,27 @@ namespace CoopGame.CarrySystem
             ApplyCurrentColor();
         }
 
+        private void FixedUpdate()
+        {
+            if (_pendingFreeze == null) return;
+            if (Unity.Netcode.NetworkManager.Singleton != null &&
+                Unity.Netcode.NetworkManager.Singleton.IsListening &&
+                !Unity.Netcode.NetworkManager.Singleton.IsServer)
+            {
+                _pendingFreeze = null;
+                return;
+            }
+
+            _pendingFreeze.linearVelocity = Vector3.zero;
+            _pendingFreeze.angularVelocity = Vector3.zero;
+            _pendingFreeze.isKinematic = true;
+            _pendingFreeze = null;
+        }
+
         private void OnValidate()
         {
             if (_radius < 0.5f) _radius = 0.5f;
             if (_triggerHeight < 0.5f) _triggerHeight = 0.5f;
-
-            UpdateColliderAndVisualScale();
-            ApplyColorImmediate(_isTargetInside || _isDelivered ? _deliveredGreenColor : _waitingRedColor);
         }
 
         private void EnsureTriggerCollider()
@@ -270,6 +284,7 @@ namespace CoopGame.CarrySystem
                         Material mat = new Material(ringShader);
                         mat.name = "DeliveryZone_Ring_RuntimeMat";
                         _ringRenderer.sharedMaterial = mat;
+                        _generatedRingMaterial = mat;
                     }
                 }
             }
@@ -383,21 +398,7 @@ namespace CoopGame.CarrySystem
         {
             if (_ringRenderer != null)
             {
-                // In play mode, assign directly to renderer.material to ensure the URP shader instance updates immediately
-                if (Application.isPlaying)
-                {
-                    if (_ringMaterialInstance == null)
-                    {
-                        _ringMaterialInstance = _ringRenderer.material;
-                    }
-                    if (_ringMaterialInstance != null)
-                    {
-                        _ringMaterialInstance.SetColor(ColorPropId, _currentColor);
-                        _ringMaterialInstance.SetColor(BaseColorPropId, _currentColor);
-                    }
-                }
-
-                // Also update MaterialPropertyBlock for instancing and editor mode
+                // Update color without accessing Renderer.material on a prefab asset.
                 if (_propBlock == null)
                     _propBlock = new MaterialPropertyBlock();
 
@@ -477,13 +478,7 @@ namespace CoopGame.CarrySystem
 
                     if (_freezeObjectOnDelivery && contextObj != null)
                     {
-                        Rigidbody rb = contextObj.GetComponentInParent<Rigidbody>();
-                        if (rb != null)
-                        {
-                            rb.linearVelocity = Vector3.zero;
-                            rb.angularVelocity = Vector3.zero;
-                            rb.isKinematic = true;
-                        }
+                        _pendingFreeze = contextObj.GetComponentInParent<Rigidbody>();
                     }
                 }
             }

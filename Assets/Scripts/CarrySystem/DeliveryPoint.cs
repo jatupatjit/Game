@@ -17,6 +17,7 @@ namespace CoopGame.CarrySystem
     /// 4. Celebratory effects and Server-authoritative validation.
     /// </summary>
     [RequireComponent(typeof(Collider))]
+    [RequireComponent(typeof(NetworkObject))]
     [DisallowMultipleComponent]
     public class DeliveryPoint : NetworkBehaviour
     {
@@ -82,6 +83,10 @@ namespace CoopGame.CarrySystem
 
         // State
         private bool _isDelivered = false;
+        private FragileCargo _pendingCargo;
+        private Collider _deliveryCollider;
+        private readonly NetworkVariable<bool> _syncedDelivered = new NetworkVariable<bool>(
+            false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private DeliveryResult _lastDeliveryResult;
 
         // Events
@@ -110,7 +115,7 @@ namespace CoopGame.CarrySystem
 
         public DeliveryResult LastDeliveryResult => _lastDeliveryResult;
         public ShopSlotData[] AvailableShopSlots => _shopSlots;
-        public bool IsDelivered => _isDelivered;
+        public bool IsDelivered => IsSpawned ? _syncedDelivered.Value : _isDelivered;
 
         private void Awake()
         {
@@ -119,6 +124,7 @@ namespace CoopGame.CarrySystem
             if (col != null)
             {
                 col.isTrigger = true;
+                _deliveryCollider = col;
             }
         }
 
@@ -127,11 +133,27 @@ namespace CoopGame.CarrySystem
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return;
 
-            if (_isDelivered) return;
+            if (_isDelivered || _pendingCargo != null) return;
 
             // Check if entered object is FragileCargo
             FragileCargo cargo = other.GetComponentInParent<FragileCargo>();
             if (cargo == null || cargo.IsDestroyed) return;
+
+            _pendingCargo = cargo;
+        }
+
+        private void FixedUpdate()
+        {
+            if (_pendingCargo == null || _isDelivered) return;
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer) return;
+
+            FragileCargo cargo = _pendingCargo;
+            _pendingCargo = null;
+            Collider cargoCollider = cargo.GetComponentInChildren<Collider>();
+            if (cargo.IsDestroyed || cargo.CurrentHP.Value <= 0 ||
+                _deliveryCollider == null || cargoCollider == null ||
+                !_deliveryCollider.bounds.Intersects(cargoCollider.bounds))
+                return;
 
             ProcessDelivery(cargo);
         }
@@ -142,6 +164,7 @@ namespace CoopGame.CarrySystem
         private void ProcessDelivery(FragileCargo cargo)
         {
             _isDelivered = true;
+            if (IsSpawned && IsServer) _syncedDelivered.Value = true;
 
             int remainingHP = cargo.CurrentHP.Value;
             int multiplier = CurrentMultiplier;
@@ -176,11 +199,17 @@ namespace CoopGame.CarrySystem
             OnDeliverySuccessGlobal?.Invoke(_lastDeliveryResult);
 
             // Broadcast celebration to all clients
-            DeliverySuccessClientRpc(_lastDeliveryResult, transform.position);
+            if (IsSpawned) DeliverySuccessClientRpc(_lastDeliveryResult, transform.position);
+            else PlayDeliveryFeedback(transform.position);
         }
 
         [ClientRpc]
         private void DeliverySuccessClientRpc(DeliveryResult result, Vector3 deliveryPoint)
+        {
+            PlayDeliveryFeedback(deliveryPoint);
+        }
+
+        private void PlayDeliveryFeedback(Vector3 deliveryPoint)
         {
             if (_celebrationFx != null)
             {

@@ -156,6 +156,8 @@ namespace CoopGame.CarrySystem
         private float _throwReleaseCooldown = 0.0f;
         private bool _requireGrabRelease = false;
         private bool _canAttemptGrab = true;
+        private readonly RaycastHit[] _aimHits = new RaycastHit[64];
+        private readonly Collider[] _nearbyColliders = new Collider[64];
 
         // Exposed properties
         public bool IsCarrying => IsOwner 
@@ -676,14 +678,16 @@ namespace CoopGame.CarrySystem
 
             // Raycast into the world, ignoring player capsule and aim markers
             Ray aimRay = new Ray(rayOrigin, rayDirection);
-            RaycastHit[] hits = Physics.RaycastAll(aimRay, _maxScanDistance, _scanLayers, QueryTriggerInteraction.Ignore);
-            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            int hitCount = Physics.RaycastNonAlloc(aimRay, _aimHits, _maxScanDistance,
+                _scanLayers, QueryTriggerInteraction.Ignore);
 
             RaycastHit validHit = default;
             bool foundValidHit = false;
+            float nearestDistance = float.MaxValue;
 
-            foreach (var h in hits)
+            for (int i = 0; i < hitCount; i++)
             {
+                RaycastHit h = _aimHits[i];
                 // Skip self colliders (avoids hitting player capsule in 3rd person)
                 if (h.collider.transform.root == transform.root) continue;
                 if (_playerColliders != null && System.Array.IndexOf(_playerColliders, h.collider) >= 0) continue;
@@ -691,9 +695,12 @@ namespace CoopGame.CarrySystem
                 if (_rightMarker != null && (h.collider.transform == _rightMarker || h.collider.transform.IsChildOf(_rightMarker))) continue;
                 if (_persistentMarker != null && (h.collider.transform == _persistentMarker || h.collider.transform.IsChildOf(_persistentMarker))) continue;
 
-                validHit = h;
-                foundValidHit = true;
-                break;
+                if (h.distance < nearestDistance)
+                {
+                    nearestDistance = h.distance;
+                    validHit = h;
+                    foundValidHit = true;
+                }
             }
 
             Vector3 leftAimPoint = Vector3.zero;
@@ -888,14 +895,17 @@ namespace CoopGame.CarrySystem
         private void TryGrabNearbyObjectSingleHand(bool isLeft)
         {
             Vector3 chestPos = transform.position + Vector3.up * 1.0f;
-            Collider[] colliders = Physics.OverlapSphere(chestPos, _grabContactDistance, _scanLayers, QueryTriggerInteraction.Ignore);
+            int colliderCount = Physics.OverlapSphereNonAlloc(chestPos, _grabContactDistance,
+                _nearbyColliders, _scanLayers, QueryTriggerInteraction.Ignore);
 
             CarryableObject closestCarryable = null;
             float closestDistanceSqr = float.MaxValue;
             Vector3 viewForward = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
 
-            foreach (var col in colliders)
+            for (int i = 0; i < colliderCount; i++)
             {
+                Collider col = _nearbyColliders[i];
+                if (col == null) continue;
                 if (col.transform.root == transform.root) continue;
                 CarryableObject carryable = col.GetComponentInParent<CarryableObject>();
                 if (carryable == null) carryable = col.GetComponent<CarryableObject>();
@@ -1297,6 +1307,23 @@ namespace CoopGame.CarrySystem
             }
 
             Debug.Log($"[PlayerCarry] Client {OwnerClientId} released '{releasedName}'. Returning to free PhysX gravity & momentum.");
+        }
+
+        public void DropForRespawn()
+        {
+            if (!IsOwner || _currentCarryable == null) return;
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
+                RequestDropServerRpc();
+            else
+                _currentCarryable.DetachCarrier(OwnerClientId);
+            ReleaseCarryState();
+        }
+
+        public void ForcedDropFromCargo(CarryableObject cargo)
+        {
+            if (!IsServer || _currentCarryable != cargo) return;
+            _netCarriedObjectId.Value = 0;
+            NotifyDropClientRpc();
         }
 
         private void ExecuteThrow(Vector3 camForward, Vector3 camRight)

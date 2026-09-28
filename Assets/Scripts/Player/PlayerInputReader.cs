@@ -84,7 +84,7 @@ namespace CoopGame.Player
         private void Update()
         {
             // 1. If game is paused, suppress ALL gameplay inputs completely
-            if (CoopGame.Network.PauseMenu.IsPaused)
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible)
             {
                 MoveInput = Vector2.zero;
                 LookInput = Vector2.zero;
@@ -255,27 +255,27 @@ namespace CoopGame.Player
 
         private void OnThrowPerformedCallback(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             ThrowTriggered = true;
             OnThrowPerformed?.Invoke();
         }
 
         private void OnThrowCanceledCallback(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             OnThrowReleased?.Invoke();
         }
 
         private void OnJumpTriggered(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             JumpTriggered = true;
             OnJumpPerformed?.Invoke();
         }
 
         private void OnInteractTriggered(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             InteractTriggered = true;
             OnInteractPerformed?.Invoke();
         }

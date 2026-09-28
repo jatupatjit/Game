@@ -436,6 +436,13 @@ namespace CoopGame.CarrySystem
             foreach (var id in carrierIds)
             {
                 DetachCarrier(id);
+                if (NetworkManager.Singleton != null &&
+                    NetworkManager.Singleton.ConnectedClients.TryGetValue(id, out NetworkClient client) &&
+                    client.PlayerObject != null)
+                {
+                    PlayerCarry carry = client.PlayerObject.GetComponent<PlayerCarry>();
+                    if (carry != null) carry.ForcedDropFromCargo(this);
+                }
             }
         }
 

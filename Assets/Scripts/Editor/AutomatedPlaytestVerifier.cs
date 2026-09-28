@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Unity.Netcode;
 using CoopGame.CarrySystem;
 using CoopGame.Player;
@@ -9,20 +10,8 @@ using CoopGame.Network;
 
 namespace CoopGame.EditorTools
 {
-    [InitializeOnLoad]
     public static class AutomatedPlaytestVerifier
     {
-        static AutomatedPlaytestVerifier()
-        {
-            EditorApplication.delayCall += () =>
-            {
-                if (!EditorApplication.isPlayingOrWillChangePlaymode)
-                {
-                    RunVerification();
-                }
-            };
-        }
-
         [MenuItem("CoopGame/Run Full Automated Verification")]
         public static void RunVerification()
         {
@@ -80,60 +69,65 @@ namespace CoopGame.EditorTools
 
             Debug.Log($"[PlaytestVerifier] PASS: Prefabs loaded and validated. Finger grip system ready on ProceduralPlayerArms.");
 
-            // Step 2: Check Scene UI Setup
-            string scenePath = "Assets/Scenes/SampleScene.unity";
-            var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
-
-            var lobbyUI = Object.FindAnyObjectByType<LobbyUI>(FindObjectsInactive.Include);
-            var pauseMenu = Object.FindAnyObjectByType<PauseMenu>(FindObjectsInactive.Include);
-            var roomHUD = Object.FindAnyObjectByType<RoomCodeHUD>(FindObjectsInactive.Include);
-
-            if (lobbyUI == null || pauseMenu == null || roomHUD == null)
-            {
-                Debug.LogError($"[PlaytestVerifier] FAIL: Scene UI missing components! LobbyUI={lobbyUI != null}, PauseMenu={pauseMenu != null}, RoomHUD={roomHUD != null}");
-                return;
-            }
-
-            // Step 3: Verify PauseMenu Submenu isolation
-            SerializedObject soPM = new SerializedObject(pauseMenu);
-            var pausePanelProp = soPM.FindProperty("_pausePanel");
-            var settingsPanelProp = soPM.FindProperty("_settingsPanel");
-            var confirmDialogProp = soPM.FindProperty("_confirmDialog");
-
-            if (pausePanelProp == null || pausePanelProp.objectReferenceValue == null)
-            {
-                Debug.LogError("[PlaytestVerifier] FAIL: PauseMenu._pausePanel is not wired!");
-                return;
-            }
-            if (settingsPanelProp == null || settingsPanelProp.objectReferenceValue == null)
-            {
-                Debug.LogError("[PlaytestVerifier] FAIL: PauseMenu._settingsPanel is not wired!");
-                return;
-            }
-
-            Debug.Log("[PlaytestVerifier] PASS: PauseMenu submenus wired to independent cards. Overlap prevented.");
-
-            // Step 4: Verify RoomCodeHUD card size
-            var roomPanel = roomHUD.transform.Find("RoomCodePanel");
-            if (roomPanel != null)
-            {
-                var rt = roomPanel.GetComponent<RectTransform>();
-                if (rt != null && rt.sizeDelta.y >= 120f)
-                {
-                    Debug.Log($"[PlaytestVerifier] PASS: RoomCodeHUD sizeDelta is {rt.sizeDelta} (>= 120px height for clean button margin).");
-                }
-                else
-                {
-                    Debug.LogWarning($"[PlaytestVerifier] RoomCodeHUD sizeDelta is {rt?.sizeDelta}. Recommended >= 120px height.");
-                }
-            }
+            if (!VerifyLobbySceneUi()) return;
 
             // Step 5: Kinematic Simulation & Hand-Wrist Attachment Verification
             VerifyHandWristKinematics(playerPrefab, packagePrefab);
 
             Debug.Log("==================================================");
-            Debug.Log("[PlaytestVerifier] VERIFICATION COMPLETE: ALL CHECKS PASSED ✅");
+            Debug.Log("[PlaytestVerifier] Verification finished. Review FAIL entries above for any remaining issues.");
             Debug.Log("==================================================");
+        }
+
+        private static bool VerifyLobbySceneUi()
+        {
+            const string scenePath = "Assets/Scenes/SampleScene.unity";
+            Scene scene = SceneManager.GetSceneByPath(scenePath);
+            bool openedForVerification = !scene.isLoaded;
+            if (openedForVerification)
+                scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+
+            try
+            {
+                LobbyUI lobbyUI = null;
+                PauseMenu pauseMenu = null;
+                RoomCodeHUD roomHUD = null;
+                foreach (GameObject root in scene.GetRootGameObjects())
+                {
+                    if (lobbyUI == null) lobbyUI = root.GetComponentInChildren<LobbyUI>(true);
+                    if (pauseMenu == null) pauseMenu = root.GetComponentInChildren<PauseMenu>(true);
+                    if (roomHUD == null) roomHUD = root.GetComponentInChildren<RoomCodeHUD>(true);
+                }
+
+                if (lobbyUI == null || pauseMenu == null || roomHUD == null)
+                {
+                    Debug.LogError($"[PlaytestVerifier] FAIL: Scene UI missing components! LobbyUI={lobbyUI != null}, PauseMenu={pauseMenu != null}, RoomHUD={roomHUD != null}");
+                    return false;
+                }
+
+                SerializedObject soPM = new SerializedObject(pauseMenu);
+                var pausePanel = soPM.FindProperty("_pausePanel");
+                var settingsPanel = soPM.FindProperty("_settingsPanel");
+                if (pausePanel == null || pausePanel.objectReferenceValue == null ||
+                    settingsPanel == null || settingsPanel.objectReferenceValue == null)
+                {
+                    Debug.LogError("[PlaytestVerifier] FAIL: PauseMenu panels are not wired.");
+                    return false;
+                }
+
+                Transform roomPanel = roomHUD.transform.Find("RoomCodePanel");
+                RectTransform roomRect = roomPanel != null ? roomPanel.GetComponent<RectTransform>() : null;
+                if (roomRect != null && roomRect.sizeDelta.y < 120f)
+                    Debug.LogWarning($"[PlaytestVerifier] RoomCodeHUD height is {roomRect.sizeDelta.y}; recommended >= 120.");
+
+                Debug.Log("[PlaytestVerifier] PASS: Lobby scene UI references are present.");
+                return true;
+            }
+            finally
+            {
+                if (openedForVerification)
+                    EditorSceneManager.CloseScene(scene, true);
+            }
         }
 
         private static void VerifyHandWristKinematics(GameObject playerPrefab, GameObject packagePrefab)

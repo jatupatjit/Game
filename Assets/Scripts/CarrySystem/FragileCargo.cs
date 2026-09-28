@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 namespace CoopGame.CarrySystem
@@ -47,6 +48,9 @@ namespace CoopGame.CarrySystem
         [Tooltip("Brief invulnerability buffer after an impact to prevent duplicate collision ticks")]
         [SerializeField] private float _impactInvulnerabilityDuration = 0.25f;
 
+        [Tooltip("Ignore settling collisions and drag immediately after spawning or returning to the start")]
+        [SerializeField, Min(0f)] private float _spawnDamageGraceSeconds = 1.25f;
+
         [Header("Out of Bounds (Kill-Z)")]
         [Tooltip("Y-position below which the cargo is considered fallen and respawns")]
         [SerializeField] private float _killZ = -15.0f;
@@ -79,6 +83,7 @@ namespace CoopGame.CarrySystem
         private bool _isThrown = false;
         private float _lastImpactTime = -10f;
         private float _lastDragDamageTime = -10f;
+        private float _damageEnabledAtFixedTime;
         private bool _isDestroyed = false;
         private MeshRenderer[] _meshRenderers;
         private Color[] _originalColors;
@@ -96,8 +101,14 @@ namespace CoopGame.CarrySystem
         {
             base.Awake();
 
+            MissionFailUI.EnsureInstance();
+
             _spawnPosition = transform.position;
             _spawnRotation = transform.rotation;
+            _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
+
+            if (GetComponent<FragileCargoHealthUI>() == null)
+                gameObject.AddComponent<FragileCargoHealthUI>();
 
             _meshRenderers = GetComponentsInChildren<MeshRenderer>(true);
             CacheOriginalColors();
@@ -110,6 +121,7 @@ namespace CoopGame.CarrySystem
             if (IsServer)
             {
                 CurrentHP.Value = _maxHP;
+                _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
             }
 
             CurrentHP.OnValueChanged += HandleHPValueChanged;
@@ -125,15 +137,19 @@ namespace CoopGame.CarrySystem
         {
             OnHPChanged?.Invoke(newValue, _maxHP);
 
-            if (newValue < previousValue)
+            if (newValue > 0 && newValue < previousValue)
             {
                 StartCoroutine(FlashWhiteRoutine());
             }
 
-            if (newValue <= 0 && !_isDestroyed)
+            // The server completes detachment, physics shutdown and the fail event in
+            // TriggerDestructionServer. Clients only start their presentation here.
+            bool networked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+            if (newValue <= 0 && !_isDestroyed && networked && !IsServer)
             {
                 _isDestroyed = true;
                 ExecuteDestructionVisuals();
+                MissionFailUI.EnsureInstance().Show();
             }
         }
 
@@ -172,11 +188,14 @@ namespace CoopGame.CarrySystem
 
             if (_isDestroyed) return;
 
-            // Ignore collisions with player bodies while actively carried
-            if (collision.gameObject.CompareTag("Player") && IsCarried)
-            {
+            if (Time.fixedTime < _damageEnabledAtFixedTime) return;
+
+            // A player collider may live on a child without the Player tag.
+            Collider other = collision.collider;
+            if (other != null &&
+                (other.GetComponentInParent<CoopGame.Player.NetworkPlayer>() != null ||
+                 other.CompareTag("Player") || other.transform.root.CompareTag("Player")))
                 return;
-            }
 
             float impactSpeed = collision.relativeVelocity.magnitude;
             if (impactSpeed < _minImpactVelocity) return;
@@ -193,14 +212,18 @@ namespace CoopGame.CarrySystem
 
         private void CheckSurfaceDragDamage()
         {
-            if (_rigidbody == null || _isDestroyed) return;
+            if (_rigidbody == null || _isDestroyed || Time.fixedTime < _damageEnabledAtFixedTime) return;
 
             // Drag damage only triggers when moving horizontally while touching ground/surface
             float horizSpeed = new Vector2(_rigidbody.linearVelocity.x, _rigidbody.linearVelocity.z).magnitude;
             if (horizSpeed < _minDragVelocity) return;
 
             // Raycast downward to verify ground contact
-            if (Physics.Raycast(transform.position, Vector3.down, out RaycastHit hit, 0.65f))
+            if (Physics.Raycast(transform.position, Vector3.down, out RaycastHit hit, 0.65f,
+                    Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) &&
+                hit.collider.GetComponentInParent<CoopGame.Player.NetworkPlayer>() == null &&
+                !hit.collider.CompareTag("Player") &&
+                !hit.collider.transform.root.CompareTag("Player"))
             {
                 if (Time.time >= _lastDragDamageTime + _dragDamageInterval)
                 {
@@ -215,7 +238,8 @@ namespace CoopGame.CarrySystem
         /// </summary>
         public void ApplyDamageServer(int damageAmount, string reason = "")
         {
-            if (_isDestroyed) return;
+            if (_isDestroyed || damageAmount <= 0) return;
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer) return;
 
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);
             CurrentHP.Value = newHP;
@@ -223,7 +247,8 @@ namespace CoopGame.CarrySystem
             Debug.Log($"[FragileCargo] '{name}' took -{damageAmount} damage ({reason}). Remaining HP: {newHP}/{_maxHP}");
 
             OnCargoDamagedGlobal?.Invoke(this, damageAmount);
-            PlayImpactFxClientRpc(transform.position);
+            if (IsSpawned) PlayImpactFxClientRpc(transform.position);
+            else PlayImpactFeedback(transform.position);
 
             if (newHP <= 0)
             {
@@ -249,12 +274,35 @@ namespace CoopGame.CarrySystem
                 _rigidbody.isKinematic = true;
             }
 
-            TriggerDestructionClientRpc(transform.position);
+            ExecuteDestructionVisuals();
+            MissionFailUI.EnsureInstance().Show();
+            if (IsSpawned) TriggerDestructionClientRpc(transform.position);
+            else PlayDestructionFeedback(transform.position);
             OnCargoDestroyedGlobal?.Invoke(this);
+            StartCoroutine(RemoveDestroyedCargoRoutine());
+        }
+
+        private IEnumerator RemoveDestroyedCargoRoutine()
+        {
+            yield return new WaitForSecondsRealtime(0.8f);
+            if (IsSpawned && IsServer)
+            {
+                NetworkObject.Despawn(true);
+                if (this != null) gameObject.SetActive(false);
+            }
+            else if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+            {
+                Destroy(gameObject);
+            }
         }
 
         [ClientRpc]
         private void PlayImpactFxClientRpc(Vector3 impactPoint)
+        {
+            PlayImpactFeedback(impactPoint);
+        }
+
+        private void PlayImpactFeedback(Vector3 impactPoint)
         {
             if (_impactFxPrefab != null)
             {
@@ -270,7 +318,19 @@ namespace CoopGame.CarrySystem
         [ClientRpc]
         private void TriggerDestructionClientRpc(Vector3 destructionPoint)
         {
-            ExecuteDestructionVisuals();
+            if (!_isDestroyed)
+            {
+                _isDestroyed = true;
+                ExecuteDestructionVisuals();
+            }
+
+            MissionFailUI.EnsureInstance().Show();
+
+            PlayDestructionFeedback(destructionPoint);
+        }
+
+        private void PlayDestructionFeedback(Vector3 destructionPoint)
+        {
 
             if (_destructionFxPrefab != null)
             {
@@ -333,6 +393,9 @@ namespace CoopGame.CarrySystem
                     if (col != null) col.enabled = false;
                 }
             }
+
+            FragileCargoHealthUI healthUI = GetComponent<FragileCargoHealthUI>();
+            if (healthUI != null) healthUI.Hide();
         }
 
         private IEnumerator FlashWhiteRoutine()
@@ -384,6 +447,8 @@ namespace CoopGame.CarrySystem
         /// </summary>
         public void RespawnAtSpawnPoint()
         {
+            bool isNetworked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+            if (isNetworked && !IsServer) return;
             DetachAllCarriers();
 
             if (_rigidbody != null)
@@ -392,25 +457,21 @@ namespace CoopGame.CarrySystem
                 _rigidbody.angularVelocity = Vector3.zero;
             }
 
-            transform.position = _spawnPosition;
-            transform.rotation = _spawnRotation;
+            NetworkTransform networkTransform = GetComponent<NetworkTransform>();
+            if (isNetworked && networkTransform != null)
+                networkTransform.Teleport(_spawnPosition, _spawnRotation, transform.localScale);
+            else
+                transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+
+            _rigidbody?.WakeUp();
 
             _isThrown = false;
+            _lastImpactTime = Time.time;
+            _lastDragDamageTime = Time.time;
+            _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
             Debug.Log($"[FragileCargo] '{name}' fell out of bounds (< {_killZ}m). Respawned at {_spawnPosition}.");
 
             OnCargoRespawnedGlobal?.Invoke(this);
-            RespawnClientRpc(_spawnPosition);
-        }
-
-        [ClientRpc]
-        private void RespawnClientRpc(Vector3 pos)
-        {
-            transform.position = pos;
-            if (_rigidbody != null)
-            {
-                _rigidbody.linearVelocity = Vector3.zero;
-                _rigidbody.angularVelocity = Vector3.zero;
-            }
         }
 
         /// <summary>

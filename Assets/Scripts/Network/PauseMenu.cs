@@ -118,6 +118,7 @@ namespace CoopGame.Network
 
         private void Update()
         {
+            if (CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             bool escPressed = UnityEngine.InputSystem.Keyboard.current != null &&
                               UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame;
             if (!escPressed) return;

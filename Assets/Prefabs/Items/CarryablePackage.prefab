@@ -15,8 +15,8 @@ GameObject:
   - component: {fileID: 1654766100760320712}
   - component: {fileID: 3873539406984494692}
   - component: {fileID: 8779453652194630780}
-  - component: {fileID: 8968147165437950240}
   - component: {fileID: 5123984719234851234}
+  - component: {fileID: 4911362095797667612}
   m_Layer: 0
   m_Name: CarryablePackage
   m_TagString: Untagged
@@ -217,25 +217,6 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
---- !u!114 &8968147165437950240
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2044480967349771524}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 499564cd2fd4bcc408f3f63fb6a29e64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.CarryableObject
-  ShowTopMostFoldoutHeaderGroup: 1
-  _sockets: []
-  _carryForwardDistance: 0.65
-  _carryHeightOffset: 1.05
-  _soloSpeedMultiplier: 0.6
-  _coopSpeedMultiplier: 0.9
-  _rotationSpeed: 180
 --- !u!114 &5123984719234851234
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -252,3 +233,38 @@ MonoBehaviour:
   _defaultWidth: 3.5
   _enablePulse: 0
   _pulseSpeed: 3.5
+--- !u!114 &4911362095797667612
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2044480967349771524}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33614069c40d20245904a661e5e5b363, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.FragileCargo
+  ShowTopMostFoldoutHeaderGroup: 1
+  _sockets: []
+  _carryForwardDistance: 0.65
+  _carryHeightOffset: 1.05
+  _soloSpeedMultiplier: 0.6
+  _coopSpeedMultiplier: 0.9
+  _rotationSpeed: 180
+  _maxHP: 100
+  _minImpactVelocity: 2.5
+  _normalImpactDamage: 15
+  _throwImpactDamage: 20
+  _dragDamage: 5
+  _dragDamageInterval: 0.8
+  _minDragVelocity: 0.8
+  _impactInvulnerabilityDuration: 0.25
+  _spawnDamageGraceSeconds: 1.25
+  _killZ: -15
+  _spawnPosition: {x: 0, y: 0, z: 0}
+  _spawnRotation: {x: 0, y: 0, z: 0, w: 0}
+  _impactFxPrefab: {fileID: 0}
+  _destructionFxPrefab: {fileID: 0}
+  _impactSound: {fileID: 0}
+  _destructionSound: {fileID: 0}

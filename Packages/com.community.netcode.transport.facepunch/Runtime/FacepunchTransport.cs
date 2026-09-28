@@ -17,6 +17,7 @@ namespace Netcode.Transports.Facepunch
         private SocketManager socketManager;
         private Dictionary<ulong, Client> connectedClients;
         private bool m_SteamInitialized;
+        private bool m_OwnsSteamClient;
 
         [Space]
         [Tooltip("The Steam App ID of your game. Technically you're not allowed to use 480, but Valve doesn't do anything about it so it's fine for testing purposes.")]
@@ -96,7 +97,11 @@ namespace Netcode.Transports.Facepunch
 
             try
             {
-                SteamClient.Init(steamAppId, false);
+                if (!SteamClient.IsValid)
+                {
+                    SteamClient.Init(steamAppId, false);
+                    m_OwnsSteamClient = SteamClient.IsValid;
+                }
             }
             catch (Exception e)
             {
@@ -127,7 +132,9 @@ namespace Netcode.Transports.Facepunch
 
                 connectionManager?.Close();
                 socketManager?.Close();
-                SteamClient.Shutdown();
+                if (m_OwnsSteamClient && SteamClient.IsValid)
+                    SteamClient.Shutdown();
+                m_OwnsSteamClient = false;
             }
             catch (Exception e)
             {
