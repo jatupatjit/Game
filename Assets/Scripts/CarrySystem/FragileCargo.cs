@@ -48,6 +48,9 @@ namespace CoopGame.CarrySystem
         [Tooltip("Brief invulnerability buffer after an impact to prevent duplicate collision ticks")]
         [SerializeField] private float _impactInvulnerabilityDuration = 0.25f;
 
+        [Tooltip("Minimum time between any two HP losses, including impacts and dragging")]
+        [SerializeField, Min(0f)] private float _damageCooldownSeconds = 1.25f;
+
         [Tooltip("Ignore settling collisions and drag immediately after spawning or returning to the start")]
         [SerializeField, Min(0f)] private float _spawnDamageGraceSeconds = 1.25f;
 
@@ -84,6 +87,7 @@ namespace CoopGame.CarrySystem
         private float _lastImpactTime = -10f;
         private float _lastDragDamageTime = -10f;
         private float _damageEnabledAtFixedTime;
+        private float _nextDamageAllowedAtFixedTime;
         private bool _isDestroyed = false;
         private MeshRenderer[] _meshRenderers;
         private Color[] _originalColors;
@@ -106,6 +110,7 @@ namespace CoopGame.CarrySystem
             _spawnPosition = transform.position;
             _spawnRotation = transform.rotation;
             _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
+            _nextDamageAllowedAtFixedTime = _damageEnabledAtFixedTime;
 
             if (GetComponent<FragileCargoHealthUI>() == null)
                 gameObject.AddComponent<FragileCargoHealthUI>();
@@ -122,6 +127,7 @@ namespace CoopGame.CarrySystem
             {
                 CurrentHP.Value = _maxHP;
                 _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
+                _nextDamageAllowedAtFixedTime = _damageEnabledAtFixedTime;
             }
 
             CurrentHP.OnValueChanged += HandleHPValueChanged;
@@ -189,6 +195,7 @@ namespace CoopGame.CarrySystem
             if (_isDestroyed) return;
 
             if (Time.fixedTime < _damageEnabledAtFixedTime) return;
+            if (Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
 
             // A player collider may live on a child without the Player tag.
             Collider other = collision.collider;
@@ -212,7 +219,8 @@ namespace CoopGame.CarrySystem
 
         private void CheckSurfaceDragDamage()
         {
-            if (_rigidbody == null || _isDestroyed || Time.fixedTime < _damageEnabledAtFixedTime) return;
+            if (_rigidbody == null || _isDestroyed || Time.fixedTime < _damageEnabledAtFixedTime ||
+                Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
 
             // Drag damage only triggers when moving horizontally while touching ground/surface
             float horizSpeed = new Vector2(_rigidbody.linearVelocity.x, _rigidbody.linearVelocity.z).magnitude;
@@ -240,8 +248,11 @@ namespace CoopGame.CarrySystem
         {
             if (_isDestroyed || damageAmount <= 0) return;
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer) return;
+            if (Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
 
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);
+            if (newHP == CurrentHP.Value) return;
+            _nextDamageAllowedAtFixedTime = Time.fixedTime + _damageCooldownSeconds;
             CurrentHP.Value = newHP;
 
             Debug.Log($"[FragileCargo] '{name}' took -{damageAmount} damage ({reason}). Remaining HP: {newHP}/{_maxHP}");
@@ -469,6 +480,7 @@ namespace CoopGame.CarrySystem
             _lastImpactTime = Time.time;
             _lastDragDamageTime = Time.time;
             _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
+            _nextDamageAllowedAtFixedTime = _damageEnabledAtFixedTime;
             Debug.Log($"[FragileCargo] '{name}' fell out of bounds (< {_killZ}m). Respawned at {_spawnPosition}.");
 
             OnCargoRespawnedGlobal?.Invoke(this);

@@ -12,9 +12,6 @@ GameObject:
   - component: {fileID: 7925255732413522813}
   - component: {fileID: 2863876653151919270}
   - component: {fileID: 8324866156962083247}
-  - component: {fileID: 495998704788246607}
-  - component: {fileID: 1171352409482164769}
-  - component: {fileID: 5208138778700193659}
   m_Layer: 3
   m_Name: wall
   m_TagString: Untagged
@@ -115,62 +112,3 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!143 &495998704788246607
-CharacterController:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6355083741544889184}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Height: 1
-  m_Radius: 0.5
-  m_SlopeLimit: 45
-  m_StepOffset: 0.3
-  m_SkinWidth: 0.08
-  m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &1171352409482164769
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6355083741544889184}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9e344d535a71b4441b007cd0542ff5dd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.PlayerInputReader
-  _inputAsset: {fileID: 0}
---- !u!114 &5208138778700193659
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6355083741544889184}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 564f949dd343449f93bbe60450551331, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.PlayerStamina
-  _maxStamina: 100
-  _twoHandDrainRate: 8
-  _oneHandDrainRate: 24
-  _baseMass: 10
-  _massDrainMultiplier: 0.05
-  _recoveryRate: 32
-  _recoveryDelay: 0.6
-  _exhaustionRecoveryPercent: 0.2
-  _coopSynergyMultiplier: 0.85
