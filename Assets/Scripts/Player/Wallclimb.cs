@@ -1106,6 +1106,28 @@ public class Wallclimb : NetworkBehaviour
         OnClimbEnded?.Invoke();
     }
 
+    public void ResetForRespawn()
+    {
+        if (!IsOwner) return;
+        if (IsClimbing || (_movement != null && _movement.IsClimbing))
+            ReleaseAllGrips();
+        else
+            SyncNetworkState();
+
+        _jumpPending = false;
+        _pullUpTimer = 0f;
+        _canGrabLeft = false;
+        _canGrabRight = false;
+        _isAimingAtWall = false;
+        _leftAimHit = default;
+        _rightAimHit = default;
+        _leftGripCollider = null;
+        _rightGripCollider = null;
+        _leftRequireFreshPress = _inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
+        _rightRequireFreshPress = _inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
+        HideMarkers();
+    }
+
     private void SyncNetworkState()
     {
         if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
