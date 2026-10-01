@@ -92,28 +92,20 @@ Shader "DontDropIt/DeliveryZoneRing"
                 float outerEdge = 1.0;
                 float innerEdge = outerEdge - ringThickness;
 
-                // Circular outer ring
-                float ring = smoothstep(innerEdge - 0.02, innerEdge + 0.01, dist) * smoothstep(outerEdge + 0.02, outerEdge - 0.01, dist);
+                // Crisp circular outer ring line with clean smoothstep antialiasing
+                float ring = smoothstep(innerEdge - 0.015, innerEdge + 0.015, dist) * smoothstep(outerEdge + 0.015, outerEdge - 0.015, dist);
 
-                // Subtle dynamic energy pulse and rotation along the perimeter
+                // Subtle dynamic energy pulse along the perimeter
                 float angle = atan2(p.y, p.x);
-                float pulse = 0.88 + 0.12 * sin(_Time.y * pulseSpeed);
-                float energyWaves = 0.8 + 0.2 * sin(angle * 6.0 - _Time.y * rotationSpeed * 3.0);
-                float dashes = 0.9 + 0.1 * cos(angle * 16.0 + _Time.y * rotationSpeed);
+                float pulse = 0.92 + 0.08 * sin(_Time.y * pulseSpeed);
+                float energyWaves = 0.88 + 0.12 * sin(angle * 6.0 - _Time.y * rotationSpeed * 2.0);
 
-                // Inner soft floor glow
+                // Inner floor tint (subtle translucent glow inside the circle)
                 float innerFill = smoothstep(innerEdge, 0.0, dist) * innerAlpha;
 
-                // Center subtle radar ripple wave expanding outward
-                float ripple = sin((dist - frac(_Time.y * 0.4)) * 12.566);
-                float rippleMask = smoothstep(0.7, 1.0, ripple) * smoothstep(0.9, 0.1, dist) * 0.12;
-
-                // Combine intensity
-                float ringIntensity = ring * edgeGlow * energyWaves * dashes * pulse;
-                float totalIntensity = ringIntensity + innerFill + rippleMask;
-
-                half3 rgb = zoneColor.rgb * (ring * edgeGlow * energyWaves + 1.0);
-                half alpha = saturate(ring * pulse * 0.95 + innerFill + rippleMask) * zoneColor.a;
+                // Combine intensity for glowing circle line
+                half3 rgb = zoneColor.rgb * (ring * edgeGlow * energyWaves + 1.2);
+                half alpha = saturate(ring * pulse + innerFill) * zoneColor.a;
 
                 return half4(rgb, alpha);
             }

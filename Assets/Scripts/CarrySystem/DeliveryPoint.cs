@@ -215,41 +215,11 @@ namespace CoopGame.CarrySystem
             {
                 _celebrationFx.Play();
             }
-            else
-            {
-                SpawnProceduralConfetti(deliveryPoint);
-            }
 
             if (_deliveryFanfareClip != null)
             {
                 AudioSource.PlayClipAtPoint(_deliveryFanfareClip, deliveryPoint, 1.0f);
             }
-        }
-
-        private void SpawnProceduralConfetti(Vector3 point)
-        {
-            GameObject confettiObj = new GameObject("Delivery_Confetti_VFX");
-            confettiObj.transform.position = point + Vector3.up * 1.0f;
-
-            ParticleSystem ps = confettiObj.AddComponent<ParticleSystem>();
-            var main = ps.main;
-            main.startLifetime = 2.5f;
-            main.startSpeed = 6.0f;
-            main.startSize = 0.35f;
-            main.startColor = new ParticleSystem.MinMaxGradient(Color.yellow, Color.cyan);
-            main.stopAction = ParticleSystemStopAction.Destroy;
-
-            var emission = ps.emission;
-            emission.rateOverTime = 0;
-            emission.SetBursts(new ParticleSystem.Burst[] { new ParticleSystem.Burst(0.0f, 60) });
-
-            var shape = ps.shape;
-            shape.shapeType = ParticleSystemShapeType.Cone;
-            shape.angle = 35f;
-            shape.radius = 0.5f;
-
-            ps.Play();
-            Destroy(confettiObj, 4.0f);
         }
 
         private void OnDrawGizmos()

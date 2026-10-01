@@ -61,56 +61,17 @@ namespace CoopGame.EditorTools
             DeliveryZone zoneComp = tempRoot.AddComponent<DeliveryZone>();
 
             // Setup Quad Visual
-            GameObject ringQuad = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            GameObject ringQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             ringQuad.name = "Zone_Circle_Visual";
             ringQuad.transform.SetParent(tempRoot.transform, false);
-            ringQuad.transform.localRotation = Quaternion.identity;
-            ringQuad.transform.localPosition = new Vector3(0f, 0.02f, 0f);
+            ringQuad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            ringQuad.transform.localPosition = new Vector3(0f, 0.03f, 0f);
             float radius = 3.5f;
-            ringQuad.transform.localScale = new Vector3(radius, 0.01f, radius); // flat disc
+            ringQuad.transform.localScale = new Vector3(radius * 2.0f, radius * 2.0f, 1.0f); // flat Quad disc
             var quadCol = ringQuad.GetComponent<Collider>();
             if (quadCol != null) Object.DestroyImmediate(quadCol);
             var quadRenderer = ringQuad.GetComponent<Renderer>();
             quadRenderer.sharedMaterial = mat;
-
-            // Setup Particle System with dedicated URP particle material (never pink)
-            string particleMatPath = "Assets/Materials/ZoneParticle_Mat.mat";
-            Material particleMat = AssetDatabase.LoadAssetAtPath<Material>(particleMatPath);
-
-            GameObject psObj = new GameObject("Perimeter_Particles");
-            psObj.transform.SetParent(tempRoot.transform, false);
-            psObj.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-            ParticleSystem ps = psObj.AddComponent<ParticleSystem>();
-            var main = ps.main;
-            main.startLifetime = 1.2f;
-            main.startSpeed = 0.5f;
-            main.startSize = 0.15f;
-            main.startColor = new Color(1.0f, 0.15f, 0.15f, 1.0f);
-            main.simulationSpace = ParticleSystemSimulationSpace.Local;
-            main.playOnAwake = true;
-
-            var emission = ps.emission;
-            emission.rateOverTime = 25f;
-
-            var shape = ps.shape;
-            shape.shapeType = ParticleSystemShapeType.Circle;
-            shape.radius = 3.5f * 0.98f;
-            shape.rotation = new Vector3(-90f, 0f, 0f);
-
-            var colorOverLife = ps.colorOverLifetime;
-            colorOverLife.enabled = true;
-            Gradient grad = new Gradient();
-            grad.SetKeys(
-                new GradientColorKey[] { new GradientColorKey(Color.white, 0.0f), new GradientColorKey(Color.white, 1.0f) },
-                new GradientAlphaKey[] { new GradientAlphaKey(0.0f, 0.0f), new GradientAlphaKey(0.8f, 0.3f), new GradientAlphaKey(0.0f, 1.0f) }
-            );
-            colorOverLife.color = grad;
-
-            ParticleSystemRenderer psRenderer = psObj.GetComponent<ParticleSystemRenderer>();
-            if (psRenderer != null && particleMat != null)
-            {
-                psRenderer.sharedMaterial = particleMat;
-            }
 
             // Save as Prefab
             GameObject savedPrefab = PrefabUtility.SaveAsPrefabAsset(tempRoot, prefabPath);

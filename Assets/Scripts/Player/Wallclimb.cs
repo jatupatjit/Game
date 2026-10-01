@@ -330,6 +330,12 @@ public class Wallclimb : NetworkBehaviour
         // 1. If pulling up onto top surface:
         if (_isPullingUp)
         {
+            if (_jumpPending)
+            {
+                _jumpPending = false;
+                ExecuteWallJumpBoost();
+                return;
+            }
             UpdatePullUp();
             SyncNetworkState();
             return;
@@ -402,8 +408,7 @@ public class Wallclimb : NetworkBehaviour
             if (_jumpPending)
             {
                 _jumpPending = false;
-                if (!CheckForTopLedgePullUp())
-                    ExecuteWallJumpBoost();
+                ExecuteWallJumpBoost();
                 return;
             }
 
@@ -717,13 +722,23 @@ public class Wallclimb : NetworkBehaviour
         Vector3 wallNormal = (_leftHandGripping ? _leftGripNormal : _rightGripNormal);
         Vector3 wallForward = -wallNormal;
         wallForward.y = 0f;
-        wallForward.Normalize();
+        if (wallForward.sqrMagnitude > 0.01f)
+        {
+            wallForward.Normalize();
+        }
+        else
+        {
+            wallForward = transform.forward;
+            wallForward.y = 0f;
+            wallForward.Normalize();
+        }
 
-        // Release both hands
+        // Release both hands and cancel any pull-up state
         _leftHandGripping = false;
         _rightHandGripping = false;
+        _isPullingUp = false;
 
-        // Always jump STRAIGHT UP with slight forward nudge — same as the old "looking up" behavior
+        // Always jump STRAIGHT UP with slight forward nudge
         Vector3 boostImpulse = Vector3.up * _jumpBoostUp + wallForward * 1.5f;
 
         // Allow re-gripping immediately so player can grab a higher spot at the peak of the jump

@@ -41,10 +41,10 @@ namespace CoopGame.EditorTools
             EditorGUILayout.Space(6);
             if (Application.isPlaying)
             {
-                if (zone.IsDelivered || zone.IsTargetInside)
+                if (zone.IsTargetInside)
                 {
                     GUI.backgroundColor = new Color(0.2f, 0.9f, 0.4f, 1f);
-                    EditorGUILayout.HelpBox("🟢 TARGET INSIDE ZONE - EFFECT IS GREEN", MessageType.Info);
+                    EditorGUILayout.HelpBox("🟢 ITEM INSIDE ZONE - CIRCLE IS GREEN", MessageType.Info);
                 }
                 else
                 {
