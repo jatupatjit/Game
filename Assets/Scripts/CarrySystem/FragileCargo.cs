@@ -100,6 +100,13 @@ namespace CoopGame.CarrySystem
 
         public int MaxHP => _maxHP;
         public bool IsDestroyed => _isDestroyed;
+        public override bool CanBeCarried => !_isDestroyed && base.CanBeCarried;
+        private readonly NetworkVariable<bool> _padding = new(false);
+        public bool HasPadding => _padding.Value;
+        public void AddPadding() { if (IsServer) _padding.Value = true; }
+        private int _queuedDamage;
+        private string _queuedReason;
+        private bool _respawnPending;
 
         protected override void Awake()
         {
@@ -166,12 +173,19 @@ namespace CoopGame.CarrySystem
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return;
 
-            if (_isDestroyed) return;
+            if (_isDestroyed || IsSecured) return;
+            if (_queuedDamage > 0)
+            {
+                int damage = _queuedDamage; _queuedDamage = 0;
+                ApplyQueuedDamage(damage, _queuedReason);
+                if (_isDestroyed) return;
+            }
 
             // 1. Check Kill-Z Out of Bounds
-            if (transform.position.y < _killZ)
+            if (_respawnPending || transform.position.y < _killZ)
             {
-                RespawnAtSpawnPoint();
+                _respawnPending = false;
+                ExecuteRespawn();
                 return;
             }
 
@@ -246,10 +260,20 @@ namespace CoopGame.CarrySystem
         /// </summary>
         public void ApplyDamageServer(int damageAmount, string reason = "")
         {
+            if (_isDestroyed || IsSecured || damageAmount <= 0 ||
+                (IsSpawned && !IsServer) || Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
+            if (damageAmount > _queuedDamage) { _queuedDamage = damageAmount; _queuedReason = reason; }
+        }
+
+        private void ApplyQueuedDamage(int damageAmount, string reason)
+        {
             if (_isDestroyed || damageAmount <= 0) return;
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer) return;
             if (Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
 
+            if (HasPadding) { damageAmount = Mathf.CeilToInt(damageAmount * .5f); _padding.Value = false; }
+            if (HasGuardCard()) damageAmount = Mathf.CeilToInt(damageAmount * .5f);
+            damageAmount = Mathf.Min(damageAmount, CurrentHP.Value);
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);
             if (newHP == CurrentHP.Value) return;
             _nextDamageAllowedAtFixedTime = Time.fixedTime + _damageCooldownSeconds;
@@ -307,7 +331,7 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        [ClientRpc]
+        [Rpc(SendTo.ClientsAndHost)]
         private void PlayImpactFxClientRpc(Vector3 impactPoint)
         {
             PlayImpactFeedback(impactPoint);
@@ -315,18 +339,20 @@ namespace CoopGame.CarrySystem
 
         private void PlayImpactFeedback(Vector3 impactPoint)
         {
+            if (_impactFxPrefab == null) CoopGame.Network.GameplayFeedback.Burst(impactPoint, new Color(.75f, .57f, .32f));
             if (_impactFxPrefab != null)
             {
                 Instantiate(_impactFxPrefab, impactPoint, Quaternion.identity);
             }
 
+            if (_impactSound == null) CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Impact, impactPoint);
             if (_impactSound != null)
             {
                 AudioSource.PlayClipAtPoint(_impactSound, impactPoint, 1.0f);
             }
         }
 
-        [ClientRpc]
+        [Rpc(SendTo.ClientsAndHost)]
         private void TriggerDestructionClientRpc(Vector3 destructionPoint)
         {
             if (!_isDestroyed)
@@ -353,6 +379,7 @@ namespace CoopGame.CarrySystem
                 SpawnProceduralSmokeVFX(destructionPoint);
             }
 
+            if (_destructionSound == null) CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Broken, destructionPoint);
             if (_destructionSound != null)
             {
                 AudioSource.PlayClipAtPoint(_destructionSound, destructionPoint, 1.0f);
@@ -457,6 +484,11 @@ namespace CoopGame.CarrySystem
         /// Resets the cargo to its initial spawn point when falling out of bounds.
         /// </summary>
         public void RespawnAtSpawnPoint()
+        {
+            if ((!IsSpawned || IsServer) && !_isDestroyed && !IsSecured) _respawnPending = true;
+        }
+
+        private void ExecuteRespawn()
         {
             bool isNetworked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
             if (isNetworked && !IsServer) return;

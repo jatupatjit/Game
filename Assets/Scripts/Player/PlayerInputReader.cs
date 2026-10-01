@@ -84,7 +84,7 @@ namespace CoopGame.Player
         private void Update()
         {
             // 1. If game is paused, suppress ALL gameplay inputs completely
-            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible)
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
             {
                 MoveInput = Vector2.zero;
                 LookInput = Vector2.zero;
@@ -255,27 +255,27 @@ namespace CoopGame.Player
 
         private void OnThrowPerformedCallback(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             ThrowTriggered = true;
             OnThrowPerformed?.Invoke();
         }
 
         private void OnThrowCanceledCallback(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             OnThrowReleased?.Invoke();
         }
 
         private void OnJumpTriggered(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             JumpTriggered = true;
             OnJumpPerformed?.Invoke();
         }
 
         private void OnInteractTriggered(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             InteractTriggered = true;
             OnInteractPerformed?.Invoke();
         }

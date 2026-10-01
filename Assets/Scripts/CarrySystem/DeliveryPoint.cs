@@ -62,13 +62,12 @@ namespace CoopGame.CarrySystem
         [SerializeField] private int _stage2Multiplier = 3;
         [SerializeField] private int _stage3Multiplier = 5;
 
-        [Header("Shop System Handoff (3 Item Slots)")]
+        [Header("Shop Catalog (Inventory has 3 slots)")]
         [Tooltip("Items available in the Shop upon stage completion")]
-        [SerializeField] private ShopSlotData[] _shopSlots = new ShopSlotData[3]
+        [SerializeField] private ShopSlotData[] _shopSlots = new ShopSlotData[2]
         {
-            new ShopSlotData { ItemId = "stamina_boost", ItemName = "Stamina Elixir", Description = "+25 Max Stamina & faster regen", Price = 100 },
-            new ShopSlotData { ItemId = "grip_gloves", ItemName = "Mag-Grip Gloves", Description = "Climbing stamina drain reduced by 30%", Price = 150 },
-            new ShopSlotData { ItemId = "cushion_crate", ItemName = "Shock Absorber", Description = "Fragile Cargo takes 50% less drop damage", Price = 200 }
+            new ShopSlotData { ItemId = "stamina_elixir", ItemName = "Stamina Elixir", Description = "Restore full stamina once", Price = 40 },
+            new ShopSlotData { ItemId = "cargo_padding", ItemName = "Cargo Padding", Description = "Reduce the next cargo hit by 50%; use while carrying", Price = 60 }
         };
 
         [Header("Celebration & Audio Visuals")]
@@ -88,6 +87,22 @@ namespace CoopGame.CarrySystem
         private readonly NetworkVariable<bool> _syncedDelivered = new NetworkVariable<bool>(
             false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private DeliveryResult _lastDeliveryResult;
+        private readonly NetworkVariable<DeliveryResult> _syncedResult = new(default);
+        public override void OnNetworkSpawn()
+        {
+            _syncedResult.OnValueChanged += ReceiveResult;
+            _lastDeliveryResult = _syncedResult.Value;
+        }
+
+        public override void OnNetworkDespawn() => _syncedResult.OnValueChanged -= ReceiveResult;
+
+        private void ReceiveResult(DeliveryResult previous, DeliveryResult result)
+        {
+            _lastDeliveryResult = result;
+            if (!result.IsSuccess) return;
+            OnDelivered?.Invoke(result);
+            OnDeliverySuccessGlobal?.Invoke(result);
+        }
 
         // Events
         public static event Action<DeliveryResult> OnDeliverySuccessGlobal;
@@ -164,7 +179,6 @@ namespace CoopGame.CarrySystem
         private void ProcessDelivery(FragileCargo cargo)
         {
             _isDelivered = true;
-            if (IsSpawned && IsServer) _syncedDelivered.Value = true;
 
             int remainingHP = cargo.CurrentHP.Value;
             int multiplier = CurrentMultiplier;
@@ -185,26 +199,23 @@ namespace CoopGame.CarrySystem
                       $"Remaining HP: {remainingHP} | Multiplier: {multiplier}x | Score: {finalScore} | Coins: {coinsEarned}");
 
             // Detach carriers and secure the cargo at delivery spot
-            cargo.DetachAllCarriers();
-            Rigidbody rb = cargo.GetComponent<Rigidbody>();
-            if (rb != null)
-            {
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-                rb.isKinematic = true;
-            }
+            cargo.SecureForDelivery();
 
             // Fire events
-            OnDelivered?.Invoke(_lastDeliveryResult);
-            OnDeliverySuccessGlobal?.Invoke(_lastDeliveryResult);
+            if (IsSpawned && IsServer)
+            {
+                _syncedResult.Value = _lastDeliveryResult;
+                _syncedDelivered.Value = true;
+            }
+            else ReceiveResult(default, _lastDeliveryResult);
 
             // Broadcast celebration to all clients
-            if (IsSpawned) DeliverySuccessClientRpc(_lastDeliveryResult, transform.position);
+            if (IsSpawned) DeliverySuccessRpc(_lastDeliveryResult, transform.position);
             else PlayDeliveryFeedback(transform.position);
         }
 
-        [ClientRpc]
-        private void DeliverySuccessClientRpc(DeliveryResult result, Vector3 deliveryPoint)
+        [Rpc(SendTo.ClientsAndHost)]
+        private void DeliverySuccessRpc(DeliveryResult result, Vector3 deliveryPoint)
         {
             PlayDeliveryFeedback(deliveryPoint);
         }
@@ -217,13 +228,14 @@ namespace CoopGame.CarrySystem
             }
             else
             {
-                SpawnProceduralConfetti(deliveryPoint);
+                CoopGame.Network.GameplayFeedback.Burst(deliveryPoint + Vector3.up, Color.yellow, 60);
             }
 
             if (_deliveryFanfareClip != null)
             {
                 AudioSource.PlayClipAtPoint(_deliveryFanfareClip, deliveryPoint, 1.0f);
             }
+            else CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Delivered, deliveryPoint);
         }
 
         private void SpawnProceduralConfetti(Vector3 point)

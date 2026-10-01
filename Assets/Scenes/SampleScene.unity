@@ -281,9 +281,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 35362451}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &35362454
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1383,9 +1386,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 115039000}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &115039003
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1642,9 +1648,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 157842935}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &157842938
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2401,6 +2410,25 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 210526737}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &256625330
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1403350798}
+  - component: {fileID: 1403350801}
+  - component: {fileID: 1403350800}
+  - component: {fileID: 1403350799}
+  m_Layer: 0
+  m_Name: SpinnerRing
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
 --- !u!1 &258350083
 GameObject:
   m_ObjectHideFlags: 0
@@ -2813,9 +2841,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 303022778}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &303022781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3082,9 +3113,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 310919666}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &310919669
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5124,9 +5158,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 537239719}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &537239722
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6083,9 +6120,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 642293506}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &642293509
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7849,9 +7889,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 840965039}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &840965042
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8172,9 +8215,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 848109415}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!222 &848109419
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -8387,9 +8433,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 880075710}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &880075713
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10316,9 +10365,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1183446564}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &1183446567
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10718,9 +10770,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1200839265}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!222 &1200839269
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -10900,9 +10955,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1250326238}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &1250326241
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11895,32 +11953,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a6fd89dc549847f4096c58273ff2e979, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Transports.SinglePlayer.SinglePlayerTransport
---- !u!1 &1403350792
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1403350793}
-  - component: {fileID: 1403350796}
-  - component: {fileID: 1403350795}
-  - component: {fileID: 1403350794}
-  m_Layer: 0
-  m_Name: SpinnerRing
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &1403350793
+--- !u!224 &1403350798
 RectTransform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1403350792}
+  m_GameObject: {fileID: 256625330}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -11933,26 +11972,26 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 58, y: 58}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &1403350794
+--- !u!114 &1403350799
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1403350792}
+  m_GameObject: {fileID: 256625330}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a3a30a2fcdea67241907f8a1c2d193fb, type: 3}
+  m_Script: {fileID: 11500000, guid: a64d52c9f5962b04fbfc931bc63897e0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SpinnerAnimator
   _speed: 260
---- !u!114 &1403350795
+--- !u!114 &1403350800
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1403350792}
+  m_GameObject: {fileID: 256625330}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
@@ -11976,13 +12015,13 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
---- !u!222 &1403350796
+--- !u!222 &1403350801
 CanvasRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1403350792}
+  m_GameObject: {fileID: 256625330}
   m_CullTransparentMesh: 1
 --- !u!1 &1437926199
 GameObject:
@@ -15322,9 +15361,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1754890648}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!222 &1754890652
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -15887,9 +15929,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1839509859}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &1839509862
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16156,9 +16201,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1864752907}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &1864752910
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16313,9 +16361,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1865561524}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 1901093710}
+  m_Script: {fileID: 11500000, guid: 8669195ac5d0d2b4f80a4fd00931753f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIButtonHover
+  _hoverScale: 1.025
+  _downScale: 0.975
+  _lerpSpeed: 18
 --- !u!114 &1865561527
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16615,7 +16666,7 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1403350793}
+  - {fileID: 1403350798}
   m_Father: {fileID: 648796777}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}

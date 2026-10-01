@@ -132,12 +132,13 @@ namespace CoopGame.Player
             }
         }
 
-        private void OnDestroy()
+        public override void OnDestroy()
         {
             if (_hudCanvasGroup != null && _hudCanvasGroup.gameObject != null)
             {
                 Destroy(_hudCanvasGroup.gameObject);
             }
+            base.OnDestroy();
         }
 
         private void EnsureWhiteSprite()

@@ -70,6 +70,7 @@ namespace CoopGame.CarrySystem
 
         [Header("Audio & Visual References (Auto-created if empty)")]
         [SerializeField] private Renderer _ringRenderer;
+        [SerializeField] private TextMesh _zoneLabel;
         [SerializeField] private ParticleSystem _perimeterParticles;
         [SerializeField] private ParticleSystem _successBurstParticles;
         [SerializeField] private AudioSource _audioSource;
@@ -90,6 +91,10 @@ namespace CoopGame.CarrySystem
         private MaterialPropertyBlock _propBlock;
         private Material _generatedRingMaterial;
         private Rigidbody _pendingFreeze;
+        private MeshFilter _ringMeshFilter;
+        private DeliveryPoint _deliveryPoint;
+        private bool _labelDelivered;
+        private Camera _viewCamera;
         private static readonly int ColorPropId = Shader.PropertyToID("_Color");
         private static readonly int BaseColorPropId = Shader.PropertyToID("_BaseColor");
 
@@ -120,6 +125,7 @@ namespace CoopGame.CarrySystem
 
         private void Awake()
         {
+            _deliveryPoint = GetComponent<DeliveryPoint>();
             _propBlock = new MaterialPropertyBlock();
             _currentColor = _waitingRedColor;
 
@@ -166,7 +172,14 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            bool shouldBeGreen = _isDelivered || _isTargetInside;
+            bool shouldBeGreen = _deliveryPoint != null
+                ? _deliveryPoint.IsDelivered : _isDelivered || _isTargetInside;
+            if (_zoneLabel != null && _labelDelivered != shouldBeGreen)
+            {
+                _labelDelivered = shouldBeGreen;
+                _zoneLabel.text = shouldBeGreen ? "DELIVERED\nSTAGE COMPLETE" :
+                    "DELIVERY ZONE\nPLACE CARGO IN THE RING";
+            }
             Color targetColor = shouldBeGreen ? _deliveredGreenColor : _waitingRedColor;
 
             if (Application.isPlaying)
@@ -180,6 +193,18 @@ namespace CoopGame.CarrySystem
             }
 
             ApplyCurrentColor();
+        }
+
+        private void LateUpdate()
+        {
+            if (_zoneLabel == null) return;
+            var localCamera = CoopGame.Player.PlayerCameraController.LocalInstance;
+            if (localCamera != null) _viewCamera = localCamera.PlayerCamera;
+            else if (_viewCamera == null) _viewCamera = Camera.main;
+            if (_viewCamera == null) return;
+            Vector3 away = _zoneLabel.transform.position - _viewCamera.transform.position;
+            if (away.sqrMagnitude > 0.001f)
+                _zoneLabel.transform.rotation = Quaternion.LookRotation(away, Vector3.up);
         }
 
         private void FixedUpdate()
@@ -234,9 +259,16 @@ namespace CoopGame.CarrySystem
 
             if (_ringRenderer != null)
             {
-                // Cylinder: radius in X/Z, very flat Y thickness to look like a disc
-                _ringRenderer.transform.localScale = new Vector3(_radius, 0.01f, _radius);
-                _ringRenderer.transform.localPosition = new Vector3(0f, 0.02f, 0f);
+                if (_ringMeshFilter == null)
+                    _ringMeshFilter = _ringRenderer.GetComponent<MeshFilter>();
+                bool isQuad = _ringMeshFilter != null && _ringMeshFilter.sharedMesh != null &&
+                    _ringMeshFilter.sharedMesh.name == "Quad";
+                // A Quad spans local X/Y. Flattening local Y shrinks its floor ring into a line.
+                _ringRenderer.transform.localRotation = isQuad ? Quaternion.Euler(90f, 0f, 0f) : Quaternion.identity;
+                _ringRenderer.transform.localScale = isQuad
+                    ? new Vector3(_radius * 2f, _radius * 2f, 1f)
+                    : new Vector3(_radius * 2f, 0.01f, _radius * 2f);
+                _ringRenderer.transform.localPosition = new Vector3(0f, 0.04f, 0f);
             }
 
             if (_perimeterParticles != null)
@@ -259,13 +291,12 @@ namespace CoopGame.CarrySystem
                 }
                 else
                 {
-                    GameObject ringObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    GameObject ringObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
                     ringObj.name = "Zone_Circle_Visual";
                     ringObj.transform.SetParent(transform, false);
-                    ringObj.transform.localRotation = Quaternion.identity;
-                    ringObj.transform.localPosition = new Vector3(0f, 0.02f, 0f);
-                    // Cylinder radius = 1, height = 2 in Unity. Scale X/Z = radius, Y = flat disc thickness.
-                    ringObj.transform.localScale = new Vector3(_radius, 0.01f, _radius);
+                    ringObj.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                    ringObj.transform.localPosition = new Vector3(0f, 0.04f, 0f);
+                    ringObj.transform.localScale = new Vector3(_radius * 2f, _radius * 2f, 1f);
 
                     // Remove mesh collider on visual cylinder
                     Collider quadCol = ringObj.GetComponent<Collider>();
@@ -286,6 +317,17 @@ namespace CoopGame.CarrySystem
                         _ringRenderer.sharedMaterial = mat;
                         _generatedRingMaterial = mat;
                     }
+                }
+            }
+
+            if (_ringRenderer != null && _ringRenderer.sharedMaterial == null)
+            {
+                Shader ringShader = Shader.Find("DontDropIt/DeliveryZoneRing");
+                if (ringShader != null)
+                {
+                    _generatedRingMaterial = new Material(ringShader);
+                    _generatedRingMaterial.name = "DeliveryZone_Ring_RuntimeMat";
+                    _ringRenderer.sharedMaterial = _generatedRingMaterial;
                 }
             }
 

@@ -61,6 +61,7 @@ namespace CoopGame.Player
 
         // Public properties
         public float MaxStamina => _maxStamina;
+        public float CarryDrainMultiplier { get; set; } = 1f;
         public float CurrentStamina => _currentStamina;
         public float NormalizedStamina => Mathf.Clamp01(_currentStamina / _maxStamina);
         public bool IsExhausted => _isExhausted;
@@ -146,7 +147,7 @@ namespace CoopGame.Player
             float massExcess = Mathf.Max(0f, objectMass - _baseMass);
             float massScale = 1.0f + (massExcess * _massDrainMultiplier);
 
-            float totalDrain = baseRate * massScale * Time.deltaTime;
+            float totalDrain = baseRate * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Time.deltaTime;
 
             ApplyDrain(totalDrain);
         }

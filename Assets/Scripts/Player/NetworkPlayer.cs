@@ -40,6 +40,7 @@ namespace CoopGame.Player
         private Vector3 _respawnPosition;
         private Quaternion _respawnRotation;
         private bool _sceneSpawnPending;
+        private readonly NetworkVariable<int> _spawnSlot = new(-1);
 
         [Header("Visuals (Optional)")]
         [Tooltip("Renderer to tint with distinct player colors for easy multiplayer visual identification")]
@@ -175,12 +176,31 @@ namespace CoopGame.Player
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            if (IsServer)
+            {
+                // Client IDs keep increasing after reconnects; assign an available slot
+                // instead of using modulo IDs, which can place two players together.
+                int usedSlots = 0;
+                var clients = NetworkManager.ConnectedClientsList;
+                for (int i = 0; i < clients.Count; i++)
+                {
+                    var other = clients[i].PlayerObject;
+                    if (other == null || other == NetworkObject) continue;
+                    var networkPlayer = other.GetComponent<NetworkPlayer>();
+                    if (networkPlayer != null && networkPlayer._spawnSlot.Value >= 0 && networkPlayer._spawnSlot.Value < 4)
+                        usedSlots |= 1 << networkPlayer._spawnSlot.Value;
+                }
+                int slot = 0;
+                while (slot < 4 && (usedSlots & (1 << slot)) != 0) slot++;
+                _spawnSlot.Value = slot;
+            }
 
             // =========================================================================
             // MULTIPLAYER AUTHORITY & COMPONENT CONFIGURATION
             // =========================================================================
             if (IsOwner)
             {
+                _spawnSlot.OnValueChanged += OnSpawnSlotChanged;
                 SceneManager.sceneLoaded += OnGameplaySceneLoaded;
                 // [Local Owner Client Logic]
                 // This instance represents the human sitting at THIS computer/screen.
@@ -211,20 +231,10 @@ namespace CoopGame.Player
                     }
                 }
 
-                // Ensure player spawns flush on ground (y = 1.05m) and spaced out by ClientId
-                Vector3 currentPos = transform.position;
-                if (currentPos.sqrMagnitude < 0.1f || currentPos.y < 0.5f)
-                {
-                    Vector3 spawnPos = CalculateSpawnPosition(OwnerClientId);
-                    if (_characterController != null) _characterController.enabled = false;
-                    transform.position = spawnPos;
-                    if (_characterController != null) _characterController.enabled = true;
-                    if (_movement != null) _movement.ResetVelocity();
-                }
-
                 _characterController.enabled = true;
                 _movement.enabled = true;
                 SetRespawnPointForScene(SceneManager.GetActiveScene());
+                _sceneSpawnPending = true;
 
                 Debug.Log($"[NetworkPlayer] Local Player initialized with Owner ClientId: {OwnerClientId} at {transform.position}");
             }
@@ -259,6 +269,7 @@ namespace CoopGame.Player
 
             if (IsOwner)
             {
+                _spawnSlot.OnValueChanged -= OnSpawnSlotChanged;
                 SceneManager.sceneLoaded -= OnGameplaySceneLoaded;
                 if (_wallclimb != null)
                     _wallclimb.OnWallJumpBoost -= ClearPendingJump;
@@ -272,7 +283,7 @@ namespace CoopGame.Player
             }
         }
 
-        private void OnDestroy()
+        public override void OnDestroy()
         {
             SceneManager.sceneLoaded -= OnGameplaySceneLoaded;
             if (_wallclimb != null)
@@ -283,6 +294,8 @@ namespace CoopGame.Player
                 Cursor.visible = true;
                 RestoreSceneCamera();
             }
+            _spawnSlot.OnValueChanged -= OnSpawnSlotChanged;
+            base.OnDestroy();
         }
 
         /// <summary>
@@ -331,6 +344,7 @@ namespace CoopGame.Player
         {
             if (!IsOwner || _movement == null || !_movement.enabled)
                 return;
+            if (_spawnSlot.Value < 0) return;
 
             if (_sceneSpawnPending)
             {
@@ -345,7 +359,7 @@ namespace CoopGame.Player
                 return;
             }
 
-            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible)
+            if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
             {
                 ClearMovementInput();
                 return;
@@ -362,6 +376,13 @@ namespace CoopGame.Player
                 _sceneSpawnPending = SetRespawnPointForScene(scene);
         }
 
+        private void OnSpawnSlotChanged(int previous, int current)
+        {
+            if (!IsOwner || current < 0) return;
+            SetRespawnPointForScene(SceneManager.GetActiveScene());
+            _sceneSpawnPending = true;
+        }
+
         private bool SetRespawnPointForScene(Scene scene)
         {
             GameObject start = null;
@@ -376,7 +397,7 @@ namespace CoopGame.Player
 
             if (start != null)
             {
-                Vector3 offset = (OwnerClientId % 4) switch
+                Vector3 offset = _spawnSlot.Value switch
                 {
                     1 => new Vector3(2f, 0f, 0f),
                     2 => new Vector3(-2f, 0f, 0f),
@@ -388,8 +409,8 @@ namespace CoopGame.Player
                 return true;
             }
 
-            _respawnPosition = transform.position;
-            _respawnRotation = transform.rotation;
+            _respawnPosition = CalculateSpawnPosition(_spawnSlot.Value);
+            _respawnRotation = Quaternion.identity;
             return false;
         }
 
@@ -401,6 +422,8 @@ namespace CoopGame.Player
             _movement.ResetVelocity();
             _characterController.enabled = false;
             transform.SetPositionAndRotation(_respawnPosition, _respawnRotation);
+            GetComponent<Unity.Netcode.Components.NetworkTransform>()?.Teleport(
+                _respawnPosition, _respawnRotation, transform.localScale);
             _characterController.enabled = true;
             GetComponent<PlayerStamina>()?.ResetStamina();
         }
@@ -452,12 +475,12 @@ namespace CoopGame.Player
 
         /// <summary>
         /// Calculates an offset spawn position so players spawn on top of ground (y = 1.05m)
-        /// and spaced out according to ClientId to prevent overlapping.
+        /// and spaced out according to the server-assigned slot.
         /// </summary>
-        private static Vector3 CalculateSpawnPosition(ulong clientId)
+        private static Vector3 CalculateSpawnPosition(int slot)
         {
             float y = 1.05f;
-            switch (clientId % 4)
+            switch (slot)
             {
                 case 0: return new Vector3(0f, y, 0f);
                 case 1: return new Vector3(2f, y, 0f);

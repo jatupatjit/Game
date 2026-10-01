@@ -159,13 +159,13 @@ namespace CoopGame.Network
             HideSettingsPanel();
             HideConfirmDialog();
 
+            StopAllCoroutines();
             if (instant)
             {
                 if (_pauseRoot != null) { _pauseRoot.alpha = 0f; _pauseRoot.interactable = false; _pauseRoot.blocksRaycasts = false; }
                 return;
             }
 
-            StopAllCoroutines();
             StartCoroutine(FadeTo(0f));
 
             Cursor.lockState = CursorLockMode.Locked;
@@ -430,6 +430,7 @@ namespace CoopGame.Network
             go.AddComponent<LayoutElement>().preferredHeight = h;
             var img = go.AddComponent<Image>(); img.color = bg;
             var btn = go.AddComponent<Button>();
+            go.AddComponent<UIButtonHover>();
             var col = btn.colors;
             col.normalColor = bg; col.highlightedColor = bg * 1.3f;
             col.pressedColor = bg * 0.75f; col.selectedColor = bg; col.fadeDuration = 0.08f;

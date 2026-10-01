@@ -71,7 +71,10 @@ namespace CoopGame.CarrySystem
         {
             if (_outlineMaterial != null) return;
 
-            Shader shader = Shader.Find(SHADER_NAME);
+            // A Resources material retains the shader in standalone builds.
+            // Shader.Find alone does not protect it from build stripping.
+            Material template = Resources.Load<Material>("CarryableOutline");
+            Shader shader = template != null ? template.shader : Shader.Find(SHADER_NAME);
             if (shader == null)
             {
                 Debug.LogWarning($"[CarryableOutline] Shader '{SHADER_NAME}' not found. Falling back to Universal Render Pipeline/Unlit.");
@@ -80,11 +83,9 @@ namespace CoopGame.CarrySystem
 
             if (shader != null)
             {
-                _outlineMaterial = new Material(shader)
-                {
-                    name = "M_CarryableOutline (Runtime)",
-                    hideFlags = HideFlags.DontSave
-                };
+                _outlineMaterial = template != null ? new Material(template) : new Material(shader);
+                _outlineMaterial.name = "M_CarryableOutline (Runtime)";
+                _outlineMaterial.hideFlags = HideFlags.DontSave;
                 UpdateMaterialProperties();
             }
             else

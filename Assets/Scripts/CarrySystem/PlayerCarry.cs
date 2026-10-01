@@ -276,8 +276,6 @@ namespace CoopGame.CarrySystem
 
         private void OnCarriedObjectIdChanged(ulong previousValue, ulong newValue)
         {
-            if (IsOwner) return;
-
             if (newValue != 0)
             {
                 ResolveCarriedObject(newValue);
@@ -439,6 +437,9 @@ namespace CoopGame.CarrySystem
                     {
                         _movement.SpeedMultiplier = 1.0f;
                     }
+                    if (_currentCarryable != null && _currentCarryable.CurrentCarrierCount >= 2 &&
+                        TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var expedition) && expedition.Card.Value == 3)
+                        _movement.SpeedMultiplier *= 1.15f;
                 }
 
                 if (_currentCarryable != null)
@@ -1148,9 +1149,11 @@ namespace CoopGame.CarrySystem
             }
         }
 
+        private static bool Finite(Vector3 v) => float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
+
         #region Server RPCs
 
-        [ServerRpc]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestGrabServerRpc(ulong targetNetworkObjectId, Vector3 localContactLeft, Vector3 localContactRight, bool leftActive, bool rightActive)
         {
             if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out NetworkObject netObj))
@@ -1159,7 +1162,9 @@ namespace CoopGame.CarrySystem
             }
 
             CarryableObject carryable = netObj.GetComponent<CarryableObject>();
-            if (carryable == null) return;
+            if (carryable == null || !carryable.CanBeCarried || !Finite(localContactLeft) || !Finite(localContactRight)) return;
+            localContactLeft = Vector3.ClampMagnitude(localContactLeft, 2f);
+            localContactRight = Vector3.ClampMagnitude(localContactRight, 2f);
 
             Collider col = carryable.GetComponentInChildren<Collider>();
             float dist = (col != null) 
@@ -1176,16 +1181,17 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        [ServerRpc]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void SyncHandStateServerRpc(Vector3 localContactLeft, Vector3 localContactRight, bool leftActive, bool rightActive)
         {
             if (_currentCarryable != null)
             {
-                _currentCarryable.UpdateCarrierHandState(OwnerClientId, localContactLeft, localContactRight, leftActive, rightActive);
+                if (!Finite(localContactLeft) || !Finite(localContactRight)) return;
+                _currentCarryable.UpdateCarrierHandState(OwnerClientId, Vector3.ClampMagnitude(localContactLeft, 2f), Vector3.ClampMagnitude(localContactRight, 2f), leftActive, rightActive);
             }
         }
 
-        [ServerRpc]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestDropServerRpc()
         {
             if (_currentCarryable != null)
@@ -1197,11 +1203,13 @@ namespace CoopGame.CarrySystem
             NotifyDropClientRpc();
         }
 
-        [ServerRpc]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestThrowServerRpc(Vector3 linearVelocity, Vector3 angularVelocity)
         {
             if (_currentCarryable != null)
             {
+                if (!Finite(linearVelocity) || !Finite(angularVelocity) || !_currentCarryable.HasCarrier(OwnerClientId)) return;
+                PlayThrowClientRpc(_currentCarryable.transform.position);
                 _currentCarryable.ThrowObject(OwnerClientId, linearVelocity, angularVelocity);
             }
 
@@ -1209,12 +1217,13 @@ namespace CoopGame.CarrySystem
             NotifyDropClientRpc();
         }
 
-        [ServerRpc(Delivery = RpcDelivery.Unreliable)]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner, Delivery = RpcDelivery.Unreliable)]
         private void StreamCarrierInputServerRpc(Vector3 worldMoveDirection, Vector3 forwardHeading, float holdHeight, bool leftActive, bool rightActive)
         {
             if (_currentCarryable != null)
             {
-                _currentCarryable.UpdateCarrierInput(OwnerClientId, worldMoveDirection, forwardHeading, holdHeight, leftActive, rightActive);
+                if (!Finite(worldMoveDirection) || !Finite(forwardHeading) || !float.IsFinite(holdHeight)) return;
+                _currentCarryable.UpdateCarrierInput(OwnerClientId, Vector3.ClampMagnitude(worldMoveDirection, 1f), Vector3.ClampMagnitude(forwardHeading, 1f), Mathf.Clamp(holdHeight, .3f, 2.5f), leftActive, rightActive);
             }
         }
 
@@ -1222,7 +1231,13 @@ namespace CoopGame.CarrySystem
 
         #region Client RPCs
 
-        [ClientRpc]
+        [Rpc(SendTo.ClientsAndHost)]
+        private void PlayThrowClientRpc(Vector3 position)
+        {
+            CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Throw, position);
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
         private void NotifyGrabResultClientRpc(ulong targetNetworkObjectId, int socketIndex, bool success)
         {
             if (!success) return;
@@ -1237,7 +1252,7 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        [ClientRpc]
+        [Rpc(SendTo.ClientsAndHost)]
         private void NotifyDropClientRpc()
         {
             ReleaseCarryState();
@@ -1248,6 +1263,7 @@ namespace CoopGame.CarrySystem
         private void OnGrabSuccessful(CarryableObject carryable, int socketIndex)
         {
             _currentCarryable = carryable;
+            CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Lift, carryable.transform.position);
             _assignedSocketIndex = socketIndex;
             _carryLogTimer = 0f;
 

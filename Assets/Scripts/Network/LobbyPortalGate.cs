@@ -146,7 +146,7 @@ namespace CoopGame.Network
             RequestActivatePortalRpc();
         }
 
-        [Rpc(SendTo.Server, RequireOwnership = false)]
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
         private void RequestActivatePortalRpc(RpcParams rpcParams = default)
         {
             if (!IsServer || _portalActivated.Value)

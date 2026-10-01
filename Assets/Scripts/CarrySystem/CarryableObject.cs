@@ -79,20 +79,27 @@ namespace CoopGame.CarrySystem
         );
 
         // ICarryable implementation
-        public bool CanBeCarried => _activeCarriers.Count < MaxCarriers;
+        private readonly NetworkVariable<bool> _secured = new(false);
+        private readonly List<ulong> _staleCarriers = new(4);
+        private bool _physicsSetupPending;
+        private bool _throwPending;
+        private Vector3 _throwVelocity;
+        private Vector3 _throwAngularVelocity;
+        public bool IsSecured => _secured.Value;
+        public virtual bool CanBeCarried => !IsSecured && CurrentCarrierCount < MaxCarriers;
         public bool IsCarried => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             ? (SyncedCarrierCount.Value > 0)
             : (_activeCarriers.Count > 0);
         public int CurrentCarrierCount => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
-            ? Mathf.Max(1, SyncedCarrierCount.Value)
-            : Mathf.Max(1, _activeCarriers.Count);
+            ? SyncedCarrierCount.Value
+            : _activeCarriers.Count;
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
         public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
 
         protected virtual void Awake()
         {
             _rigidbody = GetComponent<Rigidbody>();
-            _rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+            _physicsSetupPending = true;
             _ownColliders = GetComponentsInChildren<Collider>(true);
 
             _outline = GetComponent<CarryableOutline>();
@@ -135,22 +142,93 @@ namespace CoopGame.CarrySystem
         {
             base.OnNetworkSpawn();
 
-            if (IsServer)
-            {
-                _rigidbody.isKinematic = false;
-                _rigidbody.useGravity = true;
-            }
-            else
-            {
-                _rigidbody.isKinematic = true;
-                _rigidbody.useGravity = false;
-            }
+            _physicsSetupPending = true;
+            if (IsServer) NetworkManager.OnClientDisconnectCallback += OnCarrierDisconnected;
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            if (NetworkManager != null) NetworkManager.OnClientDisconnectCallback -= OnCarrierDisconnected;
+            if (IsServer && NetworkManager != null && NetworkManager.IsListening)
+                DetachAllCarriers();
+            _activeCarriers.Clear();
+            _occupiedSockets.Clear();
+            _staleCarriers.Clear();
+            _throwPending = false;
+            base.OnNetworkDespawn();
+        }
+
+        private void OnCarrierDisconnected(ulong clientId)
+        {
+            // The callback records intent; FixedUpdate performs physics changes.
+            if (_activeCarriers.ContainsKey(clientId) && !_staleCarriers.Contains(clientId))
+                _staleCarriers.Add(clientId);
+        }
+
+        public void SecureForDelivery()
+        {
+            if (IsSpawned && !IsServer) return;
+            DetachAllCarriers();
+            _secured.Value = true;
+            _throwPending = false;
+        }
+
+        public bool HasCarrier(ulong clientId) => _activeCarriers.ContainsKey(clientId);
+
+        public bool HasGuardCard()
+        {
+            foreach (var carrier in _activeCarriers.Values)
+                if (carrier.PlayerTransform != null &&
+                    carrier.PlayerTransform.TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) &&
+                    state.Card.Value == 2) return true;
+            return false;
         }
 
         protected virtual void FixedUpdate()
         {
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
+            if (_physicsSetupPending)
+            {
+                _physicsSetupPending = false;
+                _rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+                _rigidbody.isKinematic = isNetworked && !IsServer;
+                _rigidbody.useGravity = !isNetworked || IsServer;
+            }
             if (isNetworked && !IsServer) return;
+
+            foreach (var pair in _activeCarriers)
+                if ((pair.Value.PlayerTransform == null ||
+                    (pair.Value.PlayerTransform.position - transform.position).sqrMagnitude > 36f) &&
+                    !_staleCarriers.Contains(pair.Key))
+                    _staleCarriers.Add(pair.Key);
+            for (int i = 0; i < _staleCarriers.Count; i++)
+            {
+                ulong id = _staleCarriers[i];
+                if (_activeCarriers.TryGetValue(id, out var carrier) && carrier.PlayerTransform != null &&
+                    carrier.PlayerTransform.TryGetComponent<PlayerCarry>(out var carry)) carry.ForcedDropFromCargo(this);
+                DetachCarrier(id);
+            }
+            _staleCarriers.Clear();
+            if (IsSecured)
+            {
+                if (!_rigidbody.isKinematic)
+                {
+                    _rigidbody.linearVelocity = Vector3.zero;
+                    _rigidbody.angularVelocity = Vector3.zero;
+                    _rigidbody.isKinematic = true;
+                }
+                return;
+            }
+            if (_throwPending)
+            {
+                _throwPending = false;
+                _rigidbody.isKinematic = false;
+                _rigidbody.useGravity = true;
+                _rigidbody.constraints = RigidbodyConstraints.None;
+                _rigidbody.linearVelocity = _throwVelocity;
+                _rigidbody.angularVelocity = _throwAngularVelocity;
+                _rigidbody.WakeUp();
+            }
 
             // When no one is carrying: allow full PhysX gravity and free tumbling
             if (_activeCarriers.Count == 0)
@@ -299,7 +377,7 @@ namespace CoopGame.CarrySystem
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return false;
             if (_activeCarriers.ContainsKey(clientId)) return false;
-            if (_activeCarriers.Count >= MaxCarriers) return false;
+            if (!CanBeCarried || playerTransform == null || (!leftHandActive && !rightHandActive)) return false;
 
             if (_sockets == null || _sockets.Length == 0)
             {
@@ -364,12 +442,7 @@ namespace CoopGame.CarrySystem
             SetCarrierCollisionIgnore(playerTransform, true);
 
             // Wake up Rigidbody with gravity active
-            if (_rigidbody != null)
-            {
-                _rigidbody.isKinematic = false;
-                _rigidbody.useGravity = true;
-                _rigidbody.WakeUp();
-            }
+            _physicsSetupPending = true;
 
             Debug.Log($"[CarryableObject] Client {clientId} attached to '{name}' at Left: {localContactLeft} | Right: {localContactRight} | PhysX Gravity: ON");
             return true;
@@ -416,12 +489,6 @@ namespace CoopGame.CarrySystem
 
                 UpdateAllCarriersSpeedMultiplier();
 
-                if (_rigidbody != null && _activeCarriers.Count == 0)
-                {
-                    _rigidbody.useGravity = true;
-                    _rigidbody.constraints = RigidbodyConstraints.None;
-                    _rigidbody.WakeUp();
-                }
 
                 Debug.Log($"[CarryableObject] Client {clientId} detached. Remaining: {_activeCarriers.Count}");
             }
@@ -457,17 +524,10 @@ namespace CoopGame.CarrySystem
 
             DetachCarrier(clientId);
 
-            if (_rigidbody != null)
-            {
-                _rigidbody.isKinematic = false;
-                _rigidbody.useGravity = true;
-                _rigidbody.constraints = RigidbodyConstraints.None;
-                _rigidbody.linearVelocity = linearVelocity;
-                _rigidbody.angularVelocity = angularVelocity;
-                _rigidbody.WakeUp();
-
-                Debug.Log($"[CarryableObject] Client {clientId} threw '{name}' with Velocity: {linearVelocity} (Speed: {linearVelocity.magnitude:F1} m/s)");
-            }
+            if (IsSecured) return;
+            _throwPending = true;
+            _throwVelocity = Vector3.ClampMagnitude(linearVelocity, 20f);
+            _throwAngularVelocity = Vector3.ClampMagnitude(angularVelocity, 12f);
         }
 
         public void UpdateCarrierInput(ulong clientId, Vector3 worldMoveDirection, Vector3 forwardHeading, float holdHeight)
