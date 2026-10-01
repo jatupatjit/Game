@@ -41,15 +41,16 @@ namespace CoopGame.EditorTools
             EditorGUILayout.Space(6);
             if (Application.isPlaying)
             {
-                if (zone.IsDelivered || zone.IsTargetInside)
+                if (zone.IsDelivered)
                 {
                     GUI.backgroundColor = new Color(0.2f, 0.9f, 0.4f, 1f);
-                    EditorGUILayout.HelpBox("🟢 TARGET INSIDE ZONE - EFFECT IS GREEN", MessageType.Info);
+                    EditorGUILayout.HelpBox("DELIVERED - mission completion confirmed", MessageType.Info);
                 }
                 else
                 {
                     GUI.backgroundColor = new Color(1.0f, 0.3f, 0.3f, 1f);
-                    EditorGUILayout.HelpBox("🔴 WAITING FOR DELIVERY OBJECT - EFFECT IS RED", MessageType.Warning);
+                    EditorGUILayout.HelpBox(zone.IsTargetInside ? "Cargo inside - awaiting delivery confirmation" :
+                        "Waiting for delivery cargo", MessageType.Info);
                 }
                 GUI.backgroundColor = Color.white;
             }
@@ -96,8 +97,15 @@ namespace CoopGame.EditorTools
 
             EditorGUILayout.Space(10);
 
+            EditorGUILayout.LabelField("Presentation References & Events", EditorStyles.boldLabel);
+            DrawPropertiesExcluding(serializedObject, "m_Script", "_targetDeliveryObject", "_detectionMode",
+                "_targetTag", "_radius", "_triggerHeight", "_waitingRedColor", "_deliveredGreenColor",
+                "_colorTransitionSpeed", "_lockDeliveryOnceEntered", "_freezeObjectOnDelivery");
+            serializedObject.ApplyModifiedProperties();
+
             if (GUILayout.Button("🔄 Setup / Refresh Visuals", GUILayout.Height(28)))
             {
+                Undo.RegisterFullObjectHierarchyUndo(zone.gameObject, "Refresh delivery visuals");
                 zone.EnsureVisuals();
                 EditorUtility.SetDirty(zone);
             }

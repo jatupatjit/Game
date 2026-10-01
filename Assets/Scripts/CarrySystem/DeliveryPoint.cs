@@ -84,6 +84,7 @@ namespace CoopGame.CarrySystem
         private bool _isDelivered = false;
         private FragileCargo _pendingCargo;
         private Collider _deliveryCollider;
+        private DeliveryZone _deliveryZone;
         private readonly NetworkVariable<bool> _syncedDelivered = new NetworkVariable<bool>(
             false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private DeliveryResult _lastDeliveryResult;
@@ -134,6 +135,7 @@ namespace CoopGame.CarrySystem
 
         private void Awake()
         {
+            _deliveryZone = GetComponent<DeliveryZone>();
             // Ensure collider is configured as a trigger
             Collider col = GetComponent<Collider>();
             if (col != null)
@@ -153,9 +155,12 @@ namespace CoopGame.CarrySystem
             // Check if entered object is FragileCargo
             FragileCargo cargo = other.GetComponentInParent<FragileCargo>();
             if (cargo == null || cargo.IsDestroyed) return;
+            if (_deliveryZone != null && !_deliveryZone.IsTargetCollider(other)) return;
 
             _pendingCargo = cargo;
         }
+
+        private void OnTriggerStay(Collider other) => OnTriggerEnter(other);
 
         private void FixedUpdate()
         {
@@ -168,6 +173,10 @@ namespace CoopGame.CarrySystem
             if (cargo.IsDestroyed || cargo.CurrentHP.Value <= 0 ||
                 _deliveryCollider == null || cargoCollider == null ||
                 !_deliveryCollider.bounds.Intersects(cargoCollider.bounds))
+                return;
+            if (_deliveryZone != null &&
+                (!_deliveryZone.IsTargetCollider(cargoCollider) ||
+                 !_deliveryZone.ContainsPosition(cargo.transform.position)))
                 return;
 
             ProcessDelivery(cargo);
@@ -226,42 +235,12 @@ namespace CoopGame.CarrySystem
             {
                 _celebrationFx.Play();
             }
-            else
-            {
-                CoopGame.Network.GameplayFeedback.Burst(deliveryPoint + Vector3.up, Color.yellow, 60);
-            }
 
             if (_deliveryFanfareClip != null)
             {
                 AudioSource.PlayClipAtPoint(_deliveryFanfareClip, deliveryPoint, 1.0f);
             }
             else CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Delivered, deliveryPoint);
-        }
-
-        private void SpawnProceduralConfetti(Vector3 point)
-        {
-            GameObject confettiObj = new GameObject("Delivery_Confetti_VFX");
-            confettiObj.transform.position = point + Vector3.up * 1.0f;
-
-            ParticleSystem ps = confettiObj.AddComponent<ParticleSystem>();
-            var main = ps.main;
-            main.startLifetime = 2.5f;
-            main.startSpeed = 6.0f;
-            main.startSize = 0.35f;
-            main.startColor = new ParticleSystem.MinMaxGradient(Color.yellow, Color.cyan);
-            main.stopAction = ParticleSystemStopAction.Destroy;
-
-            var emission = ps.emission;
-            emission.rateOverTime = 0;
-            emission.SetBursts(new ParticleSystem.Burst[] { new ParticleSystem.Burst(0.0f, 60) });
-
-            var shape = ps.shape;
-            shape.shapeType = ParticleSystemShapeType.Cone;
-            shape.angle = 35f;
-            shape.radius = 0.5f;
-
-            ps.Play();
-            Destroy(confettiObj, 4.0f);
         }
 
         private void OnDrawGizmos()

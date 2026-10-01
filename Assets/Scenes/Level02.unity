@@ -2443,8 +2443,12 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2458163033775434969, guid: bc0b51f03bb508641a0b516e677a95c3, type: 3}
       propertyPath: _detectionMode
-      value: 2
+      value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2458163033775434969, guid: bc0b51f03bb508641a0b516e677a95c3, type: 3}
+      propertyPath: _targetDeliveryObject
+      value: 
+      objectReference: {fileID: 1263352884}
     - target: {fileID: 3727409540860675225, guid: bc0b51f03bb508641a0b516e677a95c3, type: 3}
       propertyPath: _stageNumber
       value: 2
@@ -4990,12 +4994,17 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 4529578959989710731, guid: 8976cc2624942ea47a8c0868125025a2, type: 3}
   m_PrefabInstance: {fileID: 1263352882}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1263352884}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 33614069c40d20245904a661e5e5b363, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.FragileCargo
+--- !u!1 &1263352884 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1067108846752725285, guid: 8976cc2624942ea47a8c0868125025a2, type: 3}
+  m_PrefabInstance: {fileID: 1263352882}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1266007334
 GameObject:
   m_ObjectHideFlags: 0

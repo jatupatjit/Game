@@ -91,8 +91,9 @@ namespace CoopGame.CarrySystem
         private MaterialPropertyBlock _propBlock;
         private Material _generatedRingMaterial;
         private Rigidbody _pendingFreeze;
-        private MeshFilter _ringMeshFilter;
         private DeliveryPoint _deliveryPoint;
+        private float _nextTargetSearchTime;
+        private static readonly Predicate<Collider> DestroyedCollider = collider => collider == null;
         private bool _labelDelivered;
         private Camera _viewCamera;
         private static readonly int ColorPropId = Shader.PropertyToID("_Color");
@@ -121,7 +122,7 @@ namespace CoopGame.CarrySystem
         }
 
         public bool IsTargetInside => _isTargetInside;
-        public bool IsDelivered => _isDelivered;
+        public bool IsDelivered => _deliveryPoint != null ? _deliveryPoint.IsDelivered : _isDelivered;
 
         private void Awake()
         {
@@ -134,12 +135,48 @@ namespace CoopGame.CarrySystem
             ApplyColorImmediate(_waitingRedColor);
         }
 
+        private void Start()
+        {
+            if (_targetDeliveryObject == null)
+            {
+                AutoDetectTargetDeliveryObject();
+            }
+        }
+
+        private void AutoDetectTargetDeliveryObject()
+        {
+            // Explicit targets and tag/any-item modes must keep their configured semantics.
+            if (_detectionMode != DeliveryDetectionMode.SpecificObjectOrCarryable ||
+                _targetDeliveryObject != null || Time.unscaledTime < _nextTargetSearchTime)
+                return;
+            _nextTargetSearchTime = Time.unscaledTime + 1f;
+            var cargo = FindAnyObjectByType<FragileCargo>();
+            if (cargo != null)
+            {
+                _targetDeliveryObject = cargo.gameObject;
+                return;
+            }
+
+            var carryable = FindAnyObjectByType<CarryableObject>();
+            if (carryable != null)
+            {
+                _targetDeliveryObject = carryable.gameObject;
+            }
+        }
+
         private void OnEnable()
         {
             EnsureTriggerCollider();
             EnsureVisuals();
             UpdateColliderAndVisualScale();
-            ApplyColorImmediate(_isTargetInside || _isDelivered ? _deliveredGreenColor : _waitingRedColor);
+            ApplyColorImmediate(IsDelivered || _isTargetInside ? _deliveredGreenColor : _waitingRedColor);
+        }
+
+        private void OnDisable()
+        {
+            _activeCollidersInZone.Clear();
+            _isTargetInside = false;
+            _pendingFreeze = null;
         }
 
         private void OnDestroy()
@@ -154,24 +191,6 @@ namespace CoopGame.CarrySystem
 
         private void Update()
         {
-            if (Application.isPlaying)
-            {
-                // Real-time position check for the specific delivery object (ensures detection even if carried or physics-disabled)
-                if (_targetDeliveryObject != null)
-                {
-                    Vector3 zonePos = transform.position;
-                    Vector3 objPos = _targetDeliveryObject.transform.position;
-                    float horizontalDist = Vector2.Distance(new Vector2(zonePos.x, zonePos.z), new Vector2(objPos.x, objPos.z));
-                    float heightDiff = Mathf.Abs(objPos.y - zonePos.y);
-
-                    bool isInsideByDistance = (horizontalDist <= _radius) && (heightDiff <= _triggerHeight + 1.5f);
-                    if (isInsideByDistance != _isTargetInside)
-                    {
-                        RefreshZoneTargetStatus(_targetDeliveryObject);
-                    }
-                }
-            }
-
             bool shouldBeGreen = _deliveryPoint != null
                 ? _deliveryPoint.IsDelivered : _isDelivered || _isTargetInside;
             if (_zoneLabel != null && _labelDelivered != shouldBeGreen)
@@ -209,6 +228,8 @@ namespace CoopGame.CarrySystem
 
         private void FixedUpdate()
         {
+            AutoDetectTargetDeliveryObject();
+            RefreshZoneTargetStatus(_targetDeliveryObject);
             if (_pendingFreeze == null) return;
             if (Unity.Netcode.NetworkManager.Singleton != null &&
                 Unity.Netcode.NetworkManager.Singleton.IsListening &&
@@ -259,29 +280,21 @@ namespace CoopGame.CarrySystem
 
             if (_ringRenderer != null)
             {
-                if (_ringMeshFilter == null)
-                    _ringMeshFilter = _ringRenderer.GetComponent<MeshFilter>();
-                bool isQuad = _ringMeshFilter != null && _ringMeshFilter.sharedMesh != null &&
-                    _ringMeshFilter.sharedMesh.name == "Quad";
-                // A Quad spans local X/Y. Flattening local Y shrinks its floor ring into a line.
-                _ringRenderer.transform.localRotation = isQuad ? Quaternion.Euler(90f, 0f, 0f) : Quaternion.identity;
-                _ringRenderer.transform.localScale = isQuad
-                    ? new Vector3(_radius * 2f, _radius * 2f, 1f)
-                    : new Vector3(_radius * 2f, 0.01f, _radius * 2f);
-                _ringRenderer.transform.localPosition = new Vector3(0f, 0.04f, 0f);
+                // Quad: flat on ground (rotated 90 on X), diameter is 2 * radius in X and Y
+                _ringRenderer.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                _ringRenderer.transform.localScale = new Vector3(_radius * 2.0f, _radius * 2.0f, 1.0f);
+                _ringRenderer.transform.localPosition = new Vector3(0f, 0.03f, 0f);
             }
 
             if (_perimeterParticles != null)
             {
-                var shape = _perimeterParticles.shape;
-                shape.shapeType = ParticleSystemShapeType.Circle;
-                shape.radius = _radius * 0.98f;
+                _perimeterParticles.gameObject.SetActive(false);
             }
         }
 
         public void EnsureVisuals()
         {
-            // 1. Create or bind ground ring renderer
+            // 1. Create or bind ground ring renderer (Quad mesh)
             if (_ringRenderer == null)
             {
                 Transform existingRing = transform.Find("Zone_Circle_Visual");
@@ -295,10 +308,9 @@ namespace CoopGame.CarrySystem
                     ringObj.name = "Zone_Circle_Visual";
                     ringObj.transform.SetParent(transform, false);
                     ringObj.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                    ringObj.transform.localPosition = new Vector3(0f, 0.04f, 0f);
-                    ringObj.transform.localScale = new Vector3(_radius * 2f, _radius * 2f, 1f);
+                    ringObj.transform.localPosition = new Vector3(0f, 0.03f, 0f);
+                    ringObj.transform.localScale = new Vector3(_radius * 2.0f, _radius * 2.0f, 1.0f);
 
-                    // Remove mesh collider on visual cylinder
                     Collider quadCol = ringObj.GetComponent<Collider>();
                     if (quadCol != null)
                     {
@@ -307,90 +319,59 @@ namespace CoopGame.CarrySystem
                     }
 
                     _ringRenderer = ringObj.GetComponent<Renderer>();
+                }
+            }
 
-                    // Find or create material with custom shader
-                    Shader ringShader = Shader.Find("DontDropIt/DeliveryZoneRing");
-                    if (ringShader != null)
+            // Ensure Quad mesh is present on the visual ring
+            if (_ringRenderer != null)
+            {
+                MeshFilter mf = _ringRenderer.GetComponent<MeshFilter>();
+                if (mf == null) mf = _ringRenderer.gameObject.AddComponent<MeshFilter>();
+                if (mf.sharedMesh == null || mf.sharedMesh.name.Contains("Cylinder"))
+                {
+                    GameObject tempQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                    mf.sharedMesh = tempQuad.GetComponent<MeshFilter>().sharedMesh;
+                    if (Application.isPlaying) Destroy(tempQuad);
+                    else DestroyImmediate(tempQuad);
+                }
+
+                // Ensure material with DontDropIt/DeliveryZoneRing shader is assigned
+                Material ringMat = _ringRenderer.sharedMaterial;
+                if (ringMat == null || ringMat.shader == null || ringMat.shader.name != "DontDropIt/DeliveryZoneRing")
+                {
+#if UNITY_EDITOR
+                    Material assetMat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/DeliveryZone_Mat.mat");
+                    if (assetMat != null)
                     {
-                        Material mat = new Material(ringShader);
-                        mat.name = "DeliveryZone_Ring_RuntimeMat";
-                        _ringRenderer.sharedMaterial = mat;
-                        _generatedRingMaterial = mat;
+                        _ringRenderer.sharedMaterial = assetMat;
+                        ringMat = assetMat;
+                    }
+#endif
+                    if (ringMat == null || ringMat.shader == null || ringMat.shader.name != "DontDropIt/DeliveryZoneRing")
+                    {
+                        Shader ringShader = Shader.Find("DontDropIt/DeliveryZoneRing");
+                        if (ringShader != null)
+                        {
+                            Material newMat = new Material(ringShader);
+                            newMat.name = "DeliveryZone_Ring_RuntimeMat";
+                            _ringRenderer.sharedMaterial = newMat;
+                            _generatedRingMaterial = newMat;
+                        }
                     }
                 }
             }
 
-            if (_ringRenderer != null && _ringRenderer.sharedMaterial == null)
+            // 2. Disable smoke particle systems (user requested removal of smoke effects)
+            if (_perimeterParticles != null)
             {
-                Shader ringShader = Shader.Find("DontDropIt/DeliveryZoneRing");
-                if (ringShader != null)
-                {
-                    _generatedRingMaterial = new Material(ringShader);
-                    _generatedRingMaterial.name = "DeliveryZone_Ring_RuntimeMat";
-                    _ringRenderer.sharedMaterial = _generatedRingMaterial;
-                }
+                _perimeterParticles.gameObject.SetActive(false);
             }
-
-            // 2. Create or bind perimeter particles
-            if (_perimeterParticles == null)
+            else
             {
                 Transform existingPS = transform.Find("Perimeter_Particles");
                 if (existingPS != null)
                 {
-                    _perimeterParticles = existingPS.GetComponent<ParticleSystem>();
-                }
-                else
-                {
-                    GameObject psObj = new GameObject("Perimeter_Particles");
-                    psObj.transform.SetParent(transform, false);
-                    psObj.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-
-                    _perimeterParticles = psObj.AddComponent<ParticleSystem>();
-                    var main = _perimeterParticles.main;
-                    main.startLifetime = 1.2f;
-                    main.startSpeed = 0.5f;
-                    main.startSize = 0.12f;
-                    main.startColor = _waitingRedColor;
-                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
-                    main.playOnAwake = true;
-
-                    var emission = _perimeterParticles.emission;
-                    emission.rateOverTime = 25f;
-
-                    var shape = _perimeterParticles.shape;
-                    shape.shapeType = ParticleSystemShapeType.Circle;
-                    shape.radius = _radius * 0.98f;
-                    shape.rotation = new Vector3(-90f, 0f, 0f);
-
-                    var colorOverLife = _perimeterParticles.colorOverLifetime;
-                    colorOverLife.enabled = true;
-                    Gradient grad = new Gradient();
-                    grad.SetKeys(
-                        new GradientColorKey[] { new GradientColorKey(Color.white, 0.0f), new GradientColorKey(Color.white, 1.0f) },
-                        new GradientAlphaKey[] { new GradientAlphaKey(0.0f, 0.0f), new GradientAlphaKey(0.8f, 0.3f), new GradientAlphaKey(0.0f, 1.0f) }
-                    );
-                    colorOverLife.color = grad;
-
-                    ParticleSystemRenderer psRenderer = psObj.GetComponent<ParticleSystemRenderer>();
-                    if (psRenderer != null)
-                    {
-                        psRenderer.sharedMaterial = GetOrCreateParticleMaterial();
-                    }
-                }
-            }
-
-            if (_perimeterParticles != null)
-            {
-                ParticleSystemRenderer psRenderer = _perimeterParticles.GetComponent<ParticleSystemRenderer>();
-                if (psRenderer != null)
-                {
-                    if (psRenderer.sharedMaterial == null || 
-                        psRenderer.sharedMaterial.shader == null || 
-                        psRenderer.sharedMaterial.shader.name == "DontDropIt/DeliveryZoneRing" ||
-                        psRenderer.sharedMaterial.shader.name == "Hidden/InternalErrorShader")
-                    {
-                        psRenderer.sharedMaterial = GetOrCreateParticleMaterial();
-                    }
+                    existingPS.gameObject.SetActive(false);
                 }
             }
 
@@ -409,25 +390,6 @@ namespace CoopGame.CarrySystem
             }
 
             UpdateColliderAndVisualScale();
-        }
-
-        private Material GetOrCreateParticleMaterial()
-        {
-#if UNITY_EDITOR
-            Material assetMat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/ZoneParticle_Mat.mat");
-            if (assetMat != null) return assetMat;
-#endif
-            Shader pShader = Shader.Find("DontDropIt/ZoneParticle");
-            if (pShader == null) pShader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (pShader == null) pShader = Shader.Find("Particles/Standard Unlit");
-
-            if (pShader != null)
-            {
-                Material runtimeMat = new Material(pShader);
-                runtimeMat.name = "ZoneParticle_RuntimeMat";
-                return runtimeMat;
-            }
-            return null;
         }
 
         private void ApplyColorImmediate(Color color)
@@ -476,7 +438,7 @@ namespace CoopGame.CarrySystem
         private void RefreshZoneTargetStatus(GameObject contextObj)
         {
             // Prune any destroyed colliders
-            _activeCollidersInZone.RemoveWhere(c => c == null);
+            _activeCollidersInZone.RemoveWhere(DestroyedCollider);
 
             bool previousInside = _isTargetInside;
 
@@ -485,14 +447,12 @@ namespace CoopGame.CarrySystem
 
             if (_targetDeliveryObject != null)
             {
-                Vector3 zonePos = transform.position;
-                Vector3 objPos = _targetDeliveryObject.transform.position;
-                float horizontalDist = Vector2.Distance(new Vector2(zonePos.x, zonePos.z), new Vector2(objPos.x, objPos.z));
-                float heightDiff = Mathf.Abs(objPos.y - zonePos.y);
-                isInsideByDist = (horizontalDist <= _radius) && (heightDiff <= _triggerHeight + 1.5f);
+                isInsideByDist = ContainsPosition(_targetDeliveryObject.transform.position);
             }
 
-            _isTargetInside = hasColliders || isInsideByDist;
+            // An assigned target uses a single geometric rule on both host and clients.
+            // This also clears stale overlaps after teleport, disable, or respawn.
+            _isTargetInside = _targetDeliveryObject != null ? isInsideByDist : hasColliders;
 
             if (_isTargetInside && !previousInside)
             {
@@ -508,12 +468,8 @@ namespace CoopGame.CarrySystem
                     _audioSource.PlayOneShot(_deliverySuccessSfx);
                 }
 
-                if (_successBurstParticles != null)
-                {
-                    _successBurstParticles.Play();
-                }
-
-                if (_lockDeliveryOnceEntered && !_isDelivered)
+                // DeliveryPoint owns networked success, score, and cargo locking.
+                if (_deliveryPoint == null && _lockDeliveryOnceEntered && !_isDelivered)
                 {
                     _isDelivered = true;
                     OnDeliverySuccess?.Invoke(contextObj);
@@ -527,14 +483,18 @@ namespace CoopGame.CarrySystem
             else if (!_isTargetInside && previousInside)
             {
                 // Target object left zone!
-                if (!_lockDeliveryOnceEntered)
-                {
-                    string objName = contextObj != null ? contextObj.name : "Target";
-                    Debug.Log($"<color=orange>[DeliveryZone] Target exited delivery zone: {objName}</color>");
-                    OnTargetExited?.Invoke(contextObj);
-                    OnZoneStateChanged?.Invoke(false);
-                }
+                string objName = contextObj != null ? contextObj.name : "Target";
+                Debug.Log($"<color=orange>[DeliveryZone] Target exited delivery zone: {objName}</color>");
+                OnTargetExited?.Invoke(contextObj);
+                OnZoneStateChanged?.Invoke(false);
             }
+        }
+
+        public bool ContainsPosition(Vector3 worldPosition)
+        {
+            Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
+            return localPosition.x * localPosition.x + localPosition.z * localPosition.z <= _radius * _radius &&
+                localPosition.y >= -0.1f && localPosition.y <= _triggerHeight;
         }
 
         /// <summary>
@@ -550,16 +510,14 @@ namespace CoopGame.CarrySystem
                     if (_targetDeliveryObject == null) return false;
                     return col.gameObject == _targetDeliveryObject 
                         || col.transform.IsChildOf(_targetDeliveryObject.transform)
-                        || _targetDeliveryObject.transform.IsChildOf(col.transform)
-                        || col.transform.root.gameObject == _targetDeliveryObject.transform.root.gameObject;
+                        || _targetDeliveryObject.transform.IsChildOf(col.transform);
 
                 case DeliveryDetectionMode.SpecificObjectOrCarryable:
                     if (_targetDeliveryObject != null)
                     {
                         return col.gameObject == _targetDeliveryObject 
                             || col.transform.IsChildOf(_targetDeliveryObject.transform)
-                            || _targetDeliveryObject.transform.IsChildOf(col.transform)
-                            || col.transform.root.gameObject == _targetDeliveryObject.transform.root.gameObject;
+                            || _targetDeliveryObject.transform.IsChildOf(col.transform);
                     }
                     // Auto-fallback: any carryable item in scene
                     return col.GetComponentInParent<CarryableObject>() != null || col.GetComponentInParent<FragileCargo>() != null;
