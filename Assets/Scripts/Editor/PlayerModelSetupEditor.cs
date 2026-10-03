@@ -8,6 +8,7 @@ public static class PlayerModelSetupEditor
 {
     // Setup is intentionally manual. Rebuilding CharacterVisual during every
     // editor launch changes bone file IDs and rest rotations in Player.prefab.
+    [MenuItem("CoopGame/Setup Player Model and Hand Animations")]
     [MenuItem("CoopGame/Setup Player Model and PauseMenu")]
     public static void Setup()
     {
@@ -33,7 +34,11 @@ public static class PlayerModelSetupEditor
     public static void SetupPlayerPrefab()
     {
         string prefabPath = "Assets/Prefabs/Player/Player.prefab";
-        string modelPath = "Assets/Models/Rigged_character_.fbx";
+        string modelPath = "Assets/Models/Rigged_Hand_character_ (2).fbx";
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(modelPath) == null)
+        {
+            modelPath = "Assets/Models/Rigged_character_.fbx";
+        }
 
         GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
         if (modelAsset == null)
@@ -41,6 +46,9 @@ public static class PlayerModelSetupEditor
             Debug.LogError($"[PlayerModelSetup] Model not found at {modelPath}");
             return;
         }
+
+        // Extract and isolate grab animations from Rigged_Hand_character
+        ExtractAndSetupGrabAnimations(out AnimationClip leftGrabClip, out AnimationClip rightGrabClip);
 
         // Open prefab for editing using PrefabUtility
         using (var editScope = new PrefabUtility.EditPrefabContentsScope(prefabPath))
@@ -202,6 +210,8 @@ public static class PlayerModelSetupEditor
             soArms.FindProperty("_wristR").objectReferenceValue = wristR;
             if (ikTargetL != null) soArms.FindProperty("_leftTargetTransform").objectReferenceValue = ikTargetL;
             if (ikTargetR != null) soArms.FindProperty("_rightTargetTransform").objectReferenceValue = ikTargetR;
+            if (leftGrabClip != null) soArms.FindProperty("_leftGrabClip").objectReferenceValue = leftGrabClip;
+            if (rightGrabClip != null) soArms.FindProperty("_rightGrabClip").objectReferenceValue = rightGrabClip;
             soArms.ApplyModifiedPropertiesWithoutUndo();
 
             // 5. Ensure & Wire ProceduralPlayerLegs
@@ -333,6 +343,115 @@ public static class PlayerModelSetupEditor
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(activeScene);
             Debug.Log("[PlayerModelSetup] PauseMenu added and built in active scene! ✅");
         }
+    }
+
+    public static void ExtractAndSetupGrabAnimations(out AnimationClip leftGrabClip, out AnimationClip rightGrabClip)
+    {
+        leftGrabClip = null;
+        rightGrabClip = null;
+
+        string modelPath = "Assets/Models/Rigged_Hand_character_ (2).fbx";
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(modelPath) == null)
+        {
+            modelPath = "Assets/Models/Rigged_character_.fbx";
+        }
+
+        Object[] allAssets = AssetDatabase.LoadAllAssetsAtPath(modelPath);
+        AnimationClip fbxRightGrab = null; // In Blender FBX, RightGrab animates Left Hand finger bones
+        AnimationClip fbxLeftGrab = null;  // In Blender FBX, LeftGrab animates Right Hand finger bones
+
+        foreach (var a in allAssets)
+        {
+            if (a is AnimationClip clip && !clip.name.StartsWith("__preview__"))
+            {
+                if (clip.name.EndsWith("RightGrab") || clip.name.Contains("RightGrab"))
+                {
+                    fbxRightGrab = clip;
+                }
+                else if (clip.name.EndsWith("LeftGrab") || clip.name.Contains("LeftGrab"))
+                {
+                    fbxLeftGrab = clip;
+                }
+            }
+        }
+
+        if (fbxRightGrab == null && fbxLeftGrab == null)
+        {
+            Debug.LogWarning($"[PlayerModelSetup] No grab clips found in {modelPath}");
+            return;
+        }
+
+        if (!AssetDatabase.IsValidFolder("Assets/Animations"))
+        {
+            AssetDatabase.CreateFolder("Assets", "Animations");
+        }
+
+        // 1. Create Left Hand Grab Clip (from fbxRightGrab which animates L. finger bones)
+        string leftClipPath = "Assets/Animations/HandGrab_Left.anim";
+        if (fbxRightGrab != null)
+        {
+            leftGrabClip = CreateSanitizedFingerClip(fbxRightGrab, leftClipPath, isLeftHand: true);
+        }
+
+        // 2. Create Right Hand Grab Clip (from fbxLeftGrab which animates R. finger bones)
+        string rightClipPath = "Assets/Animations/HandGrab_Right.anim";
+        if (fbxLeftGrab != null)
+        {
+            rightGrabClip = CreateSanitizedFingerClip(fbxLeftGrab, rightClipPath, isLeftHand: false);
+        }
+
+        AssetDatabase.SaveAssets();
+    }
+
+    private static AnimationClip CreateSanitizedFingerClip(AnimationClip sourceClip, string targetPath, bool isLeftHand)
+    {
+        AnimationClip newClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(targetPath);
+        if (newClip == null)
+        {
+            newClip = new AnimationClip();
+            AssetDatabase.CreateAsset(newClip, targetPath);
+        }
+        else
+        {
+            newClip.ClearCurves();
+        }
+
+        newClip.name = System.IO.Path.GetFileNameWithoutExtension(targetPath);
+        newClip.frameRate = sourceClip.frameRate;
+
+        EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(sourceClip);
+        int copiedCurves = 0;
+
+        foreach (var b in bindings)
+        {
+            // Only keep curves that animate finger phalanges for the specified hand!
+            // Finger keywords: thumb1, thumb2, Index1, Index2, Middle1, Middle2, Pinky1, Pinky2
+            bool isFingerJoint = (b.path.IndexOf("thumb1", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("thumb2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("Index1", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("Index2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("Middle1", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("Middle2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("Pinky1", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                  b.path.IndexOf("Pinky2", System.StringComparison.OrdinalIgnoreCase) >= 0);
+
+            if (!isFingerJoint) continue;
+
+            // Make sure hand matches side
+            if (isLeftHand && (b.path.Contains(".R") || b.path.Contains("handR"))) continue;
+            if (!isLeftHand && (b.path.Contains(".L") || b.path.Contains("handL"))) continue;
+
+            AnimationCurve curve = AnimationUtility.GetEditorCurve(sourceClip, b);
+            if (curve != null)
+            {
+                AnimationUtility.SetEditorCurve(newClip, b, curve);
+                copiedCurves++;
+            }
+        }
+
+        EditorUtility.SetDirty(newClip);
+        Debug.Log($"[PlayerModelSetup] Created sanitized clip {targetPath} with {copiedCurves} finger curves from {sourceClip.name} ✅");
+        return newClip;
     }
 }
 #endif
