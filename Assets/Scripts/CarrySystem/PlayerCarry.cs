@@ -159,6 +159,14 @@ namespace CoopGame.CarrySystem
         private readonly RaycastHit[] _aimHits = new RaycastHit[64];
         private readonly Collider[] _nearbyColliders = new Collider[64];
 
+        // Stable inward-facing pose while carrying. The target is sampled from the
+        // replicated cargo transform and applied in FixedUpdate so movement and IK
+        // never chase a different heading on render frames.
+        private Vector3 _carryFacing = Vector3.forward;
+        private Vector3 _carryFacingTarget = Vector3.forward;
+        private bool _hasCarryFacing;
+        private const float CarryFacingTurnSpeed = 900f;
+
         // Exposed properties
         public bool IsCarrying => IsOwner 
             ? (_leftHandGripping || _rightHandGripping) 
@@ -183,6 +191,19 @@ namespace CoopGame.CarrySystem
         public PlayerStamina Stamina => _stamina;
         public Transform LeftHand => _leftHand;
         public Transform RightHand => _rightHand;
+
+        /// <summary>True when the player has a stable direction toward the carried object.</summary>
+        public bool TryGetCarryFacing(out Vector3 facing)
+        {
+            if (_hasCarryFacing && _currentCarryable != null && IsCarrying)
+            {
+                facing = _carryFacing;
+                return facing.sqrMagnitude > 0.01f;
+            }
+
+            facing = Vector3.zero;
+            return false;
+        }
 
         // Replicated Hand Gestures & Gripping state for Remote Player Proxies
         // bit 0 = Left hand gripping
@@ -302,6 +323,40 @@ namespace CoopGame.CarrySystem
         private void OnDisable()
         {
             ClearOutlineHighlight();
+            _hasCarryFacing = false;
+            _carryFacingTarget = Vector3.forward;
+        }
+
+        private void FixedUpdate()
+        {
+            if (_currentCarryable == null || !IsCarrying)
+            {
+                _hasCarryFacing = false;
+                _carryFacingTarget = Vector3.forward;
+                return;
+            }
+
+            Vector3 toCargo = _currentCarryable.transform.position - transform.position;
+            toCargo.y = 0f;
+            if (toCargo.sqrMagnitude > 0.0025f)
+            {
+                _carryFacingTarget = toCargo.normalized;
+            }
+
+            if (!_hasCarryFacing)
+            {
+                _carryFacing = _carryFacingTarget.sqrMagnitude > 0.01f
+                    ? _carryFacingTarget : transform.forward;
+                _hasCarryFacing = true;
+            }
+            else
+            {
+                _carryFacing = Vector3.RotateTowards(
+                    _carryFacing,
+                    _carryFacingTarget,
+                    CarryFacingTurnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime,
+                    0f).normalized;
+            }
         }
 
         private void Update()
@@ -486,13 +541,20 @@ namespace CoopGame.CarrySystem
                         desiredWorldDir.Normalize();
                     }
 
+                    Vector3 carryHeading = _hasCarryFacing ? _carryFacing : camForward;
+                    carryHeading.y = 0f;
+                    if (carryHeading.sqrMagnitude < 0.01f) carryHeading = transform.forward;
+                    carryHeading.Normalize();
+
+                    // Cargo physics receives the same inward-facing heading used by
+                    // PlayerMovement, keeping both carriers and their hand targets aligned.
                     if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
                     {
-                        StreamCarrierInputServerRpc(desiredWorldDir, camForward, currentHoldHeight, _leftHandGripping, _rightHandGripping);
+                        StreamCarrierInputServerRpc(desiredWorldDir, carryHeading, currentHoldHeight, _leftHandGripping, _rightHandGripping);
                     }
                     else
                     {
-                        _currentCarryable.UpdateCarrierInput(OwnerClientId, desiredWorldDir, camForward, currentHoldHeight, _leftHandGripping, _rightHandGripping);
+                        _currentCarryable.UpdateCarrierInput(OwnerClientId, desiredWorldDir, carryHeading, currentHoldHeight, _leftHandGripping, _rightHandGripping);
                     }
 
                     // Periodic diagnostic logging
@@ -963,13 +1025,18 @@ namespace CoopGame.CarrySystem
             // When actively carrying an object, attach hands firmly to the object's contact points
             if (_currentCarryable != null)
             {
-                Vector3 handFwd = (transform.forward + Vector3.up * 0.12f).normalized;
-                Quaternion leftRot = Quaternion.LookRotation(-transform.right, handFwd);
-                Quaternion rightRot = Quaternion.LookRotation(transform.right, handFwd);
+                Vector3 bodyForward = _hasCarryFacing ? _carryFacing : transform.forward;
+                bodyForward.y = 0f;
+                if (bodyForward.sqrMagnitude < 0.01f) bodyForward = transform.forward;
+                bodyForward.Normalize();
+                Vector3 bodyRight = Vector3.Cross(Vector3.up, bodyForward).normalized;
+                Vector3 handFwd = (bodyForward + Vector3.up * 0.12f).normalized;
+                Quaternion leftRot = Quaternion.LookRotation(-bodyRight, handFwd);
+                Quaternion rightRot = Quaternion.LookRotation(bodyRight, handFwd);
 
                 Vector3 chestPos = transform.position + Vector3.up * 1.25f;
-                Vector3 leftShoulder = chestPos - transform.right * 0.18f;
-                Vector3 rightShoulder = chestPos + transform.right * 0.18f;
+                Vector3 leftShoulder = chestPos - bodyRight * 0.18f;
+                Vector3 rightShoulder = chestPos + bodyRight * 0.18f;
                 const float maxArmReach = 0.44f;
 
                 // LEFT HAND:
@@ -1311,6 +1378,8 @@ namespace CoopGame.CarrySystem
             _leftHandGripping = false;
             _rightHandGripping = false;
             _currentCarryable = null;
+            _hasCarryFacing = false;
+            _carryFacingTarget = Vector3.forward;
             _assignedSocketIndex = -1;
             _isChargingThrow = false;
             _currentThrowCharge = 0f;

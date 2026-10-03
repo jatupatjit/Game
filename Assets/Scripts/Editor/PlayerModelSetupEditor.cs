@@ -4,20 +4,10 @@ using UnityEngine;
 using CoopGame.Player;
 using CoopGame.Network;
 
-[InitializeOnLoad]
 public static class PlayerModelSetupEditor
 {
-    static PlayerModelSetupEditor()
-    {
-        EditorApplication.delayCall += () =>
-        {
-            if (!EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                Setup();
-            }
-        };
-    }
-
+    // Setup is intentionally manual. Rebuilding CharacterVisual during every
+    // editor launch changes bone file IDs and rest rotations in Player.prefab.
     [MenuItem("CoopGame/Setup Player Model and PauseMenu")]
     public static void Setup()
     {
@@ -164,8 +154,10 @@ public static class PlayerModelSetupEditor
                 if (propRend != null)
                 {
                     propRend.objectReferenceValue = bodyRenderer;
-                    soNet.ApplyModifiedPropertiesWithoutUndo();
                 }
+                SerializedProperty propModel = soNet.FindProperty("_characterModelPrefab");
+                if (propModel != null) propModel.objectReferenceValue = modelAsset;
+                soNet.ApplyModifiedPropertiesWithoutUndo();
             }
 
             // Wire PlayerCameraController._playerBodyRenderer

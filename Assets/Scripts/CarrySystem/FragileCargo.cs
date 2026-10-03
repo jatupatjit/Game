@@ -279,7 +279,7 @@ namespace CoopGame.CarrySystem
             _nextDamageAllowedAtFixedTime = Time.fixedTime + _damageCooldownSeconds;
             CurrentHP.Value = newHP;
 
-            Debug.Log($"[FragileCargo] '{name}' took -{damageAmount} damage ({reason}). Remaining HP: {newHP}/{_maxHP}");
+            Debug.Log($"[FragileCargo] '{name}' took {damageAmount} damage ({reason}). Remaining HP: {newHP}/{_maxHP}");
 
             OnCargoDamagedGlobal?.Invoke(this, damageAmount);
             if (IsSpawned) PlayImpactFxClientRpc(transform.position);

@@ -46,6 +46,9 @@ namespace CoopGame.Player
         [Tooltip("Renderer to tint with distinct player colors for easy multiplayer visual identification")]
         [SerializeField] private Renderer _playerRenderer;
 
+        [Tooltip("Rigged model used only if this prefab is missing CharacterVisual. Assign it from the Player Model setup menu.")]
+        [SerializeField] private GameObject _characterModelPrefab;
+
         // Distinct colors for players 0, 1, 2, 3
         private static readonly Color[] PlayerColors = new Color[]
         {
@@ -68,7 +71,7 @@ namespace CoopGame.Player
         }
 
         /// <summary>
-        /// Ensures the No bone_character model is attached as CharacterVisual,
+        /// Ensures the rigged character model is attached as CharacterVisual,
         /// disables placeholder capsule rendering, and configures BonelessCharacterPhysics.
         /// </summary>
         public void EnsureCharacterModelAttached()
@@ -80,7 +83,7 @@ namespace CoopGame.Player
             Transform visualT = transform.Find("CharacterVisual");
             if (visualT == null)
             {
-                GameObject modelAsset = Resources.Load<GameObject>("Rigged_character_");
+                GameObject modelAsset = _characterModelPrefab;
 #if UNITY_EDITOR
                 if (modelAsset == null)
                 {
@@ -114,6 +117,10 @@ namespace CoopGame.Player
                         visualGO.transform.localPosition = new Vector3(offsetX, offsetY, offsetZ);
                         visualGO.transform.localRotation = Quaternion.identity;
                     }
+                }
+                else
+                {
+                    Debug.LogError("[NetworkPlayer] CharacterVisual is missing and no rigged model fallback is assigned.");
                 }
             }
 

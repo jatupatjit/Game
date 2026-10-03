@@ -181,12 +181,12 @@ namespace CoopGame.Network
 
         private void Build()
         {
-            var objective = Box("Objective", transform, new Vector2(.5f, 1f), new Vector2(0, -90), new Vector2(780, 145), new Color(.035f, .075f, .065f, 1f));
+            var objective = Box("Objective", transform, new Vector2(1f, 1f), new Vector2(-365, -95), new Vector2(680, 145), new Color(.035f, .075f, .065f, 1f));
             objective.GetComponent<Image>().raycastTarget = false;
-            _objective = Label(objective.transform, "Goal", "นำลังไม้ไปส่งที่ปราสาท", 28, new Vector2(0, 38), new Vector2(735, 44));
+            _objective = Label(objective.transform, "Goal", "นำลังไม้ไปส่งที่ปราสาท", 28, new Vector2(0, 38), new Vector2(635, 44));
             _objective.color = new Color(1f, .85f, .38f);
-            _detail = Label(objective.transform, "Status", "กำลังเตรียมภารกิจ...", 21, new Vector2(0, -24), new Vector2(735, 78));
-            var inventory = Box("Inventory Panel", transform, new Vector2(1f, 0f), new Vector2(-290, 90), new Vector2(540, 145), new Color(.035f, .075f, .065f, .94f));
+            _detail = Label(objective.transform, "Status", "กำลังเตรียมภารกิจ...", 21, new Vector2(0, -24), new Vector2(635, 78));
+            var inventory = Box("Inventory Panel", transform, new Vector2(1f, 1f), new Vector2(-290, -275), new Vector2(540, 145), new Color(.035f, .075f, .065f, .94f));
             inventory.GetComponent<Image>().raycastTarget = false;
             _inventory = Label(inventory.transform, "Inventory", "", 21, Vector2.zero, new Vector2(500, 125));
             _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1920, 1080), new Color(.015f, .035f, .03f, .8f));

@@ -207,7 +207,9 @@ namespace CoopGame.CarrySystem
             Debug.Log($"<color=lime><b>[DeliveryPoint] STAGE {_stageNumber} DELIVERED!</b></color> " +
                       $"Remaining HP: {remainingHP} | Multiplier: {multiplier}x | Score: {finalScore} | Coins: {coinsEarned}");
 
-            // Detach carriers and secure the cargo at delivery spot
+            // Move the cargo to the visual center of the DeliveryZone on the next
+            // physics tick, then secure it so every client sees the same final pose.
+            cargo.QueueDeliveryPlacement(GetDeliveryCenter(cargo), cargo.transform.rotation);
             cargo.SecureForDelivery();
 
             // Fire events
@@ -221,6 +223,26 @@ namespace CoopGame.CarrySystem
             // Broadcast celebration to all clients
             if (IsSpawned) DeliverySuccessRpc(_lastDeliveryResult, transform.position);
             else PlayDeliveryFeedback(transform.position);
+        }
+
+        private Vector3 GetDeliveryCenter(FragileCargo cargo)
+        {
+            Vector3 center = _deliveryZone != null ? _deliveryZone.transform.position : transform.position;
+            if (cargo == null) return center;
+
+            Collider[] colliders = cargo.GetComponentsInChildren<Collider>(true);
+            if (colliders == null || colliders.Length == 0) return center;
+
+            Bounds bounds = colliders[0].bounds;
+            for (int i = 1; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null) bounds.Encapsulate(colliders[i].bounds);
+            }
+
+            // DeliveryZone's transform is the ground center. Keep the cargo's
+            // current bottom offset so it rests on the zone instead of sinking.
+            center.y += cargo.transform.position.y - bounds.min.y + 0.02f;
+            return center;
         }
 
         [Rpc(SendTo.ClientsAndHost)]

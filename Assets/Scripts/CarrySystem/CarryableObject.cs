@@ -85,6 +85,9 @@ namespace CoopGame.CarrySystem
         private bool _throwPending;
         private Vector3 _throwVelocity;
         private Vector3 _throwAngularVelocity;
+        private bool _deliveryPlacementPending;
+        private Vector3 _deliveryPlacementPosition;
+        private Quaternion _deliveryPlacementRotation = Quaternion.identity;
         public bool IsSecured => _secured.Value;
         public virtual bool CanBeCarried => !IsSecured && CurrentCarrierCount < MaxCarriers;
         public bool IsCarried => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
@@ -173,6 +176,20 @@ namespace CoopGame.CarrySystem
             _throwPending = false;
         }
 
+        /// <summary>
+        /// Queues the final delivery placement for the next physics tick. The
+        /// server applies the Rigidbody move in FixedUpdate so delivery never
+        /// teleports a live physics body from a trigger callback.
+        /// </summary>
+        public void QueueDeliveryPlacement(Vector3 worldPosition, Quaternion worldRotation)
+        {
+            if (IsSpawned && !IsServer) return;
+
+            _deliveryPlacementPosition = worldPosition;
+            _deliveryPlacementRotation = worldRotation;
+            _deliveryPlacementPending = true;
+        }
+
         public bool HasCarrier(ulong clientId) => _activeCarriers.ContainsKey(clientId);
 
         public bool HasGuardCard()
@@ -209,6 +226,19 @@ namespace CoopGame.CarrySystem
                 DetachCarrier(id);
             }
             _staleCarriers.Clear();
+
+            if (_deliveryPlacementPending)
+            {
+                _deliveryPlacementPending = false;
+                _rigidbody.isKinematic = true;
+                _rigidbody.useGravity = false;
+                _rigidbody.linearVelocity = Vector3.zero;
+                _rigidbody.angularVelocity = Vector3.zero;
+                _rigidbody.position = _deliveryPlacementPosition;
+                _rigidbody.rotation = _deliveryPlacementRotation;
+                _rigidbody.Sleep();
+            }
+
             if (IsSecured)
             {
                 if (!_rigidbody.isKinematic)

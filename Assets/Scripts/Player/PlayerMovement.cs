@@ -233,10 +233,15 @@ namespace CoopGame.Player
 
             if (isReachingOrAiming)
             {
-                // While holding Left/Right Click or interacting/carrying: character body always rotates to face the camera look direction
-                if (cameraForward.sqrMagnitude > 0.001f)
+                // While carrying, face the cargo center so co-op carriers look inward
+                // from their own side. Reaching and climbing retain camera-facing behavior.
+                Vector3 targetFacing = cameraForward;
+                if (_playerCarry != null && _playerCarry.TryGetCarryFacing(out Vector3 carryFacing))
+                    targetFacing = carryFacing;
+
+                if (targetFacing.sqrMagnitude > 0.001f)
                 {
-                    Quaternion targetRotation = Quaternion.LookRotation(cameraForward, Vector3.up);
+                    Quaternion targetRotation = Quaternion.LookRotation(targetFacing, Vector3.up);
                     transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, _rotationSpeed * deltaTime);
                 }
             }
