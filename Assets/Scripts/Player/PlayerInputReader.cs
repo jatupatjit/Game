@@ -16,6 +16,7 @@ namespace CoopGame.Player
     /// - Continuous polling of button hold states for interactive physical lifting.
     /// </summary>
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(-100)]
     public class PlayerInputReader : MonoBehaviour
     {
         [Header("Input Action Asset Reference")]
@@ -42,6 +43,9 @@ namespace CoopGame.Player
         public bool GrabLeftHeld { get; private set; }
         public bool GrabRightHeld { get; private set; }
         public bool InteractHeld { get; private set; }
+        public bool GrabLeftPressed { get; private set; }
+        public bool GrabRightPressed { get; private set; }
+        public bool InteractPressed { get; private set; }
 
         // Throwing controls (Hold-to-charge, release-to-throw)
         public bool ThrowHeld { get; private set; }
@@ -83,6 +87,9 @@ namespace CoopGame.Player
 
         private void Update()
         {
+            GrabLeftPressed = false;
+            GrabRightPressed = false;
+            InteractPressed = false;
             // 1. If game is paused, suppress ALL gameplay inputs completely
             if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
             {
@@ -125,16 +132,19 @@ namespace CoopGame.Player
             if (_grabLeftAction != null)
             {
                 GrabLeftHeld = !pointerOverUI && _grabLeftAction.IsPressed();
+                GrabLeftPressed = !pointerOverUI && _grabLeftAction.WasPressedThisFrame();
             }
 
             if (_grabRightAction != null)
             {
                 GrabRightHeld = !pointerOverUI && _grabRightAction.IsPressed();
+                GrabRightPressed = !pointerOverUI && _grabRightAction.WasPressedThisFrame();
             }
 
             if (_interactAction != null)
             {
                 InteractHeld = _interactAction.IsPressed();
+                InteractPressed = !pointerOverUI && _interactAction.WasPressedThisFrame();
             }
 
             if (_throwAction != null)
@@ -311,6 +321,9 @@ namespace CoopGame.Player
             GrabLeftHeld = false;
             GrabRightHeld = false;
             InteractHeld = false;
+            GrabLeftPressed = false;
+            GrabRightPressed = false;
+            InteractPressed = false;
             ThrowHeld = false;
             JumpTriggered = false;
             InteractTriggered = false;

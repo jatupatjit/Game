@@ -12,8 +12,8 @@ namespace CoopGame.CarrySystem
     /// Carry Physics Architecture:
     /// - Solo Carry (1 Player): The object floats in front of the player at waist height (_carryHeightOffset).
     ///   The player moves with their feet on the ground and turns with the mouse. The object stays in front of them.
-    /// - Co-op Carry (2+ Players): The object floats at the midpoint between carriers.
-    /// - Server Authoritative: The Host drives the Rigidbody via linearVelocity to respect wall/obstacle collisions.
+    /// - Co-op Carry (2+ Players): Persistent surface grips share a spring-damper support force.
+    /// - Server Authoritative: The Host applies contact-point forces while retaining world collisions.
     /// - Clients receive smooth interpolated positions via NetworkTransform.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
@@ -56,6 +56,13 @@ namespace CoopGame.CarrySystem
             public int SocketIndex;
             public Transform PlayerTransform;
             public PlayerMovement Movement;
+            public PlayerCarry Carry;
+            public Collider[] PlayerColliders;
+            public Vector3 PreviousPlayerPosition;
+            public Vector3 PlayerVelocity;
+            public float AttachedAtFixedTime;
+            public Vector3 InitialSupportOffsetLeft;
+            public Vector3 InitialSupportOffsetRight;
             public Vector3 InputDirection;
             public Vector3 FacingHeading;
             public float HoldHeight = 0.8f;
@@ -70,6 +77,14 @@ namespace CoopGame.CarrySystem
 
         private readonly Dictionary<ulong, CarrierInfo> _activeCarriers = new Dictionary<ulong, CarrierInfo>();
         private readonly HashSet<int> _occupiedSockets = new HashSet<int>();
+
+        private struct CollisionChange
+        {
+            public Collider[] PlayerColliders;
+            public bool Ignore;
+        }
+
+        private readonly List<CollisionChange> _pendingCollisionChanges = new(8);
 
         // Synchronized carrier count
         public NetworkVariable<int> SyncedCarrierCount { get; } = new NetworkVariable<int>(
@@ -98,6 +113,7 @@ namespace CoopGame.CarrySystem
             : _activeCarriers.Count;
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
         public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
+        public float GetSpeedMultiplier() => CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : _soloSpeedMultiplier;
 
         protected virtual void Awake()
         {
@@ -203,6 +219,7 @@ namespace CoopGame.CarrySystem
 
         protected virtual void FixedUpdate()
         {
+            ApplyPendingCollisionChanges();
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (_physicsSetupPending)
             {
@@ -274,13 +291,23 @@ namespace CoopGame.CarrySystem
             _rigidbody.useGravity = true;
             _rigidbody.constraints = RigidbodyConstraints.None;
 
-            int carrierCount = Mathf.Max(1, _activeCarriers.Count);
+            int supportingCarrierCount = 0;
+            foreach (var carrier in _activeCarriers.Values)
+                if (carrier.PlayerTransform != null && (carrier.LeftHandActive || carrier.RightHandActive))
+                    supportingCarrierCount++;
+
+            if (supportingCarrierCount == 0) return;
+
+            Vector3 objectScale = transform.lossyScale;
 
             foreach (var carrier in _activeCarriers.Values)
             {
                 if (carrier.PlayerTransform == null) continue;
 
                 Transform pTransform = carrier.PlayerTransform;
+                Vector3 sampledVelocity = (pTransform.position - carrier.PreviousPlayerPosition) / Time.fixedDeltaTime;
+                carrier.PreviousPlayerPosition = pTransform.position;
+                carrier.PlayerVelocity = Vector3.ClampMagnitude(sampledVelocity, 12f);
                 float height = (carrier.HoldHeight > 0.05f) ? carrier.HoldHeight : _carryHeightOffset;
 
                 // Smoothly ease hold distance so there is no sudden snap
@@ -293,7 +320,7 @@ namespace CoopGame.CarrySystem
                 if (heading.sqrMagnitude > 0.001f) heading.Normalize();
                 else heading = pTransform.forward;
 
-                Vector3 camRight = Quaternion.Euler(0f, 90f, 0f) * heading;
+                Vector3 camRight = Vector3.Cross(Vector3.up, heading);
                 float handSpread = 0.22f;
 
                 // Target positions in world space where the player's hands are lifting the contact points
@@ -301,9 +328,26 @@ namespace CoopGame.CarrySystem
                 Vector3 targetHandL = centerTarget - (camRight * handSpread);
                 Vector3 targetHandR = centerTarget + (camRight * handSpread);
 
-                // Current positions of the contact points on the object in world space
-                Vector3 currentWorldL = _rigidbody.transform.TransformPoint(carrier.LocalContactLeft);
-                Vector3 currentWorldR = _rigidbody.transform.TransformPoint(carrier.LocalContactRight);
+                // The player supplies targets inside the actual shoulder-to-wrist
+                // reach envelope. These are support goals, not new surface grips.
+                if (carrier.Carry != null && carrier.Carry.TryGetCarrySupportTargets(
+                    height, heading, out Vector3 reachableLeft, out Vector3 reachableRight))
+                {
+                    targetHandL = reachableLeft;
+                    targetHandR = reachableRight;
+                }
+
+                // Start at the captured contacts and ease into the support pose;
+                // the first grab must not jerk a resting crate into the carrier.
+                float settle = Mathf.SmoothStep(0f, 1f,
+                    Mathf.Clamp01((Time.fixedTime - carrier.AttachedAtFixedTime) / .35f));
+                targetHandL = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetLeft, targetHandL, settle);
+                targetHandR = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetRight, targetHandR, settle);
+
+                // Physics reads the authoritative Rigidbody pose; rendered,
+                // interpolated transforms are reserved for the visual hand lock.
+                Vector3 currentWorldL = _rigidbody.position + _rigidbody.rotation * Vector3.Scale(carrier.LocalContactLeft, objectScale);
+                Vector3 currentWorldR = _rigidbody.position + _rigidbody.rotation * Vector3.Scale(carrier.LocalContactRight, objectScale);
 
                 bool hasLeft = carrier.LeftHandActive;
                 bool hasRight = carrier.RightHandActive;
@@ -311,16 +355,20 @@ namespace CoopGame.CarrySystem
                 if (!hasLeft && !hasRight) continue;
 
                 int activeHands = (hasLeft ? 1 : 0) + (hasRight ? 1 : 0);
-                float gravityCounterForce = (_rigidbody.mass * Mathf.Abs(Physics.gravity.y)) / (activeHands * carrierCount);
-                Vector3 gravComp = Vector3.up * (gravityCounterForce * 1.15f);
+                float supportShare = 1f / (activeHands * supportingCarrierCount);
+                float supportedMass = _rigidbody.mass * supportShare;
+                Vector3 gravComp = -Physics.gravity * supportedMass;
+                float springStrength = supportedMass * 32f;
+                float dampingStrength = supportedMass * 10f;
+                float maximumForce = supportedMass * 45f;
 
                 // 1. Spring-damper force at Left Hand contact point (if left hand active)
                 if (hasLeft)
                 {
                     Vector3 deltaL = (targetHandL - currentWorldL);
                     Vector3 velL = _rigidbody.GetPointVelocity(currentWorldL);
-                    Vector3 forceL = (deltaL * 160f) - (velL * 15f) + gravComp;
-                    forceL = Vector3.ClampMagnitude(forceL, _rigidbody.mass * 45f);
+                    Vector3 forceL = deltaL * springStrength + (carrier.PlayerVelocity - velL) * dampingStrength + gravComp;
+                    forceL = Vector3.ClampMagnitude(forceL, maximumForce);
                     _rigidbody.AddForceAtPosition(forceL, currentWorldL, ForceMode.Force);
                 }
 
@@ -329,15 +377,16 @@ namespace CoopGame.CarrySystem
                 {
                     Vector3 deltaR = (targetHandR - currentWorldR);
                     Vector3 velR = _rigidbody.GetPointVelocity(currentWorldR);
-                    Vector3 forceR = (deltaR * 160f) - (velR * 15f) + gravComp;
-                    forceR = Vector3.ClampMagnitude(forceR, _rigidbody.mass * 45f);
+                    Vector3 forceR = deltaR * springStrength + (carrier.PlayerVelocity - velR) * dampingStrength + gravComp;
+                    forceR = Vector3.ClampMagnitude(forceR, maximumForce);
                     _rigidbody.AddForceAtPosition(forceR, currentWorldR, ForceMode.Force);
                 }
 
-                // Natural physics damping like Human Fall Flat (allows 100% free swinging, tilting, and dragging)
-                float dampFactor = Mathf.Max(2.5f, _rotationSpeed * 0.01f);
-                _rigidbody.AddTorque(-_rigidbody.angularVelocity * dampFactor, ForceMode.Acceleration);
             }
+
+            // Apply damping once, so adding helpers does not multiply resistance.
+            float dampFactor = Mathf.Max(2.5f, _rotationSpeed * 0.01f);
+            _rigidbody.AddTorque(-_rigidbody.angularVelocity * dampFactor, ForceMode.Acceleration);
 
             _rigidbody.linearVelocity = Vector3.ClampMagnitude(_rigidbody.linearVelocity, 12.0f);
         }
@@ -349,8 +398,10 @@ namespace CoopGame.CarrySystem
 
             if (_activeCarriers.TryGetValue(clientId, out CarrierInfo data))
             {
-                if (leftActive) data.LocalContactLeft = localContactLeft;
-                if (rightActive) data.LocalContactRight = localContactRight;
+                // A held contact is immutable until that hand releases. Updating
+                // the other hand must never move an existing grip across the crate.
+                if (leftActive && !data.LeftHandActive) data.LocalContactLeft = localContactLeft;
+                if (rightActive && !data.RightHandActive) data.LocalContactRight = localContactRight;
                 data.LeftHandActive = leftActive;
                 data.RightHandActive = rightActive;
             }
@@ -431,15 +482,15 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            if (socketIndex < 0) socketIndex = 0;
+            if (socketIndex < 0) return false;
 
             // Calculate initial distance to avoid sudden snapping
             float initialDist = _carryForwardDistance;
             if (playerTransform != null)
             {
-                Vector3 toObj = transform.position - playerTransform.position;
+                Vector3 toObj = _rigidbody.position - playerTransform.position;
                 toObj.y = 0f;
-                initialDist = Mathf.Clamp(toObj.magnitude, 1.1f, _carryForwardDistance);
+                initialDist = Mathf.Clamp(toObj.magnitude, 0.15f, Mathf.Max(0.15f, _carryForwardDistance));
             }
 
             _occupiedSockets.Add(socketIndex);
@@ -449,6 +500,15 @@ namespace CoopGame.CarrySystem
                 SocketIndex = socketIndex,
                 PlayerTransform = playerTransform,
                 Movement = playerMovement,
+                Carry = playerTransform.GetComponent<PlayerCarry>(),
+                PlayerColliders = playerTransform.GetComponentsInChildren<Collider>(true),
+                PreviousPlayerPosition = playerTransform.position,
+                PlayerVelocity = Vector3.zero,
+                AttachedAtFixedTime = Time.fixedTime,
+                InitialSupportOffsetLeft = _rigidbody.position + _rigidbody.rotation *
+                    Vector3.Scale(localContactLeft, transform.lossyScale) - playerTransform.position,
+                InitialSupportOffsetRight = _rigidbody.position + _rigidbody.rotation *
+                    Vector3.Scale(localContactRight, transform.lossyScale) - playerTransform.position,
                 InputDirection = Vector3.zero,
                 FacingHeading = (playerTransform != null) ? playerTransform.forward : Vector3.forward,
                 HoldHeight = _carryHeightOffset,
@@ -467,15 +527,26 @@ namespace CoopGame.CarrySystem
             // Update player movement speeds based on carrier count
             UpdateAllCarriersSpeedMultiplier();
 
-            // Only ignore collision between the player's CharacterController and the object
-            // (prevents clipping INTO each other), but keep full world collision active.
-            SetCarrierCollisionIgnore(playerTransform, true);
+            // Keep the torso solid; auxiliary hand colliders must not fight
+            // the grip springs at their attached surface contacts.
+            SetCarrierCollisionIgnore(_activeCarriers[clientId].PlayerColliders, true);
 
             // Wake up Rigidbody with gravity active
             _physicsSetupPending = true;
+            OnCarrierAttached(_activeCarriers.Count == 1);
 
             Debug.Log($"[CarryableObject] Client {clientId} attached to '{name}' at Left: {localContactLeft} | Right: {localContactRight} | PhysX Gravity: ON");
             return true;
+        }
+
+        /// <summary>Attachment lifecycle hook; called before the next support physics step.</summary>
+        protected virtual void OnCarrierAttached(bool firstCarrier) { }
+
+        // Shared by authority and owner prediction so collision policy cannot differ.
+        internal static bool ShouldIgnoreCarryCollision(Collider playerCollider)
+        {
+            return !(playerCollider is CharacterController) &&
+                playerCollider.GetComponent<PlayerMovement>() == null;
         }
 
         /// <summary>
@@ -507,7 +578,7 @@ namespace CoopGame.CarrySystem
                     data.Movement.SpeedMultiplier = 1.0f;
                 }
 
-                SetCarrierCollisionIgnore(data.PlayerTransform, false);
+                SetCarrierCollisionIgnore(data.PlayerColliders, false);
 
                 _occupiedSockets.Remove(data.SocketIndex);
                 _activeCarriers.Remove(clientId);
@@ -575,8 +646,8 @@ namespace CoopGame.CarrySystem
                 data.InputDirection = worldMoveDirection;
                 data.FacingHeading = forwardHeading;
                 data.HoldHeight = holdHeight;
-                data.LeftHandActive = leftHandActive;
-                data.RightHandActive = rightHandActive;
+                // Input streaming is unreliable. Only the reliable hand-state
+                // transition may enable or release physical surface attachments.
             }
         }
 
@@ -603,29 +674,39 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        private void SetCarrierCollisionIgnore(Transform playerTransform, bool ignore)
+        private void SetCarrierCollisionIgnore(Collider[] playerColliders, bool ignore)
         {
-            if (playerTransform == null) return;
+            if (playerColliders == null) return;
 
+            _pendingCollisionChanges.Add(new CollisionChange
+            {
+                PlayerColliders = playerColliders,
+                Ignore = ignore
+            });
+        }
+
+        private void ApplyPendingCollisionChanges()
+        {
+            if (_pendingCollisionChanges.Count == 0) return;
             if (_ownColliders == null || _ownColliders.Length == 0)
             {
                 _ownColliders = GetComponentsInChildren<Collider>(true);
             }
 
-            // Ensure carried objects retain full physical hitboxes against the player.
-            // Players cannot walk through carried objects — they physically collide and block/push.
-            Collider[] playerColliders = playerTransform.GetComponentsInChildren<Collider>(true);
-            foreach (var pCol in playerColliders)
+            for (int changeIndex = 0; changeIndex < _pendingCollisionChanges.Count; changeIndex++)
             {
-                foreach (var oCol in _ownColliders)
+                CollisionChange change = _pendingCollisionChanges[changeIndex];
+                foreach (var pCol in change.PlayerColliders)
                 {
-                    if (pCol != null && oCol != null)
+                    foreach (var oCol in _ownColliders)
                     {
-                        // Explicitly enforce collision active (never ignore)
-                        Physics.IgnoreCollision(pCol, oCol, false);
+                        if (pCol != null && oCol != null && !pCol.isTrigger && !oCol.isTrigger)
+                            Physics.IgnoreCollision(pCol, oCol,
+                                change.Ignore && ShouldIgnoreCarryCollision(pCol));
                     }
                 }
             }
+            _pendingCollisionChanges.Clear();
         }
 
         private void CreateFallbackSockets()

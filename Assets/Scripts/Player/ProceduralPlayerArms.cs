@@ -5,8 +5,8 @@ namespace CoopGame.Player
 {
     /// <summary>
     /// ProceduralPlayerArms drives the actual rigged skeleton arms (UpperArm -> LowerArm -> Wrist)
-    /// and finger bones of Rigged_character_.fbx using pure rotation-based Analytic Two-Bone Inverse Kinematics (IK)
-    /// and natural procedural finger flexion / fist clenching (การกำมือ).
+    /// and finger bones of Rigged_character_.fbx using analytic Two-Bone Inverse Kinematics (IK)
+    /// with bounded carry-contact attachment and natural procedural finger flexion / fist clenching (การกำมือ).
     /// 
     /// Features:
     /// 1. Pole-directed two-bone IK with a continuous anterior reference for stable shoulders.
@@ -132,6 +132,19 @@ namespace CoopGame.Player
         private float _rightUpperLen = 0.23f;
         private float _rightLowerLen = 0.17f;
 
+        // Carry attachment may extend the rendered arm slightly. Restore imported
+        // offsets before every pose so a grip never changes the rig's rest lengths.
+        private Vector3 _restLowerPositionL;
+        private Vector3 _restWristPositionL;
+        private Vector3 _restLowerPositionR;
+        private Vector3 _restWristPositionR;
+        private const float MaxCarryArmExtension = 1.25f;
+        private const float CarryReachMargin = 0.005f;
+        private Vector3 _neutralShoulderLocalL;
+        private Vector3 _neutralShoulderLocalR;
+        private float _naturalReachLocalL;
+        private float _naturalReachLocalR;
+
         // Exact initial local rotations for rest pose from Rigged_character_.fbx
         private Quaternion _initUpperRotL = new Quaternion(0.04446f, 0.04762f, 0.18977f, 0.97966f);
         private Quaternion _initLowerRotL = new Quaternion(0.04222f, 0.03320f, 0.02967f, 0.99812f);
@@ -157,6 +170,10 @@ namespace CoopGame.Player
         public Transform RightHand => _rightTargetTransform != null ? _rightTargetTransform : transform;
         public Transform WristLeft => _wristL;
         public Transform WristRight => _wristR;
+        public Vector3 LeftShoulderPosition => _upperArmL != null ? _upperArmL.position : transform.position;
+        public Vector3 RightShoulderPosition => _upperArmR != null ? _upperArmR.position : transform.position;
+        public float LeftCarryReach => GetCarryReach(true);
+        public float RightCarryReach => GetCarryReach(false);
 
         public float LeftWeight { get => _leftWeight; set => _leftWeight = Mathf.Clamp01(value); }
         public float RightWeight { get => _rightWeight; set => _rightWeight = Mathf.Clamp01(value); }
@@ -207,9 +224,66 @@ namespace CoopGame.Player
 
         public void SetCharacterVisual(Transform visual)
         {
+            RestoreArmJointOffsets();
             _characterVisual = visual;
             _bonesInitialized = false;
             LocateBones();
+        }
+
+        private void OnDisable()
+        {
+            RestoreArmJointOffsets();
+        }
+
+        /// <summary>Rendered shoulder and bounded carry reach without using stretched joint offsets.</summary>
+        public bool TryGetCarryArmGeometry(bool left, out Vector3 shoulder, out float reach)
+        {
+            Transform upper = left ? _upperArmL : _upperArmR;
+            Transform lower = left ? _lowerArmL : _lowerArmR;
+            Transform wrist = left ? _wristL : _wristR;
+            shoulder = upper != null ? upper.position : transform.position;
+            reach = GetCarryReach(left);
+            return _bonesInitialized && upper != null && lower != null && wrist != null;
+        }
+
+        /// <summary>
+        /// Physics geometry captured before procedural visual motion. FixedUpdate
+        /// support and movement use this neutral pose instead of a rendered shoulder.
+        /// </summary>
+        public bool TryGetCarryPhysicsGeometry(bool left, out Vector3 shoulder, out float reach)
+        {
+            shoulder = transform.TransformPoint(left ? _neutralShoulderLocalL : _neutralShoulderLocalR);
+            float naturalReachLocal = left ? _naturalReachLocalL : _naturalReachLocalR;
+            Vector3 rootScale = transform.lossyScale;
+            float maximumScale = Mathf.Max(Mathf.Abs(rootScale.x),
+                Mathf.Max(Mathf.Abs(rootScale.y), Mathf.Abs(rootScale.z)));
+            reach = Mathf.Max(CarryReachMargin,
+                naturalReachLocal * maximumScale * MaxCarryArmExtension - CarryReachMargin);
+            return _bonesInitialized && naturalReachLocal > 0.0001f && IsFinite(shoulder) && IsFinite(reach);
+        }
+
+        private float GetCarryReach(bool left)
+        {
+            Transform upper = left ? _upperArmL : _upperArmR;
+            Transform lower = left ? _lowerArmL : _lowerArmR;
+            if (!_bonesInitialized || upper == null || lower == null)
+                return (((left ? _leftUpperLen + _leftLowerLen : _rightUpperLen + _rightLowerLen) *
+                    MaxCarryArmExtension) - CarryReachMargin);
+
+            Vector3 lowerOffset = left ? _restLowerPositionL : _restLowerPositionR;
+            Vector3 wristOffset = left ? _restWristPositionL : _restWristPositionR;
+            float upperLength = upper.TransformVector(lowerOffset).magnitude;
+            float lowerLength = lower.TransformVector(wristOffset).magnitude;
+            return Mathf.Max(CarryReachMargin, ((upperLength + lowerLength) * MaxCarryArmExtension) - CarryReachMargin);
+        }
+
+        private void RestoreArmJointOffsets()
+        {
+            if (!_bonesInitialized) return;
+            if (_lowerArmL != null) _lowerArmL.localPosition = _restLowerPositionL;
+            if (_wristL != null) _wristL.localPosition = _restWristPositionL;
+            if (_lowerArmR != null) _lowerArmR.localPosition = _restLowerPositionR;
+            if (_wristR != null) _wristR.localPosition = _restWristPositionR;
         }
 
         public void EnsureTargetNodesCreated()
@@ -249,6 +323,7 @@ namespace CoopGame.Player
 
         public void LocateBones()
         {
+            RestoreArmJointOffsets();
             if (_characterVisual == null)
             {
                 _characterVisual = transform.Find("CharacterVisual");
@@ -292,10 +367,25 @@ namespace CoopGame.Player
                     _initUpperRotL = _upperArmL.localRotation;
                     if (_lowerArmL != null) _initLowerRotL = _lowerArmL.localRotation;
                     if (_wristL != null) _initWristRotL = _wristL.localRotation;
+                    if (_lowerArmL != null) _restLowerPositionL = _lowerArmL.localPosition;
+                    if (_wristL != null) _restWristPositionL = _wristL.localPosition;
 
                     _initUpperRotR = _upperArmR.localRotation;
                     if (_lowerArmR != null) _initLowerRotR = _lowerArmR.localRotation;
                     if (_wristR != null) _initWristRotR = _wristR.localRotation;
+                    if (_lowerArmR != null) _restLowerPositionR = _lowerArmR.localPosition;
+                    if (_wristR != null) _restWristPositionR = _wristR.localPosition;
+
+                    _neutralShoulderLocalL = transform.InverseTransformPoint(_upperArmL.position);
+                    _neutralShoulderLocalR = transform.InverseTransformPoint(_upperArmR.position);
+                    _naturalReachLocalL = _lowerArmL != null && _wristL != null
+                        ? transform.InverseTransformVector(_lowerArmL.position - _upperArmL.position).magnitude +
+                          transform.InverseTransformVector(_wristL.position - _lowerArmL.position).magnitude
+                        : 0f;
+                    _naturalReachLocalR = _lowerArmR != null && _wristR != null
+                        ? transform.InverseTransformVector(_lowerArmR.position - _upperArmR.position).magnitude +
+                          transform.InverseTransformVector(_wristR.position - _lowerArmR.position).magnitude
+                        : 0f;
 
                     // Natural hanging rest rotations with comfortable clearance from hips (~28 deg)
                     _restUpperRotL = _initUpperRotL * Quaternion.Euler(0f, 0f, 28.0f);
@@ -453,11 +543,18 @@ namespace CoopGame.Player
 
         private void LateUpdate()
         {
+            RestoreArmJointOffsets();
             if (_upperArmL == null || _upperArmR == null)
             {
                 LocateBones();
                 if (_upperArmL == null || _upperArmR == null) return;
             }
+
+            // Sample cargo after the visual body's interpolation, bob and lean.
+            // A FixedUpdate target would lag the displayed object on render frames.
+            if (_playerCarry != null) _playerCarry.RefreshCarryHandTargets();
+            bool leftCarryAttached = _playerCarry != null && _playerCarry.LeftHandGripping;
+            bool rightCarryAttached = _playerCarry != null && _playerCarry.RightHandGripping;
 
             float deltaTime = Time.deltaTime;
             float currentSpeed = _legs != null ? _legs.SmoothedSpeed
@@ -618,31 +715,148 @@ namespace CoopGame.Player
             bool isOverheadL = (_targetLeftPos.y > _upperArmL.position.y + 0.15f);
             Vector3 bendHintL = -transform.right * 0.5f - (isOverheadL ? transform.forward * 0.05f : (transform.forward * 0.25f + transform.up * 0.15f));
             Vector3 poleL = _upperArmL.position + bendHintL;
-            SolveTwoBoneIK(
-                _upperArmL, _lowerArmL, _wristL,
-                _targetLeftPos, _targetLeftRot, LeftOverrideWrist, poleL,
-                _leftUpperLen, _leftLowerLen,
-                idleUpperL, idleLowerL, _initWristRotL,
-                _leftWeight,
-                true
-            );
+            if (leftCarryAttached)
+            {
+                SolveCarryTwoBoneIK(_upperArmL, _lowerArmL, _wristL,
+                    _targetLeftPos, _targetLeftRot, poleL,
+                    idleUpperL, idleLowerL, _initWristRotL, _leftWeight, true);
+            }
+            else
+            {
+                SolveTwoBoneIK(
+                    _upperArmL, _lowerArmL, _wristL,
+                    _targetLeftPos, _targetLeftRot, LeftOverrideWrist, poleL,
+                    _leftUpperLen, _leftLowerLen,
+                    idleUpperL, idleLowerL, _initWristRotL,
+                    _leftWeight,
+                    true
+                );
+            }
 
             // 2. Solve Right Arm IK (Elbow bends outward to the right, slightly back/down)
             bool isOverheadR = (_targetRightPos.y > _upperArmR.position.y + 0.15f);
             Vector3 bendHintR = transform.right * 0.5f - (isOverheadR ? transform.forward * 0.05f : (transform.forward * 0.25f + transform.up * 0.15f));
             Vector3 poleR = _upperArmR.position + bendHintR;
-            SolveTwoBoneIK(
-                _upperArmR, _lowerArmR, _wristR,
-                _targetRightPos, _targetRightRot, RightOverrideWrist, poleR,
-                _rightUpperLen, _rightLowerLen,
-                idleUpperR, idleLowerR, _initWristRotR,
-                _rightWeight,
-                false
-            );
+            if (rightCarryAttached)
+            {
+                SolveCarryTwoBoneIK(_upperArmR, _lowerArmR, _wristR,
+                    _targetRightPos, _targetRightRot, poleR,
+                    idleUpperR, idleLowerR, _initWristRotR, _rightWeight, false);
+            }
+            else
+            {
+                SolveTwoBoneIK(
+                    _upperArmR, _lowerArmR, _wristR,
+                    _targetRightPos, _targetRightRot, RightOverrideWrist, poleR,
+                    _rightUpperLen, _rightLowerLen,
+                    idleUpperR, idleLowerR, _initWristRotR,
+                    _rightWeight,
+                    false
+                );
+            }
 
             // 3. Apply Anatomically Correct Finger Flexion / Fist Clench (การกำมือ)
             ApplyFingerGrips();
         }
+
+        /// <summary>
+        /// Keeps a confirmed carry grip on its object-local contact. Joint positions
+        /// are corrected only for this pose and reset before the next rendered frame.
+        /// </summary>
+        private void SolveCarryTwoBoneIK(
+            Transform root, Transform mid, Transform tip,
+            Vector3 targetPos, Quaternion targetRot, Vector3 polePos,
+            Quaternion baseRotRoot, Quaternion baseRotMid, Quaternion baseRotTip,
+            float weight, bool isLeftArm)
+        {
+            if (root == null || mid == null || tip == null) return;
+
+            root.localRotation = baseRotRoot;
+            mid.localRotation = baseRotMid;
+            tip.localRotation = baseRotTip;
+            if (weight <= 0.001f || !IsFinite(targetPos)) return;
+
+            Vector3 shoulder = root.position;
+            Vector3 restElbow = mid.position;
+            Vector3 restWrist = tip.position;
+            Quaternion restUpperRotation = root.rotation;
+            Quaternion restLowerRotation = mid.rotation;
+            Quaternion restWristRotation = tip.rotation;
+
+            // Measure after restoring the rig so body squash and mesh scale are
+            // accounted for, without feeding last frame's carry extension back in.
+            float upperLength = Vector3.Distance(shoulder, restElbow);
+            float lowerLength = Vector3.Distance(restElbow, restWrist);
+            float naturalReach = upperLength + lowerLength;
+            if (upperLength < 0.0001f || lowerLength < 0.0001f || !IsFinite(naturalReach)) return;
+
+            Vector3 toTarget = targetPos - shoulder;
+            float rawDistance = toTarget.magnitude;
+            if (!IsFinite(rawDistance)) return;
+            Vector3 direction = rawDistance > 0.0001f ? toTarget / rawDistance : transform.forward;
+            float extension = Mathf.Clamp((rawDistance + CarryReachMargin) / naturalReach,
+                1f, MaxCarryArmExtension);
+            upperLength *= extension;
+            lowerLength *= extension;
+
+            float minReach = Mathf.Abs(upperLength - lowerLength) + CarryReachMargin;
+            float maxReach = upperLength + lowerLength - CarryReachMargin;
+            if (maxReach <= minReach) return;
+            float distance = Mathf.Clamp(rawDistance, minReach, maxReach);
+            Vector3 reachableTarget = shoulder + direction * distance;
+
+            float cosAngle = Mathf.Clamp((upperLength * upperLength + distance * distance - lowerLength * lowerLength) /
+                (2f * upperLength * distance), -1f, 1f);
+            float angle = Mathf.Acos(cosAngle) * Mathf.Rad2Deg;
+            Vector3 poleDirection = polePos - shoulder;
+            Vector3 planeNormal = Vector3.Cross(direction, poleDirection);
+            if (planeNormal.sqrMagnitude < 0.0001f)
+                planeNormal = Vector3.Cross(direction, isLeftArm ? -transform.right : transform.right);
+            if (planeNormal.sqrMagnitude < 0.0001f)
+                planeNormal = Vector3.Cross(direction, transform.up);
+            if (planeNormal.sqrMagnitude < 0.0001f)
+                planeNormal = Vector3.Cross(direction, transform.forward);
+            planeNormal.Normalize();
+
+            Vector3 upperDirection = Quaternion.AngleAxis(angle, planeNormal) * direction;
+            float verticalBlend = Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(0.55f, 0.95f, Mathf.Abs(upperDirection.y)));
+            Vector3 verticalReference = upperDirection.y >= 0f ? -transform.forward : transform.forward;
+            Vector3 anteriorReference = Vector3.Slerp(transform.up, verticalReference, verticalBlend);
+            Vector3 upperForward = Vector3.ProjectOnPlane(anteriorReference, upperDirection);
+            if (upperForward.sqrMagnitude < 0.001f)
+                upperForward = Vector3.ProjectOnPlane(transform.forward, upperDirection);
+            if (upperForward.sqrMagnitude < 0.001f)
+                upperForward = Vector3.ProjectOnPlane(transform.right, upperDirection);
+            upperForward.Normalize();
+
+            Vector3 elbow = shoulder + upperDirection * upperLength;
+            Vector3 lowerDirection = (reachableTarget - elbow).normalized;
+            Vector3 lowerForward = Vector3.ProjectOnPlane(upperForward, lowerDirection);
+            if (lowerForward.sqrMagnitude < 0.001f)
+                lowerForward = Vector3.ProjectOnPlane(transform.up, lowerDirection);
+            if (lowerForward.sqrMagnitude < 0.001f)
+                lowerForward = Vector3.ProjectOnPlane(transform.right, lowerDirection);
+            lowerForward.Normalize();
+
+            root.rotation = Quaternion.Slerp(restUpperRotation,
+                Quaternion.LookRotation(upperForward, upperDirection), weight);
+            mid.position = Vector3.Lerp(restElbow, elbow, weight);
+            mid.rotation = Quaternion.Slerp(restLowerRotation,
+                Quaternion.LookRotation(lowerForward, lowerDirection), weight);
+            tip.position = Vector3.Lerp(restWrist, reachableTarget, weight);
+
+            // An identity quaternion is a valid contact orientation. Only reject
+            // malformed input, rather than silently losing that wrist orientation.
+            float rotationMagnitude = Quaternion.Dot(targetRot, targetRot);
+            if (IsFinite(targetRot) && IsFinite(rotationMagnitude) && rotationMagnitude > 0.0001f)
+                tip.rotation = Quaternion.Slerp(restWristRotation, Quaternion.Normalize(targetRot), weight);
+        }
+
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+        private static bool IsFinite(Vector3 value) => IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
+        private static bool IsFinite(Quaternion value) =>
+            IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z) && IsFinite(value.w);
 
         private void ApplyFingerGrips()
         {

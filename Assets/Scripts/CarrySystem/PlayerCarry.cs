@@ -1,3 +1,4 @@
+using System;
 using Unity.Netcode;
 using UnityEngine;
 using CoopGame.Player;
@@ -5,28 +6,16 @@ using CoopGame.Player;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// PlayerCarry manages two-handed grab/drop physics and dynamic vertical lifting
-    /// inspired by Human Fall Flat.
-    /// 
-    /// Features (Human Fall Flat Style):
-    /// 1. True Independent Hands (มือซ้ายและมือขวาทำงานแยกกัน 100%):
-    ///    - Left Click = Left Hand reaches & grabs.
-    ///    - Right Click = Right Hand reaches & grabs.
-    ///    - When holding with Right Hand, Left Hand remains completely free to aim and grab!
-    ///    - Left Hand Marker NEVER disappears when Right Hand is used.
-    /// 2. Dual Surface Markers (มาร์กเกอร์ 2 อัน):
-    ///    - Free hand shows its marker on reachable surfaces in real time (GREEN).
-    ///    - Gripping hand keeps its marker anchored to its physical grip point on the object.
-    /// 3. Free Unrestricted Controls (ควบคุมอย่างอิสระ):
-    ///    - Player moves at full 100% speed on WASD in all directions.
-    ///    - Zero artificial rotation lock; the object swings, tilts, and pivots naturally on the hands.
-    /// 4. Rich Diagnostics & Logging (Log ละเอียด):
-    ///    - Logs reach, single-hand vs dual-hand grabs, active PhysX gravity, dynamic height, and releases.
+    /// Independent toggle grips anchored to cargo-local surface points.
+    /// Update caches input, FixedUpdate resolves grabs and support intent,
+    /// and LateUpdate attaches rendered palms after body interpolation.
+    /// Physics and validated grip snapshots remain server authoritative.
     /// </summary>
     [RequireComponent(typeof(PlayerInputReader))]
     [RequireComponent(typeof(PlayerMovement))]
     [RequireComponent(typeof(CharacterController))]
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(-20)]
     public class PlayerCarry : NetworkBehaviour
     {
         [Header("Interaction & Facing Settings")]
@@ -108,6 +97,7 @@ namespace CoopGame.CarrySystem
         private PlayerInputReader _inputReader;
         private PlayerMovement _movement;
         private CharacterController _characterController;
+        private CapsuleCollider _bodyCapsule;
         private PlayerCameraController _cameraController;
         private PlayerStamina _stamina;
         private Collider[] _playerColliders;
@@ -121,7 +111,7 @@ namespace CoopGame.CarrySystem
         private Material _markerMaterial;
         private MaterialPropertyBlock _markerPropBlock;
 
-        // Independent hand gripping states (Human Fall Flat style)
+        // Confirmed or locally pending independent toggle grips.
         private bool _leftHandGripping = false;
         private bool _rightHandGripping = false;
         private CarryableObject _currentCarryable = null;
@@ -134,6 +124,63 @@ namespace CoopGame.CarrySystem
         // Cached surface contact points in carried object local space
         private Vector3 _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.35f);
         private Vector3 _currentLocalContactRight = new Vector3(0.25f, 0f, -0.35f);
+        private Quaternion _currentLocalRotationLeft = Quaternion.identity;
+        private Quaternion _currentLocalRotationRight = Quaternion.identity;
+        private CarryableObject _aimedCarryable;
+        private Vector3 _lastAimNormal = Vector3.up;
+        private float _currentHoldHeight = 1.05f;
+        private bool _grabPending;
+        private bool _releasePending;
+        private byte _pendingToggleMask;
+        private bool _pendingDualToggle;
+        private CarryableObject _requestedCargo;
+        private byte _requestedHands;
+        private CargoGripState _pendingServerGrip;
+        private byte _pendingServerGripKind;
+        private uint _gripRevision;
+        private uint _acceptedGripRevision;
+        private uint _grabRequestId;
+        private uint _pendingServerRequestId;
+        private float _grabRequestedAt;
+        private float _attachedAt;
+        private float _overreachTime;
+        private Collider[] _currentCargoColliders;
+        private Rigidbody _currentCargoRigidbody;
+        private readonly System.Collections.Generic.List<Collider> _collisionRestores = new(8);
+        private bool _collisionIgnorePending;
+
+        private bool IsNetworked => NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned;
+        private bool HasLocalInput => !IsNetworked || IsOwner;
+
+        // One authoritative snapshot avoids combining a new cargo ID with stale
+        // contacts, and includes everything late joiners need to render the grip.
+        public struct CargoGripState : INetworkSerializable, IEquatable<CargoGripState>
+        {
+            public bool Attached;
+            public uint Revision;
+            public ulong CargoId;
+            public int SocketIndex;
+            public byte Hands;
+            public Vector3 LeftPoint, RightPoint;
+            public Quaternion LeftRotation, RightRotation;
+
+            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+            {
+                serializer.SerializeValue(ref Attached);
+                serializer.SerializeValue(ref Revision);
+                serializer.SerializeValue(ref CargoId);
+                serializer.SerializeValue(ref SocketIndex);
+                serializer.SerializeValue(ref Hands);
+                serializer.SerializeValue(ref LeftPoint);
+                serializer.SerializeValue(ref RightPoint);
+                serializer.SerializeValue(ref LeftRotation);
+                serializer.SerializeValue(ref RightRotation);
+            }
+
+            public bool Equals(CargoGripState other) => Attached == other.Attached && Revision == other.Revision && CargoId == other.CargoId &&
+                SocketIndex == other.SocketIndex && Hands == other.Hands && LeftPoint.Equals(other.LeftPoint) &&
+                RightPoint.Equals(other.RightPoint) && LeftRotation.Equals(other.LeftRotation) && RightRotation.Equals(other.RightRotation);
+        }
 
         // Hand rest offsets (local to player)
         private readonly Vector3 _leftHandRest = new Vector3(-0.35f, 0.5f, 0.1f);
@@ -144,7 +191,6 @@ namespace CoopGame.CarrySystem
         private readonly Color _colorNotLiftableRed = new Color(1.0f, 0.15f, 0.15f, 0.95f); // Bright Red
 
         // Diagnostics & Logging Timers
-        private float _carryLogTimer = 0f;
         private bool _wasAimingAtReachable = false;
 
         // Outline tracking
@@ -168,25 +214,26 @@ namespace CoopGame.CarrySystem
         private const float CarryFacingTurnSpeed = 900f;
 
         // Exposed properties
-        public bool IsCarrying => IsOwner 
-            ? (_leftHandGripping || _rightHandGripping) 
-            : ((_netHandState.Value & ((1 << 0) | (1 << 1))) != 0);
-        public bool LeftHandGripping => IsOwner 
-            ? _leftHandGripping 
-            : ((_netHandState.Value & (1 << 0)) != 0);
-        public bool RightHandGripping => IsOwner 
-            ? _rightHandGripping 
-            : ((_netHandState.Value & (1 << 1)) != 0);
-        public bool LeftHandReaching => IsOwner 
-            ? (_inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld)) 
+        public bool IsCarrying => HasLocalInput
+            ? (_leftHandGripping || _rightHandGripping)
+            : (_netGripState.Value.Attached && (_netGripState.Value.Hands & 1) != 0 ||
+                _netGripState.Value.Attached && (_netGripState.Value.Hands & 2) != 0);
+        public bool LeftHandGripping => HasLocalInput
+            ? _leftHandGripping
+            : (_netGripState.Value.Attached && (_netGripState.Value.Hands & 1) != 0);
+        public bool RightHandGripping => HasLocalInput
+            ? _rightHandGripping
+            : (_netGripState.Value.Attached && (_netGripState.Value.Hands & 2) != 0);
+        public bool LeftHandReaching => HasLocalInput
+            ? (_inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld))
             : ((_netHandState.Value & (1 << 2)) != 0);
-        public bool RightHandReaching => IsOwner 
-            ? (_inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld)) 
+        public bool RightHandReaching => HasLocalInput
+            ? (_inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld))
             : ((_netHandState.Value & (1 << 3)) != 0);
         public CarryableObject CurrentCarryable => _currentCarryable;
         public float CurrentThrowCharge => _currentThrowCharge;
-        public bool IsChargingThrow => IsOwner 
-            ? _isChargingThrow 
+        public bool IsChargingThrow => HasLocalInput
+            ? _isChargingThrow
             : ((_netHandState.Value & (1 << 4)) != 0);
         public PlayerStamina Stamina => _stamina;
         public Transform LeftHand => _leftHand;
@@ -206,8 +253,7 @@ namespace CoopGame.CarrySystem
         }
 
         // Replicated Hand Gestures & Gripping state for Remote Player Proxies
-        // bit 0 = Left hand gripping
-        // bit 1 = Right hand gripping
+        // Confirmed gripping hands are stored in _netGripState.
         // bit 2 = Left hand reaching
         // bit 3 = Right hand reaching
         // bit 4 = Charging throw
@@ -224,9 +270,9 @@ namespace CoopGame.CarrySystem
             NetworkVariableWritePermission.Owner
         );
 
-        // Synchronized NetworkObjectId of the carried object, ensuring 100% reliable state sync for all clients (including late joiners)
-        private readonly NetworkVariable<ulong> _netCarriedObjectId = new NetworkVariable<ulong>(
-            0,
+        // Atomic, server-authoritative surface attachment for every peer, including late joiners.
+        private readonly NetworkVariable<CargoGripState> _netGripState = new NetworkVariable<CargoGripState>(
+            default,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server
         );
@@ -236,6 +282,7 @@ namespace CoopGame.CarrySystem
             _inputReader = GetComponent<PlayerInputReader>();
             _movement = GetComponent<PlayerMovement>();
             _characterController = GetComponent<CharacterController>();
+            _bodyCapsule = GetComponent<CapsuleCollider>();
             _cameraController = GetComponent<PlayerCameraController>();
             _stamina = GetComponent<PlayerStamina>();
             if (_stamina == null)
@@ -263,13 +310,14 @@ namespace CoopGame.CarrySystem
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            _gripRevision = _netGripState.Value.Revision;
+            _acceptedGripRevision = 0;
+            _releasePending = false;
+            _pendingServerGripKind = 0;
+            if (IsServer && _netGripState.Value.Attached) PublishRelease();
 
-            _netCarriedObjectId.OnValueChanged += OnCarriedObjectIdChanged;
-
-            if (!IsOwner && _netCarriedObjectId.Value != 0)
-            {
-                ResolveCarriedObject(_netCarriedObjectId.Value);
-            }
+            _netGripState.OnValueChanged += OnGripStateChanged;
+            ApplyGripState(_netGripState.Value);
 
             if (IsOwner)
             {
@@ -282,29 +330,36 @@ namespace CoopGame.CarrySystem
 
         public override void OnNetworkDespawn()
         {
-            base.OnNetworkDespawn();
-
-            _netCarriedObjectId.OnValueChanged -= OnCarriedObjectIdChanged;
-
+            _netGripState.OnValueChanged -= OnGripStateChanged;
+            if (IsServer && _currentCarryable != null) _currentCarryable.DetachCarrier(OwnerClientId);
+            _pendingServerGripKind = 0;
+            _grabRequestId++;
+            _releasePending = false;
             HideMarkers();
             ClearOutlineHighlight();
 
-            if (IsCarrying)
-            {
-                ReleaseCarryState();
-            }
+            ReleaseCarryState();
+            base.OnNetworkDespawn();
         }
 
-        private void OnCarriedObjectIdChanged(ulong previousValue, ulong newValue)
+        private void OnGripStateChanged(CargoGripState previous, CargoGripState current) => ApplyGripState(current);
+
+        private void ApplyGripState(CargoGripState state)
         {
-            if (newValue != 0)
-            {
-                ResolveCarriedObject(newValue);
-            }
-            else
-            {
-                ReleaseCarryState();
-            }
+            if (state.Revision < _acceptedGripRevision) return;
+            if (state.Attached && HasLocalInput && _releasePending) return;
+            _acceptedGripRevision = state.Revision;
+            _grabPending = false;
+            if (!state.Attached) { _releasePending = false; ReleaseCarryState(); return; }
+            if (_currentCarryable != null && _currentCarryable.NetworkObjectId != state.CargoId) ReleaseCarryState();
+            _currentLocalContactLeft = state.LeftPoint;
+            _currentLocalContactRight = state.RightPoint;
+            _currentLocalRotationLeft = state.LeftRotation;
+            _currentLocalRotationRight = state.RightRotation;
+            _leftHandGripping = (state.Hands & 1) != 0;
+            _rightHandGripping = (state.Hands & 2) != 0;
+            _assignedSocketIndex = state.SocketIndex;
+            ResolveCarriedObject(state.CargoId);
         }
 
         private void ResolveCarriedObject(ulong netId)
@@ -315,7 +370,7 @@ namespace CoopGame.CarrySystem
                 CarryableObject carryable = netObj.GetComponent<CarryableObject>();
                 if (carryable != null)
                 {
-                    _currentCarryable = carryable;
+                    if (_currentCarryable != carryable) OnGrabSuccessful(carryable, _assignedSocketIndex);
                 }
             }
         }
@@ -329,371 +384,278 @@ namespace CoopGame.CarrySystem
 
         private void FixedUpdate()
         {
-            if (_currentCarryable == null || !IsCarrying)
+            FlushCollisionChanges();
+            if (IsServer && _pendingServerGripKind != 0)
             {
-                _hasCarryFacing = false;
-                _carryFacingTarget = Vector3.forward;
-                return;
+                byte kind = _pendingServerGripKind;
+                CargoGripState request = _pendingServerGrip;
+                _pendingServerGripKind = 0;
+                if (kind == 1) ProcessServerGrab(request);
+                else ProcessServerHandChange(request);
             }
-
-            Vector3 toCargo = _currentCarryable.transform.position - transform.position;
+            if (HasLocalInput)
+            {
+                UpdatePersistentAimMarker(out _aimedCarryable, out _canGrabAimed);
+                ProcessGrabIntent();
+            }
+            if (_currentCarryable == null || !IsCarrying) { _hasCarryFacing = false; return; }
+            Vector3 toCargo = (_currentCargoRigidbody != null ? _currentCargoRigidbody.position : _currentCarryable.transform.position) - transform.position;
             toCargo.y = 0f;
-            if (toCargo.sqrMagnitude > 0.0025f)
-            {
-                _carryFacingTarget = toCargo.normalized;
-            }
-
+            if (toCargo.sqrMagnitude > .0025f) _carryFacingTarget = toCargo.normalized;
             if (!_hasCarryFacing)
             {
-                _carryFacing = _carryFacingTarget.sqrMagnitude > 0.01f
-                    ? _carryFacingTarget : transform.forward;
+                _carryFacing = _carryFacingTarget.sqrMagnitude > .01f ? _carryFacingTarget : transform.forward;
                 _hasCarryFacing = true;
             }
-            else
-            {
-                _carryFacing = Vector3.RotateTowards(
-                    _carryFacing,
-                    _carryFacingTarget,
-                    CarryFacingTurnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime,
-                    0f).normalized;
-            }
+            else _carryFacing = Vector3.RotateTowards(_carryFacing, _carryFacingTarget,
+                CarryFacingTurnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f).normalized;
+            if (!HasLocalInput) return;
+            Vector3 forward = _cameraController != null ? _cameraController.HorizontalForward : transform.forward;
+            Vector3 right = _cameraController != null ? _cameraController.HorizontalRight : transform.right;
+            Vector2 input = _inputReader != null ? _inputReader.MoveInput : Vector2.zero;
+            Vector3 direction = Vector3.ClampMagnitude(forward * input.y + right * input.x, 1f);
+            if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight);
+            else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, _carryFacing,
+                _currentHoldHeight, _leftHandGripping, _rightHandGripping);
+            float excess = _leftHandGripping ? GripOverreach(true) : 0f;
+            if (_rightHandGripping) excess = Mathf.Max(excess, GripOverreach(false));
+            _overreachTime = excess > .2f ? _overreachTime + Time.fixedDeltaTime : 0f;
+            if (_overreachTime > .65f && Time.time - _attachedAt > 1.1f) DropForRespawn();
         }
 
         private void Update()
         {
-            bool isLocalOwner = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening) ? IsOwner : true;
-            if (!isLocalOwner)
+            if (_netGripState.Value.Attached && _currentCarryable == null && IsNetworked && !_releasePending)
+                ResolveCarriedObject(_netGripState.Value.CargoId);
+            if (!HasLocalInput || _inputReader == null) return;
+            if (CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (_currentCarryable != null && !_currentCarryable.gameObject.activeInHierarchy) DropForRespawn();
+            if (_grabPending && Time.unscaledTime - _grabRequestedAt > 3f)
             {
-                UpdateVisualHandsProxy();
-                return;
+                _grabRequestId++;
+                if (IsNetworked) { _releasePending = true; RequestDropServerRpc(); }
+                ReleaseCarryState();
             }
-
-            if (_leftMarker == null || _rightMarker == null)
-                EnsureDualMarkersCreated();
-
-            // 1. Calculate dynamic lift height from camera pitch (Mouse Up / Down)
-            float currentHoldHeight = _normalLiftHeight;
-            if (_cameraController != null)
+            if (_leftMarker == null || _rightMarker == null) EnsureDualMarkersCreated();
+            _currentHoldHeight = CalculateHoldHeight();
+            UpdateCarryableOutline(_aimedCarryable, _canGrabAimed);
+            _throwReleaseCooldown = Mathf.Max(0f, _throwReleaseCooldown - Time.deltaTime);
+            if (!_inputReader.IsGrabbing) _requireGrabRelease = false;
+            _canAttemptGrab = !_requireGrabRelease && _throwReleaseCooldown <= 0f && !_grabPending && !_releasePending;
+            if (_inputReader.InteractPressed)
             {
-                float pitch = _cameraController.Pitch;
-                if (pitch < 0f)
-                {
-                    float t = Mathf.Clamp01(-pitch / 55f);
-                    currentHoldHeight = Mathf.Lerp(_normalLiftHeight, _maxLiftHeight, t);
-                }
-                else
-                {
-                    float t = Mathf.Clamp01(pitch / 60f);
-                    currentHoldHeight = Mathf.Lerp(_normalLiftHeight, _minLiftHeight, t);
-                }
+                _pendingDualToggle = !_pendingDualToggle;
             }
-
-            // 2. Camera forward and right vectors for movement & carrying
-            Vector3 camForward = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
-            Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
-
-            // 3. Update Dual Aim Markers (Handles both free aiming & locked grip markers)
-            UpdatePersistentAimMarker(out CarryableObject aimedCarryable, out bool canGrabAimed);
-
-            // 3.1 Update Outline Highlight on Aimed / Carried Object
-            UpdateCarryableOutline(aimedCarryable, canGrabAimed);
-
-            // 4.5. Grab attempt clearance and release requirement after throw
-            if (_throwReleaseCooldown > 0f)
+            else
             {
-                _throwReleaseCooldown -= Time.deltaTime;
+                bool left = _inputReader.GrabLeftPressed, right = _inputReader.GrabRightPressed;
+                if (left) _pendingToggleMask ^= 1;
+                if (right) _pendingToggleMask ^= 2;
             }
-
-            // 5. Independent Hand Input Checking (Human Fall Flat style)
-            bool leftClick = _inputReader.GrabLeftHeld || _inputReader.InteractHeld;
-            bool rightClick = _inputReader.GrabRightHeld || _inputReader.InteractHeld;
-
-            if (!leftClick && !rightClick)
+            if (IsCarrying && _currentCarryable != null)
             {
-                _requireGrabRelease = false;
-            }
-
-            _canAttemptGrab = !_requireGrabRelease && (_throwReleaseCooldown <= 0f);
-
-            // 4. Animate procedural hands to touch contact points or reach/rest
-            UpdateVisualHands(currentHoldHeight);
-
-            // Release hands when button is released
-            if (!leftClick && _leftHandGripping)
-            {
-                _leftHandGripping = false;
-                Debug.Log($"[PlayerCarry] Client {OwnerClientId} released LEFT hand.");
-                if (_currentCarryable != null)
-                {
-                    SyncCarrierHandState();
-                }
-            }
-
-            if (!rightClick && _rightHandGripping)
-            {
-                _rightHandGripping = false;
-                Debug.Log($"[PlayerCarry] Client {OwnerClientId} released RIGHT hand.");
-                if (_currentCarryable != null)
-                {
-                    SyncCarrierHandState();
-                }
-            }
-
-            // Grab with Left Hand if clicked, not already gripping, and grab is allowed
-            if (leftClick && !_leftHandGripping && _canAttemptGrab)
-            {
-                if (_wallClimb != null && _wallClimb.IsClimbing)
-                {
-                    // Wall climbing takes precedence over item grabbing
-                }
-                else if (canGrabAimed && aimedCarryable != null)
-                {
-                    GrabSingleHand(aimedCarryable, isLeft: true);
-                }
-                else if (_currentCarryable == null && (_wallClimb == null || !_wallClimb.IsAimingAtWall))
-                {
-                    TryGrabNearbyObjectSingleHand(isLeft: true);
-                }
-            }
-
-            // Grab with Right Hand if clicked, not already gripping, and grab is allowed
-            if (rightClick && !_rightHandGripping && _canAttemptGrab)
-            {
-                if (_wallClimb != null && _wallClimb.IsClimbing)
-                {
-                    // Wall climbing takes precedence over item grabbing
-                }
-                else if (canGrabAimed && aimedCarryable != null)
-                {
-                    GrabSingleHand(aimedCarryable, isLeft: false);
-                }
-                else if (_currentCarryable == null && (_wallClimb == null || !_wallClimb.IsAimingAtWall))
-                {
-                    TryGrabNearbyObjectSingleHand(isLeft: false);
-                }
-            }
-
-            // 6. Handle active carrying state, stamina exertion, throw charging, or complete drop
-            if (_leftHandGripping || _rightHandGripping)
-            {
-                // Full 100% free movement like Human Fall Flat!
                 if (_movement != null)
                 {
-                    // If charging throw or exhausted, apply slight movement penalty
-                    if (_isChargingThrow)
-                    {
-                        _movement.SpeedMultiplier = 0.75f;
-                    }
-                    else if (_stamina != null && _stamina.IsExhausted)
-                    {
-                        _movement.SpeedMultiplier = 0.5f;
-                    }
-                    else
-                    {
-                        _movement.SpeedMultiplier = 1.0f;
-                    }
-                    if (_currentCarryable != null && _currentCarryable.CurrentCarrierCount >= 2 &&
-                        TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var expedition) && expedition.Card.Value == 3)
-                        _movement.SpeedMultiplier *= 1.15f;
+                    float speed = _currentCarryable.GetSpeedMultiplier();
+                    if (_isChargingThrow) speed *= .75f;
+                    if (_stamina != null && _stamina.IsExhausted) speed *= .5f;
+                    if (_currentCarryable.CurrentCarrierCount >= 2 && TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) && state.Card.Value == 3) speed *= 1.15f;
+                    _movement.SpeedMultiplier = speed;
                 }
-
-                if (_currentCarryable != null)
+                if (_stamina != null)
                 {
-                    // 6.1 Continuous Stamina Drain & Exhaustion Slip
-                    if (_stamina != null)
-                    {
-                        bool isOneHanded = !(_leftHandGripping && _rightHandGripping);
-                        int carrierCount = _currentCarryable.CurrentCarrierCount;
-                        _stamina.DrainStaminaContinuous(isOneHanded, _currentCarryable.TotalMass, carrierCount);
+                    _stamina.DrainStaminaContinuous(!(_leftHandGripping && _rightHandGripping), _currentCarryable.TotalMass, _currentCarryable.CurrentCarrierCount);
+                    if (_stamina.IsExhausted) { DropForRespawn(); return; }
+                }
+                if (_inputReader.ThrowHeld)
+                {
+                    _isChargingThrow = true;
+                    _currentThrowCharge = Mathf.Clamp01(_currentThrowCharge + Time.deltaTime / Mathf.Max(.05f, _maxChargeTime));
+                }
+                else if (_isChargingThrow)
+                {
+                    Vector3 forward = _cameraController != null ? _cameraController.HorizontalForward : transform.forward;
+                    Vector3 right = _cameraController != null ? _cameraController.HorizontalRight : transform.right;
+                    ExecuteThrow(forward, right);
+                }
+            }
+            if (IsNetworked)
+            {
+                byte mask = 0;
+                if (LeftHandReaching) mask |= 1 << 2;
+                if (RightHandReaching) mask |= 1 << 3;
+                if (_isChargingThrow) mask |= 1 << 4;
+                if (_netHandState.Value != mask) _netHandState.Value = mask;
+                if (Mathf.Abs(_netHoldHeight.Value - _currentHoldHeight) > .015f) _netHoldHeight.Value = _currentHoldHeight;
+            }
+        }
 
-                        if (_stamina.IsExhausted)
-                        {
-                            Debug.Log($"[PlayerCarry] Client {OwnerClientId} EXHAUSTED! Hands slipped from '{_currentCarryable.name}'.");
-                            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
-                            {
-                                RequestDropServerRpc();
-                            }
-                            else
-                            {
-                                _currentCarryable.DetachCarrier(OwnerClientId);
-                                ReleaseCarryState();
-                            }
-                            return;
-                        }
-                    }
+        private bool _canGrabAimed;
 
-                    // 6.2 Throw Charging & Execution
-                    bool throwHeld = _inputReader.ThrowHeld;
-                    if (throwHeld && (_stamina == null || !_stamina.IsExhausted))
+        private void ProcessGrabIntent()
+        {
+            _canAttemptGrab = !_requireGrabRelease && _throwReleaseCooldown <= 0f && !_grabPending && !_releasePending;
+            if (_grabPending)
+            {
+                byte predictedHands = (byte)((_leftHandGripping ? 1 : 0) | (_rightHandGripping ? 2 : 0));
+                if (_pendingDualToggle || (_pendingToggleMask & predictedHands) != 0)
+                {
+                    _pendingDualToggle = false;
+                    _pendingToggleMask = 0;
+                    DropForRespawn();
+                }
+                return;
+            }
+            byte toggle = _pendingToggleMask;
+            bool dual = _pendingDualToggle;
+            CarryableObject requested = _requestedCargo;
+            byte hands = _requestedHands;
+            _pendingToggleMask = 0;
+            _pendingDualToggle = false;
+            _requestedCargo = null;
+            _requestedHands = 0;
+            if (_releasePending || _grabPending || CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible ||
+                CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (requested != null)
+            {
+                if ((hands & 1) != 0) CaptureHandContact(requested, true);
+                if ((hands & 2) != 0) CaptureHandContact(requested, false);
+                SendGrabState(requested);
+            }
+            else if (dual)
+            {
+                if (_leftHandGripping || _rightHandGripping) DropForRespawn();
+                else TryToggleGrab(true, true);
+            }
+            else if (toggle == 3)
+            {
+                if (!_leftHandGripping && !_rightHandGripping) TryToggleGrab(true, true);
+                else if (_leftHandGripping && _rightHandGripping) DropForRespawn();
+                else if (_currentCarryable != null)
+                {
+                    bool releasingLeft = _leftHandGripping;
+                    if (CaptureHandContact(_currentCarryable, !releasingLeft))
                     {
-                        _isChargingThrow = true;
-                        _currentThrowCharge = Mathf.Clamp01(_currentThrowCharge + Time.deltaTime / _maxChargeTime);
-                    }
-                    else if (_isChargingThrow)
-                    {
-                        ExecuteThrow(camForward, camRight);
-                    }
-
-                    Vector2 input = _inputReader.MoveInput;
-                    Vector3 desiredWorldDir = (camForward * input.y + camRight * input.x);
-                    if (desiredWorldDir.sqrMagnitude > 1.0f)
-                    {
-                        desiredWorldDir.Normalize();
-                    }
-
-                    Vector3 carryHeading = _hasCarryFacing ? _carryFacing : camForward;
-                    carryHeading.y = 0f;
-                    if (carryHeading.sqrMagnitude < 0.01f) carryHeading = transform.forward;
-                    carryHeading.Normalize();
-
-                    // Cargo physics receives the same inward-facing heading used by
-                    // PlayerMovement, keeping both carriers and their hand targets aligned.
-                    if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
-                    {
-                        StreamCarrierInputServerRpc(desiredWorldDir, carryHeading, currentHoldHeight, _leftHandGripping, _rightHandGripping);
-                    }
-                    else
-                    {
-                        _currentCarryable.UpdateCarrierInput(OwnerClientId, desiredWorldDir, carryHeading, currentHoldHeight, _leftHandGripping, _rightHandGripping);
-                    }
-
-                    // Periodic diagnostic logging
-                    _carryLogTimer += Time.deltaTime;
-                    if (_carryLogTimer >= 2.0f)
-                    {
-                        _carryLogTimer = 0f;
-                        Rigidbody rb = _currentCarryable.GetComponent<Rigidbody>();
-                        Vector3 currentVel = (rb != null) ? rb.linearVelocity : Vector3.zero;
-                        string handMode = (_leftHandGripping && _rightHandGripping) ? "BOTH HANDS" : (_leftHandGripping ? "LEFT HAND" : "RIGHT HAND");
-                        int count = _currentCarryable.CurrentCarrierCount;
-                        string coopInfo = (count > 1) ? $" | Co-op Carriers: {count} (Stamina Drain Reduced by Co-op Synergy!)" : "";
-                        Debug.Log($"[PlayerCarry] Carrying '{_currentCarryable.name}' with {handMode} | LiftHeight: {currentHoldHeight:F2}m | Mass: {_currentCarryable.TotalMass:F1}kg{coopInfo} | PhysX Gravity: ACTIVE | Velocity: {currentVel.magnitude:F2}m/s");
+                        if (releasingLeft) _leftHandGripping = false; else _rightHandGripping = false;
+                        SyncCarrierHandState();
                     }
                 }
             }
             else
             {
-                _isChargingThrow = false;
-                _currentThrowCharge = 0f;
-
-                // Both hands released: drop object completely
-                if (_currentCarryable != null)
-                {
-                    if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
-                    {
-                        RequestDropServerRpc();
-                    }
-                    else
-                    {
-                        _currentCarryable.DetachCarrier(OwnerClientId);
-                        ReleaseCarryState();
-                    }
-                }
+                if ((toggle & 1) != 0) ToggleHand(true);
+                if ((toggle & 2) != 0) ToggleHand(false);
             }
+        }
 
-            // 7. Replicate Hand Mask to Remote Clients
-            byte handMask = 0;
-            if (_leftHandGripping) handMask |= (1 << 0);
-            if (_rightHandGripping) handMask |= (1 << 1);
-            if (leftClick) handMask |= (1 << 2);
-            if (rightClick) handMask |= (1 << 3);
-            if (_isChargingThrow) handMask |= (1 << 4);
+        private float CalculateHoldHeight()
+        {
+            if (_cameraController == null) return _normalLiftHeight;
+            float pitch = _cameraController.Pitch;
+            return pitch < 0f ? Mathf.Lerp(_normalLiftHeight, _maxLiftHeight, Mathf.Clamp01(-pitch / 55f))
+                : Mathf.Lerp(_normalLiftHeight, _minLiftHeight, Mathf.Clamp01(pitch / 60f));
+        }
 
-            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
+        private void ToggleHand(bool left)
+        {
+            if (_grabPending || _releasePending) return;
+            if (left ? _leftHandGripping : _rightHandGripping)
             {
-                if (_netHandState.Value != handMask)
-                {
-                    _netHandState.Value = handMask;
-                }
-
-                if (Mathf.Abs(_netHoldHeight.Value - currentHoldHeight) > 0.015f)
-                {
-                    _netHoldHeight.Value = currentHoldHeight;
-                }
+                if (left) _leftHandGripping = false; else _rightHandGripping = false;
+                if (!_leftHandGripping && !_rightHandGripping) DropForRespawn();
+                else SyncCarrierHandState();
             }
+            else TryToggleGrab(left, !left);
+        }
+
+        private void TryToggleGrab(bool left, bool right)
+        {
+            if (!_canAttemptGrab || _grabPending || _releasePending || (_wallClimb != null && _wallClimb.IsClimbing) || (_stamina != null && _stamina.IsExhausted)) return;
+            CarryableObject target = _currentCarryable != null ? _currentCarryable : (_canGrabAimed ? _aimedCarryable : null);
+            if (target == null)
+            {
+                target = FindNearbyCarryable();
+                if (target == null) return;
+            }
+            if (left) CaptureHandContact(target, true);
+            if (right) CaptureHandContact(target, false);
+            SendGrabState(target);
         }
 
         private void GrabSingleHand(CarryableObject target, bool isLeft)
         {
-            if (target == null) return;
-            if (_stamina != null && _stamina.IsExhausted)
-            {
-                Debug.Log($"[PlayerCarry] Client {OwnerClientId} is exhausted! Cannot grab until stamina recovers.");
-                return;
-            }
+            if (_grabPending || target == null || (_currentCarryable != null && _currentCarryable != target)) return;
+            if (_stamina != null && _stamina.IsExhausted) return;
+            if (CaptureHandContact(target, isLeft)) SendGrabState(target);
+        }
 
-            if (isLeft)
-            {
-                _leftHandGripping = true;
-                if (_lastAimLeftPoint != Vector3.zero)
-                {
-                    Vector3 localPt = target.transform.InverseTransformPoint(_lastAimLeftPoint);
-                    if (localPt.z > 0.05f) localPt.z = 0.05f;
-                    _currentLocalContactLeft = localPt;
-                }
-                else
-                {
-                    _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.4f);
-                }
-            }
-            else
-            {
-                _rightHandGripping = true;
-                if (_lastAimRightPoint != Vector3.zero)
-                {
-                    Vector3 localPt = target.transform.InverseTransformPoint(_lastAimRightPoint);
-                    if (localPt.z > 0.05f) localPt.z = 0.05f;
-                    _currentLocalContactRight = localPt;
-                }
-                else
-                {
-                    _currentLocalContactRight = new Vector3(0.25f, 0f, -0.4f);
-                }
-            }
+        private bool CaptureHandContact(CarryableObject target, bool left)
+        {
+            if (left ? _leftHandGripping : _rightHandGripping) return true;
+            GetArmGeometry(left, out Vector3 shoulder, out _);
+            Vector3 point = target == _aimedCarryable ? (left ? _lastAimLeftPoint : _lastAimRightPoint) : shoulder;
+            Vector3 normal = target == _aimedCarryable ? _lastAimNormal : shoulder - target.transform.position;
+            if (!FindSurfaceContact(target, point, normal, shoulder, out Vector3 contact, out Vector3 surfaceNormal)) return false;
+            Vector3 fingers = Vector3.ProjectOnPlane(Vector3.up, surfaceNormal);
+            if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
+            Quaternion localRot = Quaternion.Inverse(target.transform.rotation) * Quaternion.LookRotation(surfaceNormal, fingers.normalized);
+            Vector3 localPoint = target.transform.InverseTransformPoint(contact);
+            if (left) { _leftHandGripping = true; _currentLocalContactLeft = localPoint; _currentLocalRotationLeft = localRot; }
+            else { _rightHandGripping = true; _currentLocalContactRight = localPoint; _currentLocalRotationRight = localRot; }
+            return true;
+        }
 
-            string handName = isLeft ? "LEFT HAND" : "RIGHT HAND";
-            Debug.Log($"[PlayerCarry] Client {OwnerClientId} grabbing '{target.name}' with {handName}. Contact L: {_currentLocalContactLeft:F2} | R: {_currentLocalContactRight:F2} | Gravity: ACTIVE");
-
-            bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned);
-
-            if (_currentCarryable == null)
+        private void SendGrabState(CarryableObject target)
+        {
+            if (!_leftHandGripping && !_rightHandGripping) return;
+            if (_currentCarryable != null) { SyncCarrierHandState(); return; }
+            if (IsNetworked)
             {
-                if (isNetworked)
-                {
-                    NetworkObject netObj = target.GetComponent<NetworkObject>();
-                    if (netObj != null)
-                    {
-                        RequestGrabServerRpc(netObj.NetworkObjectId, _currentLocalContactLeft, _currentLocalContactRight, _leftHandGripping, _rightHandGripping);
-                    }
-                }
-                else
-                {
-                    if (target.TryAttachCarrier(OwnerClientId, transform, _movement, _currentLocalContactLeft, _currentLocalContactRight, _leftHandGripping, _rightHandGripping, out int socketIndex))
-                    {
-                        OnGrabSuccessful(target, socketIndex);
-                    }
-                }
+                if (!target.IsSpawned) { ReleaseCarryState(); return; }
+                _grabPending = true;
+                _grabRequestId++;
+                _grabRequestedAt = Time.unscaledTime;
+                RequestGrabServerRpc(_grabRequestId, target.NetworkObjectId, _currentLocalContactLeft, _currentLocalContactRight,
+                    _currentLocalRotationLeft, _currentLocalRotationRight, _leftHandGripping, _rightHandGripping);
             }
-            else
+            else if (target.TryAttachCarrier(OwnerClientId, transform, _movement, _currentLocalContactLeft,
+                _currentLocalContactRight, _leftHandGripping, _rightHandGripping, out int socketIndex)) OnGrabSuccessful(target, socketIndex);
+            else ReleaseCarryState();
+        }
+
+        private static bool FindSurfaceContact(CarryableObject target, Vector3 point, Vector3 normal,
+            Vector3 reference, out Vector3 contact, out Vector3 surfaceNormal)
+        {
+            contact = point; surfaceNormal = Vector3.up;
+            Collider[] colliders = target.GetComponentsInChildren<Collider>(true);
+            float nearest = float.MaxValue; bool found = false;
+            for (int i = 0; i < colliders.Length; i++)
             {
-                // Already attached: sync the newly added hand state
-                SyncCarrierHandState();
+                Collider col = colliders[i];
+                if (col == null || !col.enabled || col.isTrigger || !col.gameObject.activeInHierarchy) continue;
+                Vector3 outward = normal.sqrMagnitude > .001f ? normal.normalized : (reference - col.bounds.center).normalized;
+                if (outward.sqrMagnitude < .001f) outward = Vector3.up;
+                float distance = col.bounds.size.magnitude + .2f;
+                if (!col.Raycast(new Ray(point + outward * distance, -outward), out RaycastHit hit, distance * 2f))
+                {
+                    Vector3 toward = point - reference;
+                    if (toward.sqrMagnitude < .001f) toward = col.bounds.center - reference;
+                    if (!col.Raycast(new Ray(reference, toward.normalized), out hit, toward.magnitude + distance)) continue;
+                }
+                float score = (hit.point - point).sqrMagnitude;
+                if (score >= nearest) continue;
+                nearest = score; contact = hit.point; surfaceNormal = hit.normal; found = true;
             }
+            return found;
         }
 
         private void SyncCarrierHandState()
         {
             if (_currentCarryable == null) return;
-
-            bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned);
-            if (isNetworked)
-            {
-                SyncHandStateServerRpc(_currentLocalContactLeft, _currentLocalContactRight, _leftHandGripping, _rightHandGripping);
-            }
-            else
-            {
-                _currentCarryable.UpdateCarrierHandState(OwnerClientId, _currentLocalContactLeft, _currentLocalContactRight, _leftHandGripping, _rightHandGripping);
-            }
+            if (IsNetworked) SyncHandStateServerRpc(_currentLocalContactLeft, _currentLocalContactRight,
+                _currentLocalRotationLeft, _currentLocalRotationRight, _leftHandGripping, _rightHandGripping);
+            else _currentCarryable.UpdateCarrierHandState(OwnerClientId, _currentLocalContactLeft,
+                _currentLocalContactRight, _leftHandGripping, _rightHandGripping);
         }
 
         /// <summary>
@@ -775,9 +737,11 @@ namespace CoopGame.CarrySystem
                 CarryableObject carryable = validHit.collider.GetComponentInParent<CarryableObject>();
                 if (carryable == null) carryable = validHit.collider.GetComponent<CarryableObject>();
 
-                if (carryable != null && carryable.CanBeCarried)
+                if (carryable != null && (carryable.CanBeCarried || carryable == _currentCarryable))
                 {
-                    Vector3 playerChest = transform.position + Vector3.up * 1.0f;
+            GetArmGeometry(true, out Vector3 aimShoulderL, out _);
+            GetArmGeometry(false, out Vector3 aimShoulderR, out _);
+            Vector3 playerChest = (aimShoulderL + aimShoulderR) * .5f;
                     float distToHit = Vector3.Distance(playerChest, validHit.point);
                     float distToBounds = Vector3.Distance(playerChest, validHit.collider.bounds.ClosestPoint(playerChest));
                     float effectiveDist = Mathf.Min(distToHit, distToBounds);
@@ -805,6 +769,7 @@ namespace CoopGame.CarrySystem
 
                         _lastAimLeftPoint = leftAimPoint;
                         _lastAimRightPoint = rightAimPoint;
+                        _lastAimNormal = validHit.normal;
 
                         if (!_wasAimingAtReachable)
                         {
@@ -829,7 +794,7 @@ namespace CoopGame.CarrySystem
             {
                 _leftMarker.gameObject.SetActive(true);
                 _leftMarker.position = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
-                _leftMarker.rotation = Quaternion.FromToRotation(Vector3.up, _currentCarryable.transform.up);
+                _leftMarker.rotation = Quaternion.FromToRotation(Vector3.up, _currentCarryable.transform.rotation * _currentLocalRotationLeft * Vector3.forward);
             }
             else if (reachableHit)
             {
@@ -854,7 +819,7 @@ namespace CoopGame.CarrySystem
             {
                 _rightMarker.gameObject.SetActive(true);
                 _rightMarker.position = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
-                _rightMarker.rotation = Quaternion.FromToRotation(Vector3.up, _currentCarryable.transform.up);
+                _rightMarker.rotation = Quaternion.FromToRotation(Vector3.up, _currentCarryable.transform.rotation * _currentLocalRotationRight * Vector3.forward);
             }
             else if (reachableHit)
             {
@@ -955,9 +920,11 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        private void TryGrabNearbyObjectSingleHand(bool isLeft)
+        private CarryableObject FindNearbyCarryable()
         {
-            Vector3 chestPos = transform.position + Vector3.up * 1.0f;
+            GetArmGeometry(true, out Vector3 nearbyShoulderL, out _);
+            GetArmGeometry(false, out Vector3 nearbyShoulderR, out _);
+            Vector3 chestPos = (nearbyShoulderL + nearbyShoulderR) * .5f;
             int colliderCount = Physics.OverlapSphereNonAlloc(chestPos, _grabContactDistance,
                 _nearbyColliders, _scanLayers, QueryTriggerInteraction.Ignore);
 
@@ -974,8 +941,8 @@ namespace CoopGame.CarrySystem
                 if (carryable == null) carryable = col.GetComponent<CarryableObject>();
                 if (carryable == null || !carryable.CanBeCarried) continue;
 
-                Vector3 closestPoint = (col is MeshCollider mc && !mc.convex) 
-                    ? col.bounds.ClosestPoint(chestPos) 
+                Vector3 closestPoint = (col is MeshCollider mc && !mc.convex)
+                    ? col.bounds.ClosestPoint(chestPos)
                     : col.ClosestPoint(chestPos);
                 Vector3 toObject = (closestPoint - chestPos);
                 float distanceSqr = toObject.sqrMagnitude;
@@ -997,301 +964,346 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            if (closestCarryable != null)
+            return closestCarryable;
+        }
+
+        // External callers queue intent; collider queries execute in FixedUpdate.
+        public void InitiateGrab(CarryableObject target) => InitiateGrab(target, true, false);
+        public void InitiateGrab(CarryableObject target, bool leftActive, bool rightActive)
+        {
+            if (!HasLocalInput || target == null || _releasePending || _grabPending ||
+                (_currentCarryable != null && _currentCarryable != target)) return;
+            _requestedCargo = target;
+            _requestedHands |= (byte)((leftActive ? 1 : 0) | (rightActive ? 2 : 0));
+        }
+        public void TryGrabNearbyObject() => TryGrabNearbyObject(true, false);
+        public void TryGrabNearbyObject(bool leftActive, bool rightActive)
+        {
+            if (!HasLocalInput) return;
+            _pendingToggleMask |= (byte)((leftActive ? 1 : 0) | (rightActive ? 2 : 0));
+        }
+
+        private void LateUpdate()
+        {
+            if (_procArms != null && _currentCarryable != null && IsCarrying) return;
+            if (HasLocalInput) UpdateVisualHands(_currentHoldHeight);
+            else UpdateVisualHandsProxy();
+        }
+
+        // Called again by the arm solver after interpolated body motion, so both
+        // wrists consume the cargo pose rendered in this exact frame.
+        public void RefreshCarryHandTargets()
+        {
+            if (_currentCarryable == null || !IsCarrying) return;
+            if (_wallClimb != null && _wallClimb.IsClimbing) return;
+            Transform cargo = _currentCarryable.transform;
+            if (LeftHandGripping)
+                ApplyHandTarget(true, cargo.TransformPoint(_currentLocalContactLeft), cargo.rotation * _currentLocalRotationLeft);
+            else RelaxFreeHand(true);
+            if (RightHandGripping)
+                ApplyHandTarget(false, cargo.TransformPoint(_currentLocalContactRight), cargo.rotation * _currentLocalRotationRight);
+            else RelaxFreeHand(false);
+        }
+
+        private void ApplyHandTarget(bool left, Vector3 position, Quaternion rotation)
+        {
+            Transform hand = left ? _leftHand : _rightHand;
+            if (hand != null) hand.SetPositionAndRotation(position, rotation);
+            if (_procArms != null)
             {
-                GrabSingleHand(closestCarryable, isLeft);
+                if (left) _procArms.SetLeftHandTarget(position, rotation, 1f, true);
+                else _procArms.SetRightHandTarget(position, rotation, 1f, true);
+            }
+            Transform marker = left ? _leftMarker : _rightMarker;
+            if (HasLocalInput && marker != null)
+            {
+                Vector3 normal = rotation * Vector3.forward;
+                marker.gameObject.SetActive(true);
+                marker.SetPositionAndRotation(position + normal * .012f, Quaternion.FromToRotation(Vector3.up, normal));
             }
         }
 
-        // Backward compatibility overloads
-        public void InitiateGrab(CarryableObject target) => GrabSingleHand(target, isLeft: true);
-        public void InitiateGrab(CarryableObject target, bool leftActive, bool rightActive)
+        private void RelaxFreeHand(bool left)
         {
-            if (leftActive) GrabSingleHand(target, isLeft: true);
-            if (rightActive) GrabSingleHand(target, isLeft: false);
-        }
-        public void TryGrabNearbyObject() => TryGrabNearbyObjectSingleHand(isLeft: true);
-        public void TryGrabNearbyObject(bool leftActive, bool rightActive)
-        {
-            if (leftActive) TryGrabNearbyObjectSingleHand(isLeft: true);
-            if (rightActive) TryGrabNearbyObjectSingleHand(isLeft: false);
+            Transform hand = left ? _leftHand : _rightHand;
+            if (hand == null) return;
+            bool reaching = left ? LeftHandReaching : RightHandReaching;
+            Vector3 rest = _procArms != null ? (left ? ProceduralPlayerArms.LeftHandRestLocal : ProceduralPlayerArms.RightHandRestLocal)
+                : (left ? _leftHandRest : _rightHandRest);
+            Vector3 local = reaching ? new Vector3(left ? -.25f : .25f, HasLocalInput ? _currentHoldHeight : _netHoldHeight.Value, .5f) : rest;
+            hand.localPosition = Vector3.Lerp(hand.localPosition, local, 1f - Mathf.Exp(-18f * Time.deltaTime));
+            if (_procArms == null) return;
+            if (reaching)
+            {
+                if (left) _procArms.SetLeftHandTarget(hand.position, Quaternion.identity, .9f, false);
+                else _procArms.SetRightHandTarget(hand.position, Quaternion.identity, .9f, false);
+            }
+            else if (left) _procArms.LeftWeight = Mathf.MoveTowards(_procArms.LeftWeight, 0f, Time.deltaTime * 10f);
+            else _procArms.RightWeight = Mathf.MoveTowards(_procArms.RightWeight, 0f, Time.deltaTime * 10f);
         }
 
         private void UpdateVisualHands(float currentHeight)
         {
-            if (_leftHand == null || _rightHand == null) return;
-            if (_wallClimb != null && _wallClimb.IsClimbing) return;
-
-            // When actively carrying an object, attach hands firmly to the object's contact points
-            if (_currentCarryable != null)
-            {
-                Vector3 bodyForward = _hasCarryFacing ? _carryFacing : transform.forward;
-                bodyForward.y = 0f;
-                if (bodyForward.sqrMagnitude < 0.01f) bodyForward = transform.forward;
-                bodyForward.Normalize();
-                Vector3 bodyRight = Vector3.Cross(Vector3.up, bodyForward).normalized;
-                Vector3 handFwd = (bodyForward + Vector3.up * 0.12f).normalized;
-                Quaternion leftRot = Quaternion.LookRotation(-bodyRight, handFwd);
-                Quaternion rightRot = Quaternion.LookRotation(bodyRight, handFwd);
-
-                Vector3 chestPos = transform.position + Vector3.up * 1.25f;
-                Vector3 leftShoulder = chestPos - bodyRight * 0.18f;
-                Vector3 rightShoulder = chestPos + bodyRight * 0.18f;
-                const float maxArmReach = 0.44f;
-
-                // LEFT HAND:
-                if (_leftHandGripping)
-                {
-                    // Lock directly to the contact point on the object, clamped to physical arm reach
-                    Vector3 worldLeft = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
-                    Vector3 toHandL = worldLeft - leftShoulder;
-                    if (toHandL.magnitude > maxArmReach)
-                    {
-                        worldLeft = leftShoulder + toHandL.normalized * maxArmReach;
-                    }
-
-                    _leftHand.position = worldLeft;
-                    _leftHand.rotation = leftRot;
-
-                    if (_procArms != null)
-                    {
-                        _procArms.SetLeftHandTarget(worldLeft, leftRot, 1.0f, true);
-                    }
-                }
-
-                // RIGHT HAND:
-                if (_rightHandGripping)
-                {
-                    // Lock directly to the contact point on the object, clamped to physical arm reach
-                    Vector3 worldRight = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
-                    Vector3 toHandR = worldRight - rightShoulder;
-                    if (toHandR.magnitude > maxArmReach)
-                    {
-                        worldRight = rightShoulder + toHandR.normalized * maxArmReach;
-                    }
-
-                    _rightHand.position = worldRight;
-                    _rightHand.rotation = rightRot;
-
-                    if (_procArms != null)
-                    {
-                        _procArms.SetRightHandTarget(worldRight, rightRot, 1.0f, true);
-                    }
-                }
-
-                // Wind-up animation when charging a throw
-                if (_isChargingThrow)
-                {
-                    float chargePull = _currentThrowCharge * 0.25f;
-                    Vector3 camFwd = (_cameraController != null) ? _cameraController.HorizontalForward : transform.forward;
-                    _leftHand.position -= camFwd * chargePull;
-                    _rightHand.position -= camFwd * chargePull;
-                }
-                return;
-            }
-
-            // When not carrying, Wallclimb drives reaching, pitch tracking, and resting
+            if (_currentCarryable != null && IsCarrying) { RefreshCarryHandTargets(); return; }
             if (_wallClimb != null) return;
+            RelaxFreeHand(true);
+            RelaxFreeHand(false);
+        }
 
-            // Standalone fallback if Wallclimb is not attached:
-            bool leftClick = _inputReader.GrabLeftHeld || _inputReader.InteractHeld;
-            bool rightClick = _inputReader.GrabRightHeld || _inputReader.InteractHeld;
-            Vector3 restL = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
-            Vector3 restR = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
+        private void GetArmGeometry(bool left, out Vector3 shoulder, out float reach)
+        {
+            if (_procArms != null && _procArms.TryGetCarryPhysicsGeometry(left, out shoulder, out reach)) return;
+            shoulder = transform.TransformPoint(new Vector3(left ? -.18f : .18f, 1.25f, 0f));
+            reach = .5f;
+        }
 
-            if (leftClick && _canAttemptGrab)
-            {
-                Vector3 targetLeftPos = new Vector3(-0.25f, currentHeight, 0.75f);
-                _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 18f);
-                if (_procArms != null) _procArms.SetLeftHandTarget(_leftHand.position, Quaternion.identity, 0.9f, false);
-            }
-            else
-            {
-                _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, restL, Time.deltaTime * 14f);
-                if (_procArms != null) _procArms.LeftWeight = Mathf.MoveTowards(_procArms.LeftWeight, 0f, Time.deltaTime * 10f);
-            }
+        public bool TryGetCarrySupportTargets(float height, Vector3 heading, out Vector3 left, out Vector3 right)
+        {
+            GetArmGeometry(true, out Vector3 shoulderL, out float reachL);
+            GetArmGeometry(false, out Vector3 shoulderR, out float reachR);
+            heading.y = 0f;
+            heading = heading.sqrMagnitude > .001f ? heading.normalized : transform.forward;
+            float footY = _characterController != null
+                ? transform.TransformPoint(_characterController.center - Vector3.up * (_characterController.height * .5f)).y
+                : transform.position.y;
+            GetBodyClearance(out Vector3 bodyCenter, out float bodyRadius);
+            bool leftValid = TryBuildSupportTarget(shoulderL, reachL, heading, footY + height, bodyCenter, bodyRadius, out left);
+            bool rightValid = TryBuildSupportTarget(shoulderR, reachR, heading, footY + height, bodyCenter, bodyRadius, out right);
+            return leftValid && rightValid;
+        }
 
-            if (rightClick && _canAttemptGrab)
+        private void GetBodyClearance(out Vector3 center, out float radius)
+        {
+            Vector3 scale = transform.lossyScale;
+            float horizontalScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+            center = _characterController != null ? transform.TransformPoint(_characterController.center) : transform.position;
+            radius = _characterController != null
+                ? (_characterController.radius + _characterController.skinWidth) * horizontalScale + .015f
+                : .35f;
+        }
+
+        private static bool TryBuildSupportTarget(Vector3 shoulder, float reach, Vector3 heading, float desiredY,
+            Vector3 bodyCenter, float bodyRadius, out Vector3 target)
+        {
+            Vector3 offset = shoulder - bodyCenter;
+            offset.y = 0f;
+            float alongHeading = Vector3.Dot(offset, heading);
+            float lateralSquared = Mathf.Max(0f, offset.sqrMagnitude - alongHeading * alongHeading);
+            float minimumForward = Mathf.Max(.05f,
+                Mathf.Sqrt(Mathf.Max(0f, bodyRadius * bodyRadius - lateralSquared)) - alongHeading);
+            float maximumReach = reach * .94f;
+            target = shoulder + heading * minimumForward;
+            if (minimumForward > maximumReach) return false;
+
+            float forwardDistance = Mathf.Clamp(reach * .65f, minimumForward, maximumReach);
+            float verticalReach = Mathf.Sqrt(Mathf.Max(0f, maximumReach * maximumReach - forwardDistance * forwardDistance));
+            target = shoulder + heading * forwardDistance;
+            // A low requested height must not shorten forward clearance and pull
+            // the contact into the torso. Clamp height within the remaining reach.
+            target.y = Mathf.Clamp(desiredY, shoulder.y - verticalReach, shoulder.y + verticalReach);
+            return true;
+        }
+
+        private float GripOverreach(bool left)
+        {
+            GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            Vector3 contact = GetPhysicalContact(left);
+            return Vector3.Distance(shoulder, contact) - reach;
+        }
+
+        /// <summary>FixedUpdate movement constraint; wall collisions are still resolved by CharacterController.Move.</summary>
+        public Vector3 ConstrainCarryDisplacement(Vector3 displacement)
+        {
+            if (_currentCarryable == null || !IsCarrying || !HasLocalInput) return displacement;
+            Vector3 original = displacement;
+            for (int pass = 0; pass < 3; pass++)
             {
-                Vector3 targetRightPos = new Vector3(0.25f, currentHeight, 0.75f);
-                _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 18f);
-                if (_procArms != null) _procArms.SetRightHandTarget(_rightHand.position, Quaternion.identity, 0.9f, false);
+                if (_leftHandGripping) ConstrainHand(true, ref displacement);
+                if (_rightHandGripping) ConstrainHand(false, ref displacement);
+                ConstrainBodyOverlap(ref displacement);
             }
-            else
+            Vector3 correction = displacement - original;
+            correction.y = 0f;
+            float requestedHorizontal = new Vector2(original.x, original.z).magnitude;
+            correction = Vector3.ClampMagnitude(correction, requestedHorizontal + 6f * Time.fixedDeltaTime);
+            return original + correction;
+        }
+
+        private void ConstrainHand(bool left, ref Vector3 displacement)
+        {
+            GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            Vector3 anchor = GetPhysicalContact(left);
+            Vector3 proposed = shoulder + displacement;
+            float vertical = proposed.y - anchor.y;
+            float horizontalReach = Mathf.Sqrt(Mathf.Max(.0025f, reach * reach * .96f - vertical * vertical));
+            Vector3 delta = proposed - anchor;
+            delta.y = 0f;
+            if (delta.sqrMagnitude > horizontalReach * horizontalReach)
+                displacement += Vector3.ClampMagnitude(delta, horizontalReach) - delta;
+        }
+
+        private void ConstrainBodyOverlap(ref Vector3 displacement)
+        {
+            if (_bodyCapsule == null || !_bodyCapsule.enabled || _currentCargoColliders == null) return;
+            Transform cargo = _currentCarryable.transform;
+            Quaternion poseCorrection = _currentCargoRigidbody != null
+                ? _currentCargoRigidbody.rotation * Quaternion.Inverse(cargo.rotation) : Quaternion.identity;
+            Vector3 cargoPosition = _currentCargoRigidbody != null ? _currentCargoRigidbody.position : cargo.position;
+            for (int i = 0; i < _currentCargoColliders.Length; i++)
             {
-                _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, restR, Time.deltaTime * 14f);
-                if (_procArms != null) _procArms.RightWeight = Mathf.MoveTowards(_procArms.RightWeight, 0f, Time.deltaTime * 10f);
+                Collider collider = _currentCargoColliders[i];
+                if (collider == null || !collider.enabled || collider.isTrigger) continue;
+                Vector3 colliderPosition = cargoPosition + poseCorrection * (collider.transform.position - cargo.position);
+                Quaternion colliderRotation = poseCorrection * collider.transform.rotation;
+                if (!Physics.ComputePenetration(_bodyCapsule, transform.position + displacement, transform.rotation,
+                    collider, colliderPosition, colliderRotation, out Vector3 direction, out float depth)) continue;
+
+                // Use the finite collider volume, including top grips and rotated
+                // crates. CharacterController.Move resolves floors and overhead hits.
+                Vector3 horizontal = new Vector3(direction.x, 0f, direction.z);
+                float horizontalLength = horizontal.magnitude;
+                if (horizontalLength > .15f)
+                    displacement += horizontal / horizontalLength * ((depth + .01f) / horizontalLength);
             }
         }
 
         /// <summary>
         /// Animates procedural hands for remote proxy players across the network.
-        /// Replicates reaches, box grabbing, dynamic vertical lifting, and throw wind-ups so everyone sees natural physics gestures.
+        /// Uses replicated cargo-local contacts for remote palms and free-hand reaches.
         /// </summary>
         private void UpdateVisualHandsProxy()
         {
-            if (_leftHand == null || _rightHand == null) return;
-
-            // Ensure carried object is resolved if NetworkVariable indicates an active carry
-            if (_currentCarryable == null && _netCarriedObjectId.Value != 0)
-            {
-                ResolveCarriedObject(_netCarriedObjectId.Value);
-            }
-
-            byte mask = _netHandState.Value;
-            bool leftGrip = (mask & (1 << 0)) != 0;
-            bool rightGrip = (mask & (1 << 1)) != 0;
-            bool leftReach = (mask & (1 << 2)) != 0;
-            bool rightReach = (mask & (1 << 3)) != 0;
-            bool chargingThrow = (mask & (1 << 4)) != 0;
-
-            float remoteHoldHeight = _netHoldHeight.Value;
-
-            Vector3 targetLeftPos;
-            Vector3 targetRightPos;
-
-            Vector3 handFwd = (transform.forward + Vector3.up * 0.12f).normalized;
-            Quaternion leftRot = Quaternion.LookRotation(-transform.right, handFwd);
-            Quaternion rightRot = Quaternion.LookRotation(transform.right, handFwd);
-
-            // Left Hand:
-            if (leftGrip && _currentCarryable != null)
-            {
-                Vector3 objPos = _currentCarryable.transform.position;
-                Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
-                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 0.44f);
-                Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
-                targetLeftPos = forwardNorm * reachDist + new Vector3(-0.25f, 0f, 0f);
-                _leftHand.rotation = leftRot;
-            }
-            else if (leftReach || leftGrip)
-            {
-                // Naturally tracks remote player's look pitch/height up and down
-                targetLeftPos = new Vector3(-0.25f, remoteHoldHeight, 0.75f);
-            }
-            else
-            {
-                targetLeftPos = _leftHandRest;
-            }
-
-            // Right Hand:
-            if (rightGrip && _currentCarryable != null)
-            {
-                Vector3 objPos = _currentCarryable.transform.position;
-                Vector3 toObjLocal = transform.InverseTransformPoint(objPos);
-                float reachDist = Mathf.Clamp(toObjLocal.magnitude, 0.35f, 0.44f);
-                Vector3 forwardNorm = toObjLocal.sqrMagnitude > 0.001f ? toObjLocal.normalized : Vector3.forward;
-                targetRightPos = forwardNorm * reachDist + new Vector3(0.25f, 0f, 0f);
-                _rightHand.rotation = rightRot;
-            }
-            else if (rightReach || rightGrip)
-            {
-                // Naturally tracks remote player's look pitch/height up and down
-                targetRightPos = new Vector3(0.25f, remoteHoldHeight, 0.75f);
-            }
-            else
-            {
-                targetRightPos = _rightHandRest;
-            }
-
-            if (chargingThrow)
-            {
-                targetLeftPos += new Vector3(0f, -0.08f, -0.2f);
-                targetRightPos += new Vector3(0f, -0.08f, -0.2f);
-            }
-
-            _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, targetLeftPos, Time.deltaTime * 20f);
-            _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, targetRightPos, Time.deltaTime * 20f);
-
-            if (_procArms != null)
-            {
-                if (leftGrip || leftReach)
-                {
-                    _procArms.SetLeftHandTarget(_leftHand.position, leftRot, 1.0f, leftGrip);
-                }
-                if (rightGrip || rightReach)
-                {
-                    _procArms.SetRightHandTarget(_rightHand.position, rightRot, 1.0f, rightGrip);
-                }
-            }
+            if (_currentCarryable != null && IsCarrying) { RefreshCarryHandTargets(); return; }
+            if (_wallClimb != null && _wallClimb.IsClimbing) return;
+            // Wallclimb owns its own reaching pose. Do not overwrite it.
+            if (_wallClimb != null) return;
+            RelaxFreeHand(true);
+            RelaxFreeHand(false);
         }
+
+        private Vector3 GetPhysicalContact(bool left)
+        {
+            Vector3 local = left ? _currentLocalContactLeft : _currentLocalContactRight;
+            if (_currentCargoRigidbody == null) return _currentCarryable.transform.TransformPoint(local);
+            return _currentCargoRigidbody.position + _currentCargoRigidbody.rotation * Vector3.Scale(local, _currentCarryable.transform.lossyScale);
+        }
+
+        private static bool Finite(Quaternion q) => float.IsFinite(q.x) && float.IsFinite(q.y) && float.IsFinite(q.z) && float.IsFinite(q.w) &&
+            q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w > .0001f;
 
         private static bool Finite(Vector3 v) => float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
 
         #region Server RPCs
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
-        private void RequestGrabServerRpc(ulong targetNetworkObjectId, Vector3 localContactLeft, Vector3 localContactRight, bool leftActive, bool rightActive)
+        private void RequestGrabServerRpc(uint requestId, ulong id, Vector3 left, Vector3 right, Quaternion leftRot, Quaternion rightRot, bool leftActive, bool rightActive)
         {
-            if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out NetworkObject netObj))
+            if (_pendingServerGripKind != 0) { NotifyGrabResultClientRpc(requestId, false, default); return; }
+            _pendingServerRequestId = requestId;
+            _pendingServerGrip = new CargoGripState { CargoId = id, LeftPoint = left, RightPoint = right,
+                LeftRotation = leftRot, RightRotation = rightRot, Hands = (byte)((leftActive ? 1 : 0) | (rightActive ? 2 : 0)) };
+            _pendingServerGripKind = 1;
+        }
+
+        private void ProcessServerGrab(CargoGripState request)
+        {
+            bool leftActive = (request.Hands & 1) != 0, rightActive = (request.Hands & 2) != 0;
+            Vector3 left = request.LeftPoint, right = request.RightPoint;
+            Quaternion leftRot = request.LeftRotation, rightRot = request.RightRotation;
+            if (_currentCarryable != null || (!leftActive && !rightActive) ||
+                !NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(request.CargoId, out NetworkObject obj))
+            { NotifyGrabResultClientRpc(_pendingServerRequestId, false, default); return; }
+            CarryableObject cargo = obj.GetComponent<CarryableObject>();
+            if (cargo == null || !cargo.CanBeCarried || (_stamina != null && _stamina.IsExhausted) ||
+                !ValidateContact(cargo, leftActive, ref left, ref leftRot) || !ValidateContact(cargo, rightActive, ref right, ref rightRot) ||
+                !cargo.TryAttachCarrier(OwnerClientId, transform, _movement, left, right, leftActive, rightActive, out int socket))
+            { NotifyGrabResultClientRpc(_pendingServerRequestId, false, default); return; }
+            PublishGrip(cargo, socket, left, right, leftRot, rightRot, leftActive, rightActive);
+            NotifyGrabResultClientRpc(_pendingServerRequestId, true, _netGripState.Value);
+        }
+
+        private bool ValidateContact(CarryableObject cargo, bool active, ref Vector3 local, ref Quaternion rotation)
+        {
+            if (!active) { local = Vector3.zero; rotation = Quaternion.identity; return true; }
+            if (!Finite(local) || !Finite(rotation)) return false;
+            Vector3 point = cargo.transform.TransformPoint(local);
+            GetArmGeometry(true, out Vector3 shoulderL, out _);
+            GetArmGeometry(false, out Vector3 shoulderR, out _);
+            Vector3 chest = (shoulderL + shoulderR) * .5f;
+            if (Vector3.Distance(chest, point) > _grabContactDistance + .6f) return false;
+            Quaternion worldRot = cargo.transform.rotation * rotation.normalized;
+            if (!FindSurfaceContact(cargo, point, worldRot * Vector3.forward, chest, out Vector3 surface, out Vector3 normal) ||
+                Vector3.Distance(point, surface) > .15f) return false;
+            Vector3 fingers = Vector3.ProjectOnPlane(worldRot * Vector3.up, normal);
+            if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(Vector3.up, normal);
+            if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(Vector3.forward, normal);
+            local = cargo.transform.InverseTransformPoint(surface);
+            rotation = Quaternion.Inverse(cargo.transform.rotation) * Quaternion.LookRotation(normal, fingers.normalized);
+            return true;
+        }
+
+        private void PublishGrip(CarryableObject cargo, int socket, Vector3 left, Vector3 right, Quaternion leftRot, Quaternion rightRot, bool leftActive, bool rightActive)
+        {
+            _netGripState.Value = new CargoGripState
             {
-                return;
-            }
-
-            CarryableObject carryable = netObj.GetComponent<CarryableObject>();
-            if (carryable == null || !carryable.CanBeCarried || !Finite(localContactLeft) || !Finite(localContactRight)) return;
-            localContactLeft = Vector3.ClampMagnitude(localContactLeft, 2f);
-            localContactRight = Vector3.ClampMagnitude(localContactRight, 2f);
-
-            Collider col = carryable.GetComponentInChildren<Collider>();
-            float dist = (col != null) 
-                ? Vector3.Distance(transform.position, col.bounds.ClosestPoint(transform.position))
-                : Vector3.Distance(transform.position, carryable.transform.position);
-
-            // Tightened grab distance check with generous latency margin (max 2.2m instead of 7.0m)
-            if (dist > _grabContactDistance + 0.6f) return;
-
-            if (carryable.TryAttachCarrier(OwnerClientId, transform, _movement, localContactLeft, localContactRight, leftActive, rightActive, out int socketIndex))
-            {
-                _netCarriedObjectId.Value = targetNetworkObjectId;
-                NotifyGrabResultClientRpc(targetNetworkObjectId, socketIndex, true);
-            }
+                Attached = true, Revision = ++_gripRevision, CargoId = cargo.NetworkObjectId, SocketIndex = socket,
+                Hands = (byte)((leftActive ? 1 : 0) | (rightActive ? 2 : 0)),
+                LeftPoint = left, RightPoint = right, LeftRotation = leftRot, RightRotation = rightRot
+            };
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
-        private void SyncHandStateServerRpc(Vector3 localContactLeft, Vector3 localContactRight, bool leftActive, bool rightActive)
+        private void SyncHandStateServerRpc(Vector3 left, Vector3 right, Quaternion leftRot, Quaternion rightRot, bool leftActive, bool rightActive)
         {
-            if (_currentCarryable != null)
-            {
-                if (!Finite(localContactLeft) || !Finite(localContactRight)) return;
-                _currentCarryable.UpdateCarrierHandState(OwnerClientId, Vector3.ClampMagnitude(localContactLeft, 2f), Vector3.ClampMagnitude(localContactRight, 2f), leftActive, rightActive);
-            }
+            _pendingServerGrip = new CargoGripState { LeftPoint = left, RightPoint = right,
+                LeftRotation = leftRot, RightRotation = rightRot, Hands = (byte)((leftActive ? 1 : 0) | (rightActive ? 2 : 0)) };
+            _pendingServerGripKind = 2;
         }
+
+        private void ProcessServerHandChange(CargoGripState request)
+        {
+            if (_currentCarryable == null || !_currentCarryable.HasCarrier(OwnerClientId)) return;
+            bool leftActive = (request.Hands & 1) != 0, rightActive = (request.Hands & 2) != 0;
+            if (!leftActive && !rightActive) { RequestDropServerRpc(); return; }
+            Vector3 left = request.LeftPoint, right = request.RightPoint;
+            Quaternion leftRot = request.LeftRotation, rightRot = request.RightRotation;
+            CargoGripState previous = _netGripState.Value;
+            if (leftActive && (previous.Hands & 1) != 0) { left = previous.LeftPoint; leftRot = previous.LeftRotation; }
+            else if (!ValidateContact(_currentCarryable, leftActive, ref left, ref leftRot)) { RestoreGripClientRpc(previous); return; }
+            if (rightActive && (previous.Hands & 2) != 0) { right = previous.RightPoint; rightRot = previous.RightRotation; }
+            else if (!ValidateContact(_currentCarryable, rightActive, ref right, ref rightRot)) { RestoreGripClientRpc(previous); return; }
+            _currentCarryable.UpdateCarrierHandState(OwnerClientId, left, right, leftActive, rightActive);
+            PublishGrip(_currentCarryable, previous.SocketIndex, left, right, leftRot, rightRot, leftActive, rightActive);
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void RestoreGripClientRpc(CargoGripState state) => ApplyGripState(state);
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestDropServerRpc()
         {
-            if (_currentCarryable != null)
-            {
-                _currentCarryable.DetachCarrier(OwnerClientId);
-            }
-
-            _netCarriedObjectId.Value = 0;
-            NotifyDropClientRpc();
+            _pendingServerGripKind = 0;
+            if (_currentCarryable != null) _currentCarryable.DetachCarrier(OwnerClientId);
+            PublishRelease();
+            ReleaseCarryState();
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestThrowServerRpc(Vector3 linearVelocity, Vector3 angularVelocity)
         {
-            if (_currentCarryable != null)
-            {
-                if (!Finite(linearVelocity) || !Finite(angularVelocity) || !_currentCarryable.HasCarrier(OwnerClientId)) return;
-                PlayThrowClientRpc(_currentCarryable.transform.position);
-                _currentCarryable.ThrowObject(OwnerClientId, linearVelocity, angularVelocity);
-            }
-
-            _netCarriedObjectId.Value = 0;
-            NotifyDropClientRpc();
+            if (_currentCarryable == null || !Finite(linearVelocity) || !Finite(angularVelocity) || !_currentCarryable.HasCarrier(OwnerClientId)) return;
+            PlayThrowClientRpc(_currentCarryable.transform.position);
+            _currentCarryable.ThrowObject(OwnerClientId, Vector3.ClampMagnitude(linearVelocity, 25f), Vector3.ClampMagnitude(angularVelocity, 12f));
+            PublishRelease();
+            ReleaseCarryState();
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner, Delivery = RpcDelivery.Unreliable)]
-        private void StreamCarrierInputServerRpc(Vector3 worldMoveDirection, Vector3 forwardHeading, float holdHeight, bool leftActive, bool rightActive)
+        private void StreamCarrierInputServerRpc(Vector3 direction, Vector3 heading, float height)
         {
-            if (_currentCarryable != null)
-            {
-                if (!Finite(worldMoveDirection) || !Finite(forwardHeading) || !float.IsFinite(holdHeight)) return;
-                _currentCarryable.UpdateCarrierInput(OwnerClientId, Vector3.ClampMagnitude(worldMoveDirection, 1f), Vector3.ClampMagnitude(forwardHeading, 1f), Mathf.Clamp(holdHeight, .3f, 2.5f), leftActive, rightActive);
-            }
+            if (_currentCarryable == null || !Finite(direction) || !Finite(heading) || !float.IsFinite(height)) return;
+            _currentCarryable.UpdateCarrierInput(OwnerClientId, Vector3.ClampMagnitude(direction, 1f), Vector3.ClampMagnitude(heading, 1f),
+                Mathf.Clamp(height, .3f, 2.5f), LeftHandGripping, RightHandGripping);
         }
 
         #endregion
@@ -1304,25 +1316,18 @@ namespace CoopGame.CarrySystem
             CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Throw, position);
         }
 
-        [Rpc(SendTo.ClientsAndHost)]
-        private void NotifyGrabResultClientRpc(ulong targetNetworkObjectId, int socketIndex, bool success)
+        [Rpc(SendTo.Owner)]
+        private void NotifyGrabResultClientRpc(uint requestId, bool success, CargoGripState state)
         {
-            if (!success) return;
-
-            if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out NetworkObject netObj))
-            {
-                CarryableObject carryable = netObj.GetComponent<CarryableObject>();
-                if (carryable != null)
-                {
-                    OnGrabSuccessful(carryable, socketIndex);
-                }
-            }
+            if (!IsOwner || requestId != _grabRequestId) return;
+            _grabPending = false;
+            if (success) ApplyGripState(state);
+            else ReleaseCarryState();
         }
 
-        [Rpc(SendTo.ClientsAndHost)]
-        private void NotifyDropClientRpc()
+        private void PublishRelease()
         {
-            ReleaseCarryState();
+            _netGripState.Value = new CargoGripState { Revision = ++_gripRevision };
         }
 
         #endregion
@@ -1332,15 +1337,18 @@ namespace CoopGame.CarrySystem
             _currentCarryable = carryable;
             CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Lift, carryable.transform.position);
             _assignedSocketIndex = socketIndex;
-            _carryLogTimer = 0f;
+            _attachedAt = Time.time;
+            _overreachTime = 0f;
+            _currentCargoColliders = carryable.GetComponentsInChildren<Collider>(true);
+            _currentCargoRigidbody = carryable.GetComponent<Rigidbody>();
 
             if (_movement != null)
             {
-                _movement.SpeedMultiplier = 1.0f;
+                _movement.SpeedMultiplier = carryable.GetSpeedMultiplier();
             }
 
-            // Maintain physical collision between player and carried object so player cannot penetrate/walk inside
-            SetLocalCollisionIgnore(_currentCarryable, false);
+            // The torso remains solid; only auxiliary hand colliders are ignored.
+            SetLocalCollisionIgnore(_currentCarryable, true);
 
             Debug.Log($"[PlayerCarry] Client {OwnerClientId} attached to '{_currentCarryable.name}' (Socket #{socketIndex}) | Gravity: ACTIVE");
         }
@@ -1348,23 +1356,39 @@ namespace CoopGame.CarrySystem
         private void SetLocalCollisionIgnore(CarryableObject target, bool ignore)
         {
             if (target == null) return;
-            Collider[] targetColliders = target.GetComponentsInChildren<Collider>(true);
-            foreach (var pCol in _playerColliders)
+            if (ignore) { _collisionIgnorePending = true; return; }
+            if (_currentCargoColliders != null)
+                for (int i = 0; i < _currentCargoColliders.Length; i++)
+                    if (_currentCargoColliders[i] != null) _collisionRestores.Add(_currentCargoColliders[i]);
+            _currentCargoColliders = null;
+            _collisionIgnorePending = false;
+        }
+
+        private void FlushCollisionChanges()
+        {
+            for (int i = 0; i < _collisionRestores.Count; i++)
+                SetCollisionPair(_collisionRestores[i], false);
+            _collisionRestores.Clear();
+            if (!_collisionIgnorePending || _currentCargoColliders == null) return;
+            _collisionIgnorePending = false;
+            for (int i = 0; i < _currentCargoColliders.Length; i++)
+                SetCollisionPair(_currentCargoColliders[i], true);
+        }
+
+        private void SetCollisionPair(Collider cargoCollider, bool ignore)
+        {
+            if (cargoCollider == null || _playerColliders == null) return;
+            for (int i = 0; i < _playerColliders.Length; i++)
             {
-                foreach (var tCol in targetColliders)
-                {
-                    if (pCol != null && tCol != null)
-                    {
-                        Physics.IgnoreCollision(pCol, tCol, ignore);
-                    }
-                }
+                Collider playerCollider = _playerColliders[i];
+                if (playerCollider != null && !playerCollider.isTrigger && !cargoCollider.isTrigger)
+                    Physics.IgnoreCollision(playerCollider, cargoCollider,
+                        ignore && CarryableObject.ShouldIgnoreCarryCollision(playerCollider));
             }
         }
 
         private void ReleaseCarryState()
         {
-            string releasedName = (_currentCarryable != null) ? _currentCarryable.name : "Object";
-
             if (_currentCarryable != null)
             {
                 SetLocalCollisionIgnore(_currentCarryable, false);
@@ -1378,37 +1402,47 @@ namespace CoopGame.CarrySystem
             _leftHandGripping = false;
             _rightHandGripping = false;
             _currentCarryable = null;
+            _currentCargoRigidbody = null;
             _hasCarryFacing = false;
             _carryFacingTarget = Vector3.forward;
             _assignedSocketIndex = -1;
             _isChargingThrow = false;
             _currentThrowCharge = 0f;
+            _grabPending = false;
+            _overreachTime = 0f;
+            _pendingToggleMask = 0;
+            _pendingDualToggle = false;
+            _requestedCargo = null;
+            _requestedHands = 0;
             _currentLocalContactLeft = new Vector3(-0.25f, 0f, -0.35f);
             _currentLocalContactRight = new Vector3(0.25f, 0f, -0.35f);
 
-            if (_movement != null && IsOwner)
+            if (_movement != null && HasLocalInput)
             {
                 _movement.SpeedMultiplier = 1.0f;
             }
 
-            Debug.Log($"[PlayerCarry] Client {OwnerClientId} released '{releasedName}'. Returning to free PhysX gravity & momentum.");
         }
 
         public void DropForRespawn()
         {
-            if (!IsOwner || _currentCarryable == null) return;
+            if (!HasLocalInput || _releasePending || (_currentCarryable == null && !_grabPending)) return;
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned)
+            {
+                _grabRequestId++;
+                _releasePending = true;
                 RequestDropServerRpc();
+            }
             else
-                _currentCarryable.DetachCarrier(OwnerClientId);
+                _currentCarryable?.DetachCarrier(OwnerClientId);
             ReleaseCarryState();
         }
 
         public void ForcedDropFromCargo(CarryableObject cargo)
         {
             if (!IsServer || _currentCarryable != cargo) return;
-            _netCarriedObjectId.Value = 0;
-            NotifyDropClientRpc();
+            PublishRelease();
+            ReleaseCarryState();
         }
 
         private void ExecuteThrow(Vector3 camForward, Vector3 camRight)
@@ -1454,6 +1488,7 @@ namespace CoopGame.CarrySystem
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && IsSpawned);
             if (isNetworked)
             {
+                _releasePending = true;
                 RequestThrowServerRpc(finalVelocity, angularImpulse);
                 ReleaseCarryState();
             }
@@ -1513,9 +1548,9 @@ namespace CoopGame.CarrySystem
         /// </summary>
         private void EnsureDualMarkersCreated()
         {
-            Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit") 
-                               ?? Shader.Find("Universal Render Pipeline/Lit") 
-                               ?? Shader.Find("Unlit/Color") 
+            Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit")
+                               ?? Shader.Find("Universal Render Pipeline/Lit")
+                               ?? Shader.Find("Unlit/Color")
                                ?? Shader.Find("Sprites/Default");
 
             if (_markerMaterial == null && unlitShader != null)

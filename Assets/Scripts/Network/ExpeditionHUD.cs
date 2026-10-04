@@ -114,7 +114,7 @@ namespace CoopGame.Network
             {
                 int count = _mission.Cargo.CurrentCarrierCount;
                 detail = $"ลัง HP {_mission.Cargo.CurrentHP.Value}/{_mission.Cargo.MaxHP}   |   ผู้ยก {count}/4\n" +
-                    (count >= 2 ? "ยกด้วยกัน: Stamina ไม่ลด" : "หาเพื่อนช่วยยก • กดเมาส์ซ้าย/ขวาค้างจับลัง • Q โยน");
+                    (count >= 2 ? "ยกด้วยกัน: Stamina ไม่ลด • คลิกซ้ำเพื่อปล่อย" : "เมาส์ซ้าย/ขวา: จับหรือปล่อย • E สองมือ • Q โยน");
             }
             else detail = "กำลังเตรียมลัง...";
             if (_lever != null && _lever.IsLocalNear && _mission.Phase.Value < 2)

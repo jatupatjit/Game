@@ -269,6 +269,7 @@ namespace CoopGame.Player
 
             // 6. Combine and Apply Displacement to CharacterController
             Vector3 totalMovement = (_horizontalVelocity + Vector3.up * _verticalVelocity) * deltaTime;
+            if (_playerCarry != null) totalMovement = _playerCarry.ConstrainCarryDisplacement(totalMovement);
             _characterController.Move(totalMovement);
         }
 
@@ -373,6 +374,11 @@ namespace CoopGame.Player
         {
             Rigidbody rb = hit.collider.attachedRigidbody;
             if (rb == null || rb.isKinematic) return;
+
+            // The grip spring already supplies carry force. An additional body
+            // push fights that spring each step while walking into the held crate.
+            if (_playerCarry != null && _playerCarry.CurrentCarryable != null &&
+                rb.gameObject == _playerCarry.CurrentCarryable.gameObject) return;
 
             // Don't push objects below our feet to avoid affecting jump/ground stability
             if (hit.moveDirection.y < -0.3f) return;
