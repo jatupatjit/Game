@@ -104,11 +104,18 @@ namespace CoopGame.Player
         [Range(0f, 1f)]
         [SerializeField] private float _rightWeight = 0f;
 
+        [Header("Hand Grab Animations (Rigged_Hand_character)")]
+        [Tooltip("Animation clip for Left Hand grab (Armature|RightGrab in FBX) containing finger flexion")]
+        [SerializeField] private AnimationClip _leftGrabClip;
+
+        [Tooltip("Animation clip for Right Hand grab (Armature|LeftGrab in FBX) containing finger flexion")]
+        [SerializeField] private AnimationClip _rightGrabClip;
+
         [Header("Finger Grip & Fist Settings (การกำมือ)")]
-        [Tooltip("Max curl angle in degrees for Index, Middle, and Pinky fingers when gripping/lifting")]
+        [Tooltip("Max curl angle in degrees for Index, Middle, and Pinky fingers when gripping/lifting (procedural fallback)")]
         [SerializeField] private float _fingerCurlAngle = 48.0f;
 
-        [Tooltip("Max curl angle in degrees for Thumb when gripping")]
+        [Tooltip("Max curl angle in degrees for Thumb when gripping (procedural fallback)")]
         [SerializeField] private float _thumbCurlAngle = 32.0f;
 
         [Tooltip("Speed of smooth grip / fist transition")]
@@ -121,6 +128,9 @@ namespace CoopGame.Player
         // Current grip weights (0 = open hand, 1 = clenched fist)
         private float _currentLeftGrip = 0f;
         private float _currentRightGrip = 0f;
+
+        public AnimationClip LeftGrabClip { get => _leftGrabClip; set => _leftGrabClip = value; }
+        public AnimationClip RightGrabClip { get => _rightGrabClip; set => _rightGrabClip = value; }
 
         // Wrist override flags (only align wrist rotation when actively gripping surfaces)
         public bool LeftOverrideWrist { get; set; } = false;
@@ -438,6 +448,17 @@ namespace CoopGame.Player
 
             foreach (var f in _leftFingers) if (f != null) f.CacheInitialRotations();
             foreach (var f in _rightFingers) if (f != null) f.CacheInitialRotations();
+
+#if UNITY_EDITOR
+            if (_leftGrabClip == null)
+            {
+                _leftGrabClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/Animations/HandGrab_Left.anim");
+            }
+            if (_rightGrabClip == null)
+            {
+                _rightGrabClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/Animations/HandGrab_Right.anim");
+            }
+#endif
         }
 
         private FingerPhalanges CreateFingerPhalanges(Transform wrist, string keyword, bool isThumb, bool isLeft)
@@ -860,23 +881,31 @@ namespace CoopGame.Player
 
         private void ApplyFingerGrips()
         {
-            // Left Hand fingers
-            if (_leftFingers != null)
+            // 1. Left Hand: Sample custom grab animation from Rigged_Hand_character
+            if (_leftGrabClip != null && _characterVisual != null)
+            {
+                float evalTime = Mathf.Clamp01(_currentLeftGrip) * _leftGrabClip.length;
+                _leftGrabClip.SampleAnimation(_characterVisual.gameObject, evalTime);
+            }
+            else if (_leftFingers != null)
             {
                 foreach (var f in _leftFingers)
                 {
-                    if (f == null) continue;
-                    f.ApplyCurl(_currentLeftGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
+                    if (f != null) f.ApplyCurl(_currentLeftGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
                 }
             }
 
-            // Right Hand fingers
-            if (_rightFingers != null)
+            // 2. Right Hand: Sample custom grab animation from Rigged_Hand_character
+            if (_rightGrabClip != null && _characterVisual != null)
+            {
+                float evalTime = Mathf.Clamp01(_currentRightGrip) * _rightGrabClip.length;
+                _rightGrabClip.SampleAnimation(_characterVisual.gameObject, evalTime);
+            }
+            else if (_rightFingers != null)
             {
                 foreach (var f in _rightFingers)
                 {
-                    if (f == null) continue;
-                    f.ApplyCurl(_currentRightGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
+                    if (f != null) f.ApplyCurl(_currentRightGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
                 }
             }
         }

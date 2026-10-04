@@ -87,7 +87,12 @@ namespace CoopGame.Player
 #if UNITY_EDITOR
                 if (modelAsset == null)
                 {
-                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Rigged_character_.fbx");
+                    string handModelPath = "Assets/Models/Rigged_Hand_character_ (2).fbx";
+                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(handModelPath);
+                    if (modelAsset == null)
+                    {
+                        modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Rigged_character_.fbx");
+                    }
                 }
 #endif
                 if (modelAsset != null)
