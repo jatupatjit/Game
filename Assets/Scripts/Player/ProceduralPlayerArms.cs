@@ -105,10 +105,10 @@ namespace CoopGame.Player
         [SerializeField] private float _rightWeight = 0f;
 
         [Header("Hand Grab Animations (Rigged_Hand_character)")]
-        [Tooltip("Animation clip for Left Hand grab (Armature|RightGrab in FBX) containing finger flexion")]
+        [Tooltip("Finger-only clip for the player's left hand (-X): Armature|LeftGrab, rig Wrist.R")]
         [SerializeField] private AnimationClip _leftGrabClip;
 
-        [Tooltip("Animation clip for Right Hand grab (Armature|LeftGrab in FBX) containing finger flexion")]
+        [Tooltip("Finger-only clip for the player's right hand (+X): Armature|RightGrab, rig Wrist.L")]
         [SerializeField] private AnimationClip _rightGrabClip;
 
         [Header("Finger Grip & Fist Settings (การกำมือ)")]
@@ -118,8 +118,14 @@ namespace CoopGame.Player
         [Tooltip("Max curl angle in degrees for Thumb when gripping (procedural fallback)")]
         [SerializeField] private float _thumbCurlAngle = 32.0f;
 
-        [Tooltip("Speed of smooth grip / fist transition")]
-        [SerializeField] private float _gripTransitionSpeed = 14.0f;
+        [Tooltip("Seconds to fully close or open the fingers; a reversed grip continues from the current pose")]
+        [SerializeField, Min(0.01f)] private float _gripTransitionSeconds = 0.25f;
+
+        [Header("Carry Wrist Comfort")]
+        [Tooltip("Maximum wrist bend from the rig's neutral hand pose while carrying")]
+        [SerializeField, Range(0f, 60f)] private float _carryWristBendLimit = 35f;
+        [Tooltip("Maximum hand twist; part of this rotation is distributed along the forearm")]
+        [SerializeField, Range(0f, 90f)] private float _carryWristTwistLimit = 70f;
 
         // Finger joint chains (4 fingers per hand)
         private FingerPhalanges[] _leftFingers;
@@ -673,7 +679,6 @@ namespace CoopGame.Player
                 else if (_playerCarry.IsCarrying && _playerCarry.LeftHandReaching)
                 {
                     leftActive = true;
-                    leftGripping = true;
                 }
                 else if (_playerCarry.LeftHandReaching)
                 {
@@ -688,7 +693,6 @@ namespace CoopGame.Player
                 else if (_playerCarry.IsCarrying && _playerCarry.RightHandReaching)
                 {
                     rightActive = true;
-                    rightGripping = true;
                 }
                 else if (_playerCarry.RightHandReaching)
                 {
@@ -713,12 +717,6 @@ namespace CoopGame.Player
             float targetWeightR = rightActive ? _requestedRightWeight : 0.0f;
             _leftWeight = Mathf.MoveTowards(_leftWeight, targetWeightL, deltaTime * (targetWeightL > 0.5f ? 15.0f : 10.0f));
             _rightWeight = Mathf.MoveTowards(_rightWeight, targetWeightR, deltaTime * (targetWeightR > 0.5f ? 15.0f : 10.0f));
-
-            // Smooth finger grip / fist clenching
-            float targetGripL = leftGripping ? 1.0f : 0.0f;
-            float targetGripR = rightGripping ? 1.0f : 0.0f;
-            _currentLeftGrip = Mathf.MoveTowards(_currentLeftGrip, targetGripL, deltaTime * _gripTransitionSpeed);
-            _currentRightGrip = Mathf.MoveTowards(_currentRightGrip, targetGripR, deltaTime * _gripTransitionSpeed);
 
             // Sync targets if set via transform
             if (_leftTargetTransform != null)
@@ -777,7 +775,7 @@ namespace CoopGame.Player
             }
 
             // 3. Apply Anatomically Correct Finger Flexion / Fist Clench (การกำมือ)
-            ApplyFingerGrips();
+            UpdateFingerGrips(leftGripping, rightGripping, deltaTime);
         }
 
         /// <summary>
@@ -860,24 +858,61 @@ namespace CoopGame.Player
                 lowerForward = Vector3.ProjectOnPlane(transform.right, lowerDirection);
             lowerForward.Normalize();
 
+            Quaternion solvedLowerRotation = Quaternion.LookRotation(lowerForward, lowerDirection);
+            Quaternion neutralWrist = solvedLowerRotation * baseRotTip;
+            Quaternion wristRotation = neutralWrist;
+            float rotationMagnitude = Quaternion.Dot(targetRot, targetRot);
+            if (IsFinite(targetRot) && IsFinite(rotationMagnitude) && rotationMagnitude > 0.0001f)
+            {
+                wristRotation = LimitCarryWristRotation(neutralWrist, Quaternion.Normalize(targetRot), out float forearmTwist);
+                // Rotate about the forearm's length, keeping elbow and contact
+                // positions fixed while sharing pronation away from the wrist seam.
+                solvedLowerRotation = Quaternion.AngleAxis(forearmTwist, lowerDirection) * solvedLowerRotation;
+            }
+
             root.rotation = Quaternion.Slerp(restUpperRotation,
                 Quaternion.LookRotation(upperForward, upperDirection), weight);
             mid.position = Vector3.Lerp(restElbow, elbow, weight);
             mid.rotation = Quaternion.Slerp(restLowerRotation,
-                Quaternion.LookRotation(lowerForward, lowerDirection), weight);
+                solvedLowerRotation, weight);
             tip.position = Vector3.Lerp(restWrist, reachableTarget, weight);
+            tip.rotation = Quaternion.Slerp(restWristRotation, wristRotation, weight);
+        }
 
-            // An identity quaternion is a valid contact orientation. Only reject
-            // malformed input, rather than silently losing that wrist orientation.
-            float rotationMagnitude = Quaternion.Dot(targetRot, targetRot);
-            if (IsFinite(targetRot) && IsFinite(rotationMagnitude) && rotationMagnitude > 0.0001f)
-                tip.rotation = Quaternion.Slerp(restWristRotation, Quaternion.Normalize(targetRot), weight);
+        private Quaternion LimitCarryWristRotation(Quaternion neutral, Quaternion desired, out float forearmTwist)
+        {
+            // Split swing (bend) from twist around this rig's +Y hand axis.
+            // A surface-facing target can otherwise bend a horizontal arm's
+            // wrist by 90 degrees when its requested fingers point straight up.
+            Quaternion relative = Quaternion.Inverse(neutral) * desired;
+            if (relative.w < 0f)
+                relative = new Quaternion(-relative.x, -relative.y, -relative.z, -relative.w);
+            float twistLength = Mathf.Sqrt(relative.y * relative.y + relative.w * relative.w);
+            Quaternion twist = twistLength > 0.0001f
+                ? new Quaternion(0f, relative.y / twistLength, 0f, relative.w / twistLength)
+                : Quaternion.identity;
+            Quaternion swing = relative * Quaternion.Inverse(twist);
+            float twistAngle = Mathf.DeltaAngle(0f, 2f * Mathf.Atan2(twist.y, twist.w) * Mathf.Rad2Deg);
+            twistAngle = Mathf.Clamp(twistAngle, -_carryWristTwistLimit, _carryWristTwistLimit);
+            forearmTwist = twistAngle * .65f;
+            return neutral * Quaternion.RotateTowards(Quaternion.identity, swing, _carryWristBendLimit) *
+                Quaternion.AngleAxis(twistAngle, Vector3.up);
         }
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
         private static bool IsFinite(Vector3 value) => IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
         private static bool IsFinite(Quaternion value) =>
             IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z) && IsFinite(value.w);
+
+        private void UpdateFingerGrips(bool leftGripping, bool rightGripping, float deltaTime)
+        {
+            // Persistent grip states hold the final pose. Releasing or reversing
+            // a hand advances from its current pose without restarting the clip.
+            float step = Mathf.Max(0f, deltaTime) / Mathf.Max(0.01f, _gripTransitionSeconds);
+            _currentLeftGrip = Mathf.MoveTowards(_currentLeftGrip, leftGripping ? 1f : 0f, step);
+            _currentRightGrip = Mathf.MoveTowards(_currentRightGrip, rightGripping ? 1f : 0f, step);
+            ApplyFingerGrips();
+        }
 
         private void ApplyFingerGrips()
         {

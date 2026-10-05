@@ -66,33 +66,33 @@ namespace CoopGame.EditorTools
                 EditorUtility.SetDirty(playerPrefab);
             }
 
-            // 3. Open SampleScene and build UI in scene
-            string scenePath = "Assets/Scenes/SampleScene.unity";
+            // 3. Open Lobby and build UI in scene
+            string scenePath = "Assets/Scenes/Lobby.unity";
             var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
 
             var lobbyUI = Object.FindAnyObjectByType<LobbyUI>(FindObjectsInactive.Include);
             if (lobbyUI != null)
             {
                 LobbyUIBuilder.Build(lobbyUI);
-                Debug.Log("[ApplyArmReachAndUIUpdates] LobbyUI rebuilt in SampleScene.");
+                Debug.Log("[ApplyArmReachAndUIUpdates] LobbyUI rebuilt in Lobby.");
             }
 
             var pauseMenu = Object.FindAnyObjectByType<PauseMenu>(FindObjectsInactive.Include);
             if (pauseMenu != null)
             {
                 PauseMenuBuilder.Build(pauseMenu);
-                Debug.Log("[ApplyArmReachAndUIUpdates] PauseMenu rebuilt in SampleScene.");
+                Debug.Log("[ApplyArmReachAndUIUpdates] PauseMenu rebuilt in Lobby.");
             }
 
             var roomHUD = Object.FindAnyObjectByType<RoomCodeHUD>(FindObjectsInactive.Include);
             if (roomHUD != null)
             {
                 RoomCodeHUDBuilder.Build(roomHUD);
-                Debug.Log("[ApplyArmReachAndUIUpdates] RoomCodeHUD rebuilt in SampleScene.");
+                Debug.Log("[ApplyArmReachAndUIUpdates] RoomCodeHUD rebuilt in Lobby.");
             }
 
             EditorSceneManager.SaveScene(scene);
-            Debug.Log("[ApplyArmReachAndUIUpdates] SampleScene saved.");
+            Debug.Log("[ApplyArmReachAndUIUpdates] Lobby saved.");
 
             // 4. Update PauseMenu prefab in Resources
             string pausePrefabPath = "Assets/Resources/PauseMenu.prefab";

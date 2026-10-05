@@ -57,7 +57,7 @@ Transform:
   m_GameObject: {fileID: 156481079878117569}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.00033146143, y: -0.717129, z: 0.022994459}
+  m_LocalPosition: {x: -0.00033146143, y: -0.8597292, z: 0.022994459}
   m_LocalScale: {x: 1.350534, y: 1.350534, z: 1.350534}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1681,6 +1681,7 @@ GameObject:
   - component: {fileID: 4905814694848202324}
   - component: {fileID: 2140276748853158999}
   - component: {fileID: 3954370996697968747}
+  - component: {fileID: 2639176818240639460}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -2092,7 +2093,9 @@ MonoBehaviour:
   _rightGrabClip: {fileID: 7400000, guid: ea83ecead8f0e024892bf8d5f4722bdc, type: 2}
   _fingerCurlAngle: 48
   _thumbCurlAngle: 32
-  _gripTransitionSpeed: 14
+  _gripTransitionSeconds: 0.25
+  _carryWristBendLimit: 35
+  _carryWristTwistLimit: 70
 --- !u!114 &7958055699820641713
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2168,6 +2171,33 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   _strideDistance: 0.95
   _minimumInterval: 0.32
+--- !u!114 &2639176818240639460
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8343822966637116645}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 82d5db1da47324346a7d9767d11a5be9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.PlayerAppearance
+  ShowTopMostFoldoutHeaderGroup: 1
+  _faceRenderer: {fileID: 9020814185893249564}
+  _faceTextures:
+  - {fileID: 2800000, guid: c76c941f9aeb2a046b6035649213cb60, type: 3}
+  - {fileID: 2800000, guid: 9af9a671e27259847aa2f95743ea9cb8, type: 3}
+  - {fileID: 2800000, guid: 3be98375a7c7f5042be3d2af3b004fd1, type: 3}
+  - {fileID: 2800000, guid: 18fb10d30aaf0544491c4bcd44453742, type: 3}
+  - {fileID: 2800000, guid: e0b7dcd7419bc344da4ea2a7f7c7ebb1, type: 3}
+  - {fileID: 2800000, guid: 595260e38f7346243919ae081eb7b2b9, type: 3}
+  - {fileID: 2800000, guid: a2c7e5cc373374e4f92a5fa7edb09203, type: 3}
+  - {fileID: 2800000, guid: 112e0ce5e271dc541b60108e9e72c530, type: 3}
+  - {fileID: 2800000, guid: 4d3db68c212451444a2cd7b8aaa3f261, type: 3}
+  - {fileID: 2800000, guid: 4b32ce921de05014880b2364fd09a1cf, type: 3}
+  - {fileID: 2800000, guid: 5e8e28eb391bea64d8bcdc444ad5f8f0, type: 3}
+  - {fileID: 2800000, guid: 196e12beaeebbb54f9d8ad955b9571de, type: 3}
 --- !u!1 &8405232257389380476
 GameObject:
   m_ObjectHideFlags: 0
@@ -2390,7 +2420,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 8837862452300520151, guid: 8d08902b3fafb0546bc7fdefb8fbd597, type: 3}
+  - {fileID: 2100000, guid: b0d570976acfdb14f93067855a0177f4, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

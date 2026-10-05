@@ -989,7 +989,7 @@ public static class RoomCodeHUDBuilder
 [InitializeOnLoad]
 public static class AutoSceneUIInstaller
 {
-    private const string LobbyScenePath = "Assets/Scenes/SampleScene.unity";
+    private const string LobbyScenePath = "Assets/Scenes/Lobby.unity";
 
     private static bool IsLobbyScene()
     {
@@ -1047,7 +1047,7 @@ public static class AutoSceneUIInstaller
     {
         if (!IsLobbyScene())
         {
-            Debug.LogWarning("[AutoSceneUIInstaller] Lobby UI can only be built in SampleScene.");
+            Debug.LogWarning("[AutoSceneUIInstaller] Lobby UI can only be built in Lobby.");
             return;
         }
 

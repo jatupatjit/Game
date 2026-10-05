@@ -63,9 +63,9 @@ namespace CoopGame.Network
 
         private void Awake()
         {
-            // Only allow LobbyUI in SampleScene (lobby/menu scene)
+            // Only allow LobbyUI in Lobby (lobby/menu scene)
             string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            if (!string.IsNullOrEmpty(sceneName) && sceneName != "SampleScene")
+            if (!string.IsNullOrEmpty(sceneName) && sceneName != "Lobby")
             {
                 gameObject.SetActive(false);
                 Destroy(gameObject);

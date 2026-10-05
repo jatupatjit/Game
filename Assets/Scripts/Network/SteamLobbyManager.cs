@@ -683,7 +683,7 @@ namespace CoopGame.Network
             }
 
             // Let NGO finish its shutdown callbacks before replacing the persistent
-            // NetworkManager with the one authored in SampleScene.
+            // NetworkManager with the one authored in Lobby.
             yield return null;
             if (nm != null)
             {
@@ -691,7 +691,7 @@ namespace CoopGame.Network
                 yield return null;
             }
 
-            UnityEngine.SceneManagement.SceneManager.LoadScene("SampleScene");
+            UnityEngine.SceneManagement.SceneManager.LoadScene("Lobby");
             _returningToLobby = false;
         }
 

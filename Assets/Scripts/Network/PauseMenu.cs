@@ -118,7 +118,7 @@ namespace CoopGame.Network
 
         private void Update()
         {
-            if (CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (LobbyCharacterCustomizationUI.BlocksPause || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             bool escPressed = UnityEngine.InputSystem.Keyboard.current != null &&
                               UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame;
             if (!escPressed) return;
@@ -201,7 +201,7 @@ namespace CoopGame.Network
                 var nm = NetworkManager.Singleton;
                 if (nm != null && (nm.IsClient || nm.IsServer)) nm.Shutdown();
                 UnityEngine.SceneManagement.SceneManager.LoadScene(
-                    "SampleScene");
+                    "Lobby");
             }
         }
 

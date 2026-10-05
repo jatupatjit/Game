@@ -3223,6 +3223,67 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls: []
+--- !u!1 &316106825
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 316106827}
+  - component: {fileID: 316106826}
+  m_Layer: 0
+  m_Name: LobbyCharacterCustomizationUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &316106826
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 316106825}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ff67f832ec640c4bb30dea0f59084a7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Network.LobbyCharacterCustomizationUI
+  _faceTextures:
+  - {fileID: 2800000, guid: c76c941f9aeb2a046b6035649213cb60, type: 3}
+  - {fileID: 2800000, guid: 9af9a671e27259847aa2f95743ea9cb8, type: 3}
+  - {fileID: 2800000, guid: 3be98375a7c7f5042be3d2af3b004fd1, type: 3}
+  - {fileID: 2800000, guid: 18fb10d30aaf0544491c4bcd44453742, type: 3}
+  - {fileID: 2800000, guid: e0b7dcd7419bc344da4ea2a7f7c7ebb1, type: 3}
+  - {fileID: 2800000, guid: 595260e38f7346243919ae081eb7b2b9, type: 3}
+  - {fileID: 2800000, guid: a2c7e5cc373374e4f92a5fa7edb09203, type: 3}
+  - {fileID: 2800000, guid: 112e0ce5e271dc541b60108e9e72c530, type: 3}
+  - {fileID: 2800000, guid: 4d3db68c212451444a2cd7b8aaa3f261, type: 3}
+  - {fileID: 2800000, guid: 4b32ce921de05014880b2364fd09a1cf, type: 3}
+  - {fileID: 2800000, guid: 5e8e28eb391bea64d8bcdc444ad5f8f0, type: 3}
+  - {fileID: 2800000, guid: 196e12beaeebbb54f9d8ad955b9571de, type: 3}
+--- !u!224 &316106827
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 316106825}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 100, y: 100}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &317665413
 GameObject:
   m_ObjectHideFlags: 0
@@ -17910,3 +17971,4 @@ SceneRoots:
   - {fileID: 1437926205}
   - {fileID: 1483442470}
   - {fileID: 718495485}
+  - {fileID: 316106827}

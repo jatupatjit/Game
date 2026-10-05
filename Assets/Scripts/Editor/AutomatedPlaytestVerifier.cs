@@ -81,7 +81,7 @@ namespace CoopGame.EditorTools
 
         private static bool VerifyLobbySceneUi()
         {
-            const string scenePath = "Assets/Scenes/SampleScene.unity";
+            const string scenePath = "Assets/Scenes/Lobby.unity";
             Scene scene = SceneManager.GetSceneByPath(scenePath);
             bool openedForVerification = !scene.isLoaded;
             if (openedForVerification)

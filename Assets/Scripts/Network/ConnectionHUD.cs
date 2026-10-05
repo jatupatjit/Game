@@ -51,7 +51,7 @@ namespace CoopGame.Network
         {
             // Matchmaking controls belong to the lobby scene only. Level scenes have
             // their own gameplay HUD and PauseMenu, so never show a join-code fallback.
-            if (SceneManager.GetActiveScene().name != "SampleScene") return;
+            if (SceneManager.GetActiveScene().name != "Lobby") return;
 
             // Read ESC from New Input System
             bool escPressed = false;
@@ -121,14 +121,14 @@ namespace CoopGame.Network
 
         private void OnGUI()
         {
-            if (!_showHUD || SceneManager.GetActiveScene().name != "SampleScene") return;
+            if (!_showHUD || SceneManager.GetActiveScene().name != "Lobby") return;
 
             string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             NetworkManager networkManager = NetworkManager.Singleton;
             bool sessionActive = networkManager != null && (networkManager.IsClient || networkManager.IsServer || networkManager.IsHost);
 
-            // Lobby and hosting are only allowed in SampleScene. In gameplay screens (like Level01), suppress lobby HUD
-            if (sceneName != "SampleScene" && !sessionActive)
+            // Lobby and hosting are only allowed in Lobby. In gameplay screens (like Level01), suppress lobby HUD
+            if (sceneName != "Lobby" && !sessionActive)
             {
                 return;
             }

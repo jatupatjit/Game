@@ -9,11 +9,11 @@ namespace CoopGame.EditorTools
     /// <summary>Refreshes delivery assets without rebuilding the configured prefab or mission.</summary>
     public static class DeliveryZoneSetupUtility
     {
-        [MenuItem("CoopGame/Open SampleScene")]
-        public static void OpenSampleScene()
+        [MenuItem("CoopGame/Open Lobby")]
+        public static void OpenLobby()
         {
             if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
-                EditorSceneManager.OpenScene("Assets/Scenes/SampleScene.unity");
+                EditorSceneManager.OpenScene("Assets/Scenes/Lobby.unity");
         }
 
         [MenuItem("CoopGame/Setup Delivery Zone & Place in Level01")]

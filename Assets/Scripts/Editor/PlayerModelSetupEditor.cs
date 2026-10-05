@@ -17,6 +17,32 @@ public static class PlayerModelSetupEditor
         EnsurePauseMenuInCurrentScene();
     }
 
+    // Imported renderer bounds include animation padding. Bake the rest mesh
+    // when positioning the visual so that the visible soles meet the floor.
+    public static void AlignFeetToController(GameObject playerRoot)
+    {
+        var controller = playerRoot.GetComponent<CharacterController>();
+        var visual = playerRoot.transform.Find("CharacterVisual");
+        if (controller == null || visual == null) return;
+        float bottom = float.PositiveInfinity;
+        var baked = new Mesh();
+        try
+        {
+            foreach (var renderer in visual.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                baked.Clear();
+                renderer.BakeMesh(baked, true);
+                foreach (var vertex in baked.vertices)
+                    bottom = Mathf.Min(bottom, playerRoot.transform.InverseTransformPoint(
+                        renderer.transform.TransformPoint(vertex)).y);
+            }
+        }
+        finally { Object.DestroyImmediate(baked); }
+        if (float.IsInfinity(bottom) || float.IsNaN(bottom)) return;
+        float floor = controller.center.y - controller.height * 0.5f - controller.skinWidth;
+        visual.localPosition += Vector3.up * (floor - bottom);
+    }
+
     public static void EnsurePauseMenuPrefab()
     {
         string path = "Assets/Resources/PauseMenu.prefab";
@@ -144,6 +170,23 @@ public static class PlayerModelSetupEditor
                 if (rProp != null) rProp.floatValue = 0.30f;
                 if (cProp != null) cProp.vector3Value = new Vector3(0f, -0.025f, 0f);
                 soCap.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            AlignFeetToController(playerRoot);
+
+            // Rebind appearance after a manual model rebuild, preserving its catalog.
+            var appearance = playerRoot.GetComponent<PlayerAppearance>();
+            if (appearance != null)
+            {
+                foreach (var renderer in childRenderers)
+                {
+                    if (!renderer.name.StartsWith("face_", System.StringComparison.OrdinalIgnoreCase)) continue;
+                    renderer.sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/Models/Material_Char/Mat_Face.mat");
+                    var appearanceSettings = new SerializedObject(appearance);
+                    appearanceSettings.FindProperty("_faceRenderer").objectReferenceValue = renderer;
+                    appearanceSettings.ApplyModifiedPropertiesWithoutUndo();
+                    break;
+                }
             }
 
             // 3. Find SkinnedMeshRenderer (for body tinting & camera shadows)
@@ -357,8 +400,10 @@ public static class PlayerModelSetupEditor
         }
 
         Object[] allAssets = AssetDatabase.LoadAllAssetsAtPath(modelPath);
-        AnimationClip fbxRightGrab = null; // In Blender FBX, RightGrab animates Left Hand finger bones
-        AnimationClip fbxLeftGrab = null;  // In Blender FBX, LeftGrab animates Right Hand finger bones
+        // Rig labels are opposite the player's spatial sides: Wrist.R is at -X
+        // (player left), Wrist.L at +X (player right), matching LocateBones in IK.
+        AnimationClip fbxRightGrab = null; // Player right, rig L finger bones
+        AnimationClip fbxLeftGrab = null;  // Player left, rig R finger bones
 
         foreach (var a in allAssets)
         {
@@ -386,24 +431,24 @@ public static class PlayerModelSetupEditor
             AssetDatabase.CreateFolder("Assets", "Animations");
         }
 
-        // 1. Create Left Hand Grab Clip (from fbxRightGrab which animates L. finger bones)
+        // 1. Player left uses the source LeftGrab and rig R finger bones.
         string leftClipPath = "Assets/Animations/HandGrab_Left.anim";
-        if (fbxRightGrab != null)
-        {
-            leftGrabClip = CreateSanitizedFingerClip(fbxRightGrab, leftClipPath, isLeftHand: true);
-        }
-
-        // 2. Create Right Hand Grab Clip (from fbxLeftGrab which animates R. finger bones)
-        string rightClipPath = "Assets/Animations/HandGrab_Right.anim";
         if (fbxLeftGrab != null)
         {
-            rightGrabClip = CreateSanitizedFingerClip(fbxLeftGrab, rightClipPath, isLeftHand: false);
+            leftGrabClip = CreateSanitizedFingerClip(fbxLeftGrab, leftClipPath, useRigLeftBones: false);
+        }
+
+        // 2. Player right uses the source RightGrab and rig L finger bones.
+        string rightClipPath = "Assets/Animations/HandGrab_Right.anim";
+        if (fbxRightGrab != null)
+        {
+            rightGrabClip = CreateSanitizedFingerClip(fbxRightGrab, rightClipPath, useRigLeftBones: true);
         }
 
         AssetDatabase.SaveAssets();
     }
 
-    private static AnimationClip CreateSanitizedFingerClip(AnimationClip sourceClip, string targetPath, bool isLeftHand)
+    private static AnimationClip CreateSanitizedFingerClip(AnimationClip sourceClip, string targetPath, bool useRigLeftBones)
     {
         AnimationClip newClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(targetPath);
         if (newClip == null)
@@ -438,8 +483,8 @@ public static class PlayerModelSetupEditor
             if (!isFingerJoint) continue;
 
             // Make sure hand matches side
-            if (isLeftHand && (b.path.Contains(".R") || b.path.Contains("handR"))) continue;
-            if (!isLeftHand && (b.path.Contains(".L") || b.path.Contains("handL"))) continue;
+            if (useRigLeftBones && (b.path.Contains(".R") || b.path.Contains("handR"))) continue;
+            if (!useRigLeftBones && (b.path.Contains(".L") || b.path.Contains("handL"))) continue;
 
             AnimationCurve curve = AnimationUtility.GetEditorCurve(sourceClip, b);
             if (curve != null)

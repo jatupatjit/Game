@@ -248,7 +248,11 @@ namespace CoopGame.Player
             }
 
             // Apply vertical bobbing offset + ground squash offset (keeps feet on ground when squashed)
-            float squashHeightOffset = (_currentScaleY - 1.0f) * 0.5f;
+            float soleFromPivot = _characterController != null
+                ? _characterController.center.y - _characterController.height * 0.5f -
+                  _characterController.skinWidth - _baseLocalPosition.y
+                : -0.5f;
+            float squashHeightOffset = (1.0f - _currentScaleY) * soleFromPivot;
             Vector3 renderOffset = _rootTransform.InverseTransformVector(renderedPosition - _rootTransform.position);
             transform.localPosition = _baseLocalPosition + renderOffset +
                                       Vector3.up * (verticalBob + squashHeightOffset);
