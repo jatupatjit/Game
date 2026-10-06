@@ -181,6 +181,7 @@ namespace CoopGame.Player
         // Renderers & Material Property Block for tinting
         private SkinnedMeshRenderer _skinnedMeshRenderer;
         private MaterialPropertyBlock _propBlock;
+        private Animator _grabSamplingAnimator;
 
         public Transform LeftHand => _leftTargetTransform != null ? _leftTargetTransform : transform;
         public Transform RightHand => _rightTargetTransform != null ? _rightTargetTransform : transform;
@@ -916,6 +917,8 @@ namespace CoopGame.Player
 
         private void ApplyFingerGrips()
         {
+            EnsureGrabSamplingAnimator();
+
             // 1. Left Hand: Sample custom grab animation from Rigged_Hand_character
             if (_leftGrabClip != null && _characterVisual != null)
             {
@@ -943,6 +946,31 @@ namespace CoopGame.Player
                     if (f != null) f.ApplyCurl(_currentRightGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
                 }
             }
+        }
+
+        private void EnsureGrabSamplingAnimator()
+        {
+            // Editor sampling also works without an Animator, but standalone players
+            // require one on the exact root passed to SampleAnimation for non-Legacy clips.
+            if (!Application.isPlaying || _characterVisual == null ||
+                ((_leftGrabClip == null || _leftGrabClip.legacy) &&
+                 (_rightGrabClip == null || _rightGrabClip.legacy)))
+                return;
+
+            if (_grabSamplingAnimator != null && _grabSamplingAnimator.transform == _characterVisual)
+                return;
+
+            _grabSamplingAnimator = _characterVisual.GetComponent<Animator>();
+            if (_grabSamplingAnimator != null)
+                return;
+
+            // This controller-free Animator supports explicit finger sampling only.
+            // Keep it active offscreen/headless; procedural poses still run in LateUpdate.
+            // An Animator already supplied by the rig keeps its controller and settings.
+            _grabSamplingAnimator = _characterVisual.gameObject.AddComponent<Animator>();
+            _grabSamplingAnimator.applyRootMotion = false;
+            _grabSamplingAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            _grabSamplingAnimator.updateMode = AnimatorUpdateMode.Normal;
         }
 
         /// <summary>

@@ -60,7 +60,7 @@ namespace CoopGame.Network
         public static PauseMenu EnsureInstance()
         {
             if (Instance != null) return Instance;
-            PauseMenu found = FindFirstObjectByType<PauseMenu>();
+            PauseMenu found = FindAnyObjectByType<PauseMenu>();
             if (found != null) { Instance = found; return Instance; }
             GameObject prefab = Resources.Load<GameObject>("PauseMenu");
             if (prefab != null)

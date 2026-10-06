@@ -45,6 +45,7 @@ namespace CoopGame.CarrySystem
         // Cached components
         protected Rigidbody _rigidbody;
         protected Collider[] _ownColliders;
+        internal IReadOnlyList<Collider> CollisionColliders => _ownColliders;
         protected CarryableOutline _outline;
 
         public CarryableOutline Outline => _outline;
@@ -603,14 +604,10 @@ namespace CoopGame.CarrySystem
             var carrierIds = new List<ulong>(_activeCarriers.Keys);
             foreach (var id in carrierIds)
             {
+                PlayerCarry carry = _activeCarriers.TryGetValue(id, out CarrierInfo carrier) ? carrier.Carry : null;
                 DetachCarrier(id);
-                if (NetworkManager.Singleton != null &&
-                    NetworkManager.Singleton.ConnectedClients.TryGetValue(id, out NetworkClient client) &&
-                    client.PlayerObject != null)
-                {
-                    PlayerCarry carry = client.PlayerObject.GetComponent<PlayerCarry>();
-                    if (carry != null) carry.ForcedDropFromCargo(this);
-                }
+                // Cached attachment references work offline and during disconnect teardown.
+                if (carry != null) carry.ForcedDropFromCargo(this);
             }
         }
 

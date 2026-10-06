@@ -166,6 +166,12 @@ namespace CoopGame.CarrySystem
             }
 
             CurrentHP.OnValueChanged += HandleHPValueChanged;
+            // NGO applies the spawn snapshot without raising OnValueChanged.
+            GetComponent<FragileCargoHealthUI>()?.InitializeHealth(CurrentHP.Value, _maxHP);
+            // A late join can arrive during the destruction-to-despawn window.
+            // Hydrate the existing state without presenting it as a new hit.
+            if (!IsServer && CurrentHP.Value <= 0)
+                HandleHPValueChanged(CurrentHP.Value, CurrentHP.Value);
         }
 
         public override void OnNetworkDespawn()
@@ -433,10 +439,14 @@ namespace CoopGame.CarrySystem
             if (HasPadding) { damageAmount = Mathf.CeilToInt(damageAmount * .5f); _padding.Value = false; }
             if (HasGuardCard()) damageAmount = Mathf.CeilToInt(damageAmount * .5f);
             damageAmount = Mathf.Min(damageAmount, CurrentHP.Value);
+            int previousHP = CurrentHP.Value;
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);
             if (newHP == CurrentHP.Value) return;
             _nextDamageAllowedAtFixedTime = Time.fixedTime + _damageCooldownSeconds;
             CurrentHP.Value = newHP;
+            // Offline cargo never subscribes through OnNetworkSpawn. Networked
+            // cargo already emits this once from NetworkVariable.OnValueChanged.
+            if (!IsSpawned) HandleHPValueChanged(previousHP, newHP);
 
             Debug.Log($"[FragileCargo] '{name}' took {damageAmount} damage ({reason}). Remaining HP: {newHP}/{_maxHP}");
 

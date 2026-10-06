@@ -75,7 +75,7 @@ namespace CoopGame.Network
         {
             if (Instance != null) return Instance;
 
-            var existing = FindFirstObjectByType<SteamLobbyManager>();
+            var existing = FindAnyObjectByType<SteamLobbyManager>();
             if (existing != null)
             {
                 Instance = existing;
@@ -209,7 +209,7 @@ namespace CoopGame.Network
             NetworkManager nm = NetworkManager.Singleton;
             if (nm == null)
             {
-                nm = FindFirstObjectByType<NetworkManager>();
+                nm = FindAnyObjectByType<NetworkManager>();
             }
 
             if (nm == null)

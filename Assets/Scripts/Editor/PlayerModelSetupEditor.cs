@@ -377,7 +377,7 @@ public static class PlayerModelSetupEditor
         var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
         if (!activeScene.isLoaded) return;
 
-        var pause = Object.FindFirstObjectByType<PauseMenu>();
+        var pause = Object.FindAnyObjectByType<PauseMenu>();
         if (pause == null)
         {
             var go = new GameObject("PauseMenu");

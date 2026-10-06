@@ -37,9 +37,17 @@ namespace CoopGame.CarrySystem
             if (_cargo != null)
             {
                 _cargo.OnHPChanged += Refresh;
-                _lastHP = _cargo.CurrentHP.Value;
-                Refresh(_cargo.CurrentHP.Value, _cargo.MaxHP);
+                InitializeHealth(_cargo.CurrentHP.Value, _cargo.MaxHP);
             }
+        }
+
+        internal void InitializeHealth(int hp, int maxHP)
+        {
+            // Spawn synchronization is an initial snapshot, not a damage event.
+            _lastHP = hp;
+            _damageTimeLeft = 0f;
+            if (_damageText != null) _damageText.enabled = false;
+            Refresh(hp, maxHP);
         }
 
         private void OnDisable()

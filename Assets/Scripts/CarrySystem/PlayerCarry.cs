@@ -19,7 +19,7 @@ namespace CoopGame.CarrySystem
     public class PlayerCarry : NetworkBehaviour
     {
         [Header("Interaction & Facing Settings")]
-        [Tooltip("Actual hand physical grab contact distance (hands reach the object)")]
+        [Tooltip("Object search distance. Each grip is also limited by the actual arm reach.")]
         [SerializeField] private float _grabContactDistance = 1.6f;
 
         [Tooltip("Maximum distance to scan surfaces for the aim reticle")]
@@ -127,7 +127,11 @@ namespace CoopGame.CarrySystem
         private Quaternion _currentLocalRotationLeft = Quaternion.identity;
         private Quaternion _currentLocalRotationRight = Quaternion.identity;
         private CarryableObject _aimedCarryable;
-        private Vector3 _lastAimNormal = Vector3.up;
+        private Vector3 _lastAimLeftNormal = Vector3.up;
+        private Vector3 _lastAimRightNormal = Vector3.up;
+        private const float LocalContactSlack = .04f;
+        // Allow a small owner-position replication delay at server acceptance.
+        private const float ServerContactSlack = .15f;
         private float _currentHoldHeight = 1.05f;
         private bool _grabPending;
         private bool _releasePending;
@@ -428,7 +432,6 @@ namespace CoopGame.CarrySystem
             if (_netGripState.Value.Attached && _currentCarryable == null && IsNetworked && !_releasePending)
                 ResolveCarriedObject(_netGripState.Value.CargoId);
             if (!HasLocalInput || _inputReader == null) return;
-            if (CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             if (_currentCarryable != null && !_currentCarryable.gameObject.activeInHierarchy) DropForRespawn();
             if (_grabPending && Time.unscaledTime - _grabRequestedAt > 3f)
             {
@@ -436,6 +439,13 @@ namespace CoopGame.CarrySystem
                 if (IsNetworked) { _releasePending = true; RequestDropServerRpc(); }
                 ReleaseCarryState();
             }
+            // Menus block new input while held cargo still requires support.
+            if (IsCarrying && _currentCarryable != null && _stamina != null)
+            {
+                _stamina.DrainStaminaContinuous(!(_leftHandGripping && _rightHandGripping), _currentCarryable.TotalMass, _currentCarryable.CurrentCarrierCount);
+                if (_stamina.IsExhausted) { DropForRespawn(); return; }
+            }
+            if (CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             if (_leftMarker == null || _rightMarker == null) EnsureDualMarkersCreated();
             _currentHoldHeight = CalculateHoldHeight();
             UpdateCarryableOutline(_aimedCarryable, _canGrabAimed);
@@ -461,11 +471,6 @@ namespace CoopGame.CarrySystem
                     if (_stamina != null && _stamina.IsExhausted) speed *= .5f;
                     if (_currentCarryable.CurrentCarrierCount >= 2 && TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) && state.Card.Value == 3) speed *= 1.15f;
                     _movement.SpeedMultiplier = speed;
-                }
-                if (_stamina != null)
-                {
-                    _stamina.DrainStaminaContinuous(!(_leftHandGripping && _rightHandGripping), _currentCarryable.TotalMass, _currentCarryable.CurrentCarrierCount);
-                    if (_stamina.IsExhausted) { DropForRespawn(); return; }
                 }
                 if (_inputReader.ThrowHeld)
                 {
@@ -594,8 +599,8 @@ namespace CoopGame.CarrySystem
             if (left ? _leftHandGripping : _rightHandGripping) return true;
             GetArmGeometry(left, out Vector3 shoulder, out _);
             Vector3 point = target == _aimedCarryable ? (left ? _lastAimLeftPoint : _lastAimRightPoint) : shoulder;
-            Vector3 normal = target == _aimedCarryable ? _lastAimNormal : shoulder - target.transform.position;
-            if (!FindSurfaceContact(target, point, normal, shoulder, out Vector3 contact, out Vector3 surfaceNormal)) return false;
+            Vector3 normal = target == _aimedCarryable ? (left ? _lastAimLeftNormal : _lastAimRightNormal) : shoulder - target.transform.position;
+            if (!TryResolveReachableContact(target, left, point, normal, out Vector3 contact, out Vector3 surfaceNormal)) return false;
             Vector3 fingers = Vector3.ProjectOnPlane(Vector3.up, surfaceNormal);
             if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
             Quaternion localRot = Quaternion.Inverse(target.transform.rotation) * Quaternion.LookRotation(surfaceNormal, fingers.normalized);
@@ -623,13 +628,29 @@ namespace CoopGame.CarrySystem
             else ReleaseCarryState();
         }
 
+        private bool TryResolveReachableContact(CarryableObject target, bool left, Vector3 point, Vector3 normal,
+            out Vector3 contact, out Vector3 surfaceNormal)
+        {
+            GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            float maximumDistance = reach + LocalContactSlack;
+            float maximumSquared = maximumDistance * maximumDistance;
+            if (FindSurfaceContact(target, point, normal, shoulder, out contact, out surfaceNormal) &&
+                (contact - shoulder).sqrMagnitude <= maximumSquared) return true;
+
+            // A third-person camera can hit a distant top face while the player
+            // stands beside the crate. Acquire the reachable near face instead.
+            return FindSurfaceContact(target, shoulder, shoulder - target.transform.position, shoulder,
+                out contact, out surfaceNormal) && (contact - shoulder).sqrMagnitude <= maximumSquared;
+        }
+
         private static bool FindSurfaceContact(CarryableObject target, Vector3 point, Vector3 normal,
             Vector3 reference, out Vector3 contact, out Vector3 surfaceNormal)
         {
             contact = point; surfaceNormal = Vector3.up;
-            Collider[] colliders = target.GetComponentsInChildren<Collider>(true);
+            var colliders = target.CollisionColliders;
+            if (colliders == null) return false;
             float nearest = float.MaxValue; bool found = false;
-            for (int i = 0; i < colliders.Length; i++)
+            for (int i = 0; i < colliders.Count; i++)
             {
                 Collider col = colliders[i];
                 if (col == null || !col.enabled || col.isTrigger || !col.gameObject.activeInHierarchy) continue;
@@ -730,6 +751,9 @@ namespace CoopGame.CarrySystem
 
             Vector3 leftAimPoint = Vector3.zero;
             Vector3 rightAimPoint = Vector3.zero;
+            Vector3 leftAimNormal = Vector3.up;
+            Vector3 rightAimNormal = Vector3.up;
+            bool leftReachable = false, rightReachable = false;
             bool reachableHit = false;
 
             if (foundValidHit)
@@ -739,19 +763,15 @@ namespace CoopGame.CarrySystem
 
                 if (carryable != null && (carryable.CanBeCarried || carryable == _currentCarryable))
                 {
-            GetArmGeometry(true, out Vector3 aimShoulderL, out _);
-            GetArmGeometry(false, out Vector3 aimShoulderR, out _);
-            Vector3 playerChest = (aimShoulderL + aimShoulderR) * .5f;
+                    GetArmGeometry(true, out Vector3 aimShoulderL, out _);
+                    GetArmGeometry(false, out Vector3 aimShoulderR, out _);
+                    Vector3 playerChest = (aimShoulderL + aimShoulderR) * .5f;
                     float distToHit = Vector3.Distance(playerChest, validHit.point);
                     float distToBounds = Vector3.Distance(playerChest, validHit.collider.bounds.ClosestPoint(playerChest));
                     float effectiveDist = Mathf.Min(distToHit, distToBounds);
 
                     if (effectiveDist <= _grabContactDistance)
                     {
-                        aimedCarryable = carryable;
-                        canGrabAimed = !isExhausted;
-                        reachableHit = true;
-
                         Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
                         Vector3 surfaceLateral = Vector3.ProjectOnPlane(camRight, validHit.normal).normalized;
                         if (surfaceLateral.sqrMagnitude < 0.01f) surfaceLateral = transform.right;
@@ -767,11 +787,19 @@ namespace CoopGame.CarrySystem
                             rightAimPoint = hitCol.ClosestPoint(rightAimPoint);
                         }
 
+                        leftReachable = TryResolveReachableContact(carryable, true, leftAimPoint, validHit.normal,
+                            out leftAimPoint, out leftAimNormal);
+                        rightReachable = TryResolveReachableContact(carryable, false, rightAimPoint, validHit.normal,
+                            out rightAimPoint, out rightAimNormal);
+                        reachableHit = leftReachable || rightReachable;
+                        if (reachableHit) aimedCarryable = carryable;
+                        canGrabAimed = reachableHit && !isExhausted;
                         _lastAimLeftPoint = leftAimPoint;
                         _lastAimRightPoint = rightAimPoint;
-                        _lastAimNormal = validHit.normal;
+                        _lastAimLeftNormal = leftAimNormal;
+                        _lastAimRightNormal = rightAimNormal;
 
-                        if (!_wasAimingAtReachable)
+                        if (reachableHit && !_wasAimingAtReachable)
                         {
                             _wasAimingAtReachable = true;
                             Debug.Log($"[PlayerCarry] Reach Detected: '{carryable.name}' in range ({effectiveDist:F2}m). Markers active (GREEN).");
@@ -796,13 +824,13 @@ namespace CoopGame.CarrySystem
                 _leftMarker.position = _currentCarryable.transform.TransformPoint(_currentLocalContactLeft);
                 _leftMarker.rotation = Quaternion.FromToRotation(Vector3.up, _currentCarryable.transform.rotation * _currentLocalRotationLeft * Vector3.forward);
             }
-            else if (reachableHit)
+            else if (leftReachable)
             {
                 _leftMarker.gameObject.SetActive(true);
-                _leftMarker.position = leftAimPoint + validHit.normal * 0.012f;
-                if (validHit.normal.sqrMagnitude > 0.01f)
+                _leftMarker.position = leftAimPoint + leftAimNormal * 0.012f;
+                if (leftAimNormal.sqrMagnitude > 0.01f)
                 {
-                    _leftMarker.rotation = Quaternion.FromToRotation(Vector3.up, validHit.normal);
+                    _leftMarker.rotation = Quaternion.FromToRotation(Vector3.up, leftAimNormal);
                 }
             }
             else
@@ -821,13 +849,13 @@ namespace CoopGame.CarrySystem
                 _rightMarker.position = _currentCarryable.transform.TransformPoint(_currentLocalContactRight);
                 _rightMarker.rotation = Quaternion.FromToRotation(Vector3.up, _currentCarryable.transform.rotation * _currentLocalRotationRight * Vector3.forward);
             }
-            else if (reachableHit)
+            else if (rightReachable)
             {
                 _rightMarker.gameObject.SetActive(true);
-                _rightMarker.position = rightAimPoint + validHit.normal * 0.012f;
-                if (validHit.normal.sqrMagnitude > 0.01f)
+                _rightMarker.position = rightAimPoint + rightAimNormal * 0.012f;
+                if (rightAimNormal.sqrMagnitude > 0.01f)
                 {
-                    _rightMarker.rotation = Quaternion.FromToRotation(Vector3.up, validHit.normal);
+                    _rightMarker.rotation = Quaternion.FromToRotation(Vector3.up, rightAimNormal);
                 }
             }
             else
@@ -1215,25 +1243,25 @@ namespace CoopGame.CarrySystem
             { NotifyGrabResultClientRpc(_pendingServerRequestId, false, default); return; }
             CarryableObject cargo = obj.GetComponent<CarryableObject>();
             if (cargo == null || !cargo.CanBeCarried || (_stamina != null && _stamina.IsExhausted) ||
-                !ValidateContact(cargo, leftActive, ref left, ref leftRot) || !ValidateContact(cargo, rightActive, ref right, ref rightRot) ||
+                !ValidateContact(cargo, leftActive, true, ref left, ref leftRot) || !ValidateContact(cargo, rightActive, false, ref right, ref rightRot) ||
                 !cargo.TryAttachCarrier(OwnerClientId, transform, _movement, left, right, leftActive, rightActive, out int socket))
             { NotifyGrabResultClientRpc(_pendingServerRequestId, false, default); return; }
             PublishGrip(cargo, socket, left, right, leftRot, rightRot, leftActive, rightActive);
             NotifyGrabResultClientRpc(_pendingServerRequestId, true, _netGripState.Value);
         }
 
-        private bool ValidateContact(CarryableObject cargo, bool active, ref Vector3 local, ref Quaternion rotation)
+        private bool ValidateContact(CarryableObject cargo, bool active, bool left, ref Vector3 local, ref Quaternion rotation)
         {
             if (!active) { local = Vector3.zero; rotation = Quaternion.identity; return true; }
             if (!Finite(local) || !Finite(rotation)) return false;
             Vector3 point = cargo.transform.TransformPoint(local);
-            GetArmGeometry(true, out Vector3 shoulderL, out _);
-            GetArmGeometry(false, out Vector3 shoulderR, out _);
-            Vector3 chest = (shoulderL + shoulderR) * .5f;
-            if (Vector3.Distance(chest, point) > _grabContactDistance + .6f) return false;
+            GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            float maximumDistance = reach + ServerContactSlack;
+            if ((point - shoulder).sqrMagnitude > maximumDistance * maximumDistance) return false;
             Quaternion worldRot = cargo.transform.rotation * rotation.normalized;
-            if (!FindSurfaceContact(cargo, point, worldRot * Vector3.forward, chest, out Vector3 surface, out Vector3 normal) ||
-                Vector3.Distance(point, surface) > .15f) return false;
+            if (!FindSurfaceContact(cargo, point, worldRot * Vector3.forward, shoulder, out Vector3 surface, out Vector3 normal) ||
+                Vector3.Distance(point, surface) > .15f ||
+                (surface - shoulder).sqrMagnitude > maximumDistance * maximumDistance) return false;
             Vector3 fingers = Vector3.ProjectOnPlane(worldRot * Vector3.up, normal);
             if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(Vector3.up, normal);
             if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(Vector3.forward, normal);
@@ -1269,9 +1297,9 @@ namespace CoopGame.CarrySystem
             Quaternion leftRot = request.LeftRotation, rightRot = request.RightRotation;
             CargoGripState previous = _netGripState.Value;
             if (leftActive && (previous.Hands & 1) != 0) { left = previous.LeftPoint; leftRot = previous.LeftRotation; }
-            else if (!ValidateContact(_currentCarryable, leftActive, ref left, ref leftRot)) { RestoreGripClientRpc(previous); return; }
+            else if (!ValidateContact(_currentCarryable, leftActive, true, ref left, ref leftRot)) { RestoreGripClientRpc(previous); return; }
             if (rightActive && (previous.Hands & 2) != 0) { right = previous.RightPoint; rightRot = previous.RightRotation; }
-            else if (!ValidateContact(_currentCarryable, rightActive, ref right, ref rightRot)) { RestoreGripClientRpc(previous); return; }
+            else if (!ValidateContact(_currentCarryable, rightActive, false, ref right, ref rightRot)) { RestoreGripClientRpc(previous); return; }
             _currentCarryable.UpdateCarrierHandState(OwnerClientId, left, right, leftActive, rightActive);
             PublishGrip(_currentCarryable, previous.SocketIndex, left, right, leftRot, rightRot, leftActive, rightActive);
         }
@@ -1440,8 +1468,9 @@ namespace CoopGame.CarrySystem
 
         public void ForcedDropFromCargo(CarryableObject cargo)
         {
-            if (!IsServer || _currentCarryable != cargo) return;
-            PublishRelease();
+            bool isNetworked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+            if ((isNetworked && !IsServer) || _currentCarryable != cargo) return;
+            if (IsSpawned && IsServer) PublishRelease();
             ReleaseCarryState();
         }
 

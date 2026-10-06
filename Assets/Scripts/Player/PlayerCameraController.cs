@@ -196,7 +196,10 @@ namespace CoopGame.Player
             {
                 SceneManager.sceneLoaded -= OnSceneLoaded;
                 if (LocalInstance == this)
+                {
+                    SetCursorLock(false);
                     LocalInstance = null;
+                }
             }
 
             if (_playerCamera != null)
@@ -229,7 +232,7 @@ namespace CoopGame.Player
 
         private void DisableSceneCameras()
         {
-            Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+            Camera[] cameras = FindObjectsByType<Camera>();
             foreach (Camera camera in cameras)
             {
                 if (camera != _playerCamera && camera.gameObject.name.Contains("Main Camera"))
@@ -421,7 +424,9 @@ namespace CoopGame.Player
 
         private void OnDisable()
         {
-            SetCursorLock(false);
+            // Remote camera teardown must not change this process's local input state.
+            if (LocalInstance == this)
+                SetCursorLock(false);
         }
 
         private void OnDestroy()
@@ -429,9 +434,9 @@ namespace CoopGame.Player
             SceneManager.sceneLoaded -= OnSceneLoaded;
             if (LocalInstance == this)
             {
+                SetCursorLock(false);
                 LocalInstance = null;
             }
-            SetCursorLock(false);
             if (_playerCamera != null)
             {
                 Destroy(_playerCamera.gameObject);

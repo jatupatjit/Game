@@ -1,6 +1,7 @@
 #if UNITY_EDITOR || DEBUG
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using CoopGame.CarrySystem;
 using CoopGame.Player;
@@ -15,13 +16,25 @@ namespace CoopGame.Network
     [DefaultExecutionOrder(500)]
     public sealed class ExpeditionNetworkProbe : MonoBehaviour
     {
+        [Serializable] private sealed class PlayerSnapshot
+        {
+            public ulong owner;
+            public int face;
+            public bool carrying, samplingAnimatorReady;
+        }
         [Serializable] private sealed class Snapshot
         {
-            public bool connected, cameraOwned, cargoSecured, failed, gateOpen, padded, failureUI;
-            public string scene, error, command;
-            public int hp, carriers, coins, card, slot1, slot2, slot3, score;
-            public float stamina;
+            public bool connected, cameraOwned, cargoSecured, failed, gateOpen, padded, failureUI, carrying, damagePopup;
+            public string scene, error, command, hpLabel, damageLabel, cursor;
+            public int hp, carriers, coins, card, slot1, slot2, slot3, score, face;
+            public float stamina, hpFill;
+            public float overreachTime, leftOverreach, rightOverreach;
+            public bool leftGripping, rightGripping;
             public Vector3 cargoPosition, playerPosition;
+            public Vector3 cargoPhysicsPosition, cargoEuler, cargoPhysicsEuler;
+            public Vector3 shoulderLeft, shoulderRight, contactLeft, contactRight;
+            public float reachLeft, reachRight;
+            public PlayerSnapshot[] players;
         }
         private string _directory, _lastCommand, _error;
         private float _nextPoll;
@@ -91,6 +104,15 @@ namespace CoopGame.Network
                 case "card": state.SelectCardRpc(byte.Parse(parts[2])); break;
                 case "buy": state.BuyItemRpc(byte.Parse(parts[2])); break;
                 case "use": state.UseItemRpc(int.Parse(parts[2])); break;
+                case "face": PlayerAppearance.SaveLocal(int.Parse(parts[2])); break;
+                case "face_rpc":
+                    typeof(PlayerAppearance).GetMethod("SetFaceRpc", BindingFlags.NonPublic | BindingFlags.Instance)
+                        .Invoke(player.GetComponent<PlayerAppearance>(), new object[] { int.Parse(parts[2]), default(RpcParams) });
+                    break;
+                case "pause": PauseMenu.Instance?.ShowPause(); break;
+                case "resume": PauseMenu.Instance?.HidePause(); break;
+                case "left": carry.TryGrabNearbyObject(true, false); break;
+                case "right": carry.TryGrabNearbyObject(false, true); break;
                 case "lever":
                     var gate = FindAnyObjectByType<TeamLeverGate>();
                     if (gate != null) typeof(TeamLeverGate).GetMethod("HoldLeverRpc", BindingFlags.NonPublic | BindingFlags.Instance)
@@ -102,11 +124,10 @@ namespace CoopGame.Network
                 case "grab":
                     var cargo = FindAnyObjectByType<FragileCargo>();
                     if (cargo == null) break;
-                    carry.enabled = false;
-                    typeof(PlayerCarry).GetMethod("RequestGrabServerRpc", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(carry,
-                        new object[] { cargo.NetworkObjectId, new Vector3(-.25f, 0, -.35f), new Vector3(.25f, 0, -.35f), true, true });
+                    // Exercise the same queued, contact-validated path used by gameplay.
+                    carry.InitiateGrab(cargo, true, true);
                     break;
-                case "drop": carry.DropForRespawn(); carry.enabled = true; break;
+                case "drop": carry.DropForRespawn(); break;
             }
         }
 
@@ -136,12 +157,22 @@ namespace CoopGame.Network
             var state = player != null ? player.GetComponent<PlayerExpeditionState>() : null;
             var camera = player != null ? player.GetComponent<PlayerCameraController>() : null;
             var gate = FindAnyObjectByType<TeamLeverGate>();
+            var healthUI = cargo != null ? cargo.GetComponent<FragileCargoHealthUI>() : null;
+            const BindingFlags privateInstance = BindingFlags.NonPublic | BindingFlags.Instance;
+            var label = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_label", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Text : null;
+            var damage = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_damageText", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Text : null;
+            var fill = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_fill", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Image : null;
             var snapshot = new Snapshot
             {
                 connected = manager.IsConnectedClient, scene = SceneManager.GetActiveScene().name,
                 error = _error, command = _lastCommand,
                 cameraOwned = camera != null && camera == PlayerCameraController.LocalInstance && camera.PlayerCamera != null && camera.PlayerCamera.isActiveAndEnabled,
                 hp = cargo != null ? cargo.CurrentHP.Value : -1,
+                hpLabel = label != null ? label.text : null, hpFill = fill != null ? fill.fillAmount : -1f,
+                damageLabel = damage != null ? damage.text : null, damagePopup = damage != null && damage.enabled,
+                cursor = Cursor.lockState.ToString(),
+                carrying = player != null && player.GetComponent<PlayerCarry>().IsCarrying,
+                face = player != null ? player.GetComponent<PlayerAppearance>().CurrentFace : -1,
                 carriers = cargo != null ? cargo.CurrentCarrierCount : 0,
                 cargoSecured = cargo != null && cargo.IsSecured,
                 padded = cargo != null && cargo.HasPadding,
@@ -149,13 +180,48 @@ namespace CoopGame.Network
                 failureUI = MissionFailUI.IsVisible,
                 score = mission != null && mission.Delivery != null ? mission.Delivery.LastDeliveryResult.FinalScore : 0,
                 stamina = player != null ? player.GetComponent<PlayerStamina>().CurrentStamina : 0,
+                leftGripping = player != null && player.GetComponent<PlayerCarry>().LeftHandGripping,
+                rightGripping = player != null && player.GetComponent<PlayerCarry>().RightHandGripping,
+                overreachTime = player != null ? (float)typeof(PlayerCarry).GetField("_overreachTime", privateInstance).GetValue(player.GetComponent<PlayerCarry>()) : 0,
+                leftOverreach = GripOverreach(player, true), rightOverreach = GripOverreach(player, false),
                 failed = mission != null && mission.Phase.Value == 3,
                 cargoPosition = cargo != null ? cargo.transform.position : Vector3.zero,
+                cargoPhysicsPosition = cargo != null ? cargo.GetComponent<Rigidbody>().position : Vector3.zero,
+                cargoEuler = cargo != null ? cargo.transform.eulerAngles : Vector3.zero,
+                cargoPhysicsEuler = cargo != null ? cargo.GetComponent<Rigidbody>().rotation.eulerAngles : Vector3.zero,
                 playerPosition = player != null ? player.transform.position : Vector3.zero,
                 coins = state != null ? state.Coins.Value : -1, card = state != null ? state.Card.Value : 0,
-                slot1 = state != null ? state.Slot1.Value : 0, slot2 = state != null ? state.Slot2.Value : 0, slot3 = state != null ? state.Slot3.Value : 0
+                slot1 = state != null ? state.Slot1.Value : 0, slot2 = state != null ? state.Slot2.Value : 0, slot3 = state != null ? state.Slot3.Value : 0,
+                players = manager.SpawnManager == null ? Array.Empty<PlayerSnapshot>() : manager.SpawnManager.SpawnedObjectsList.Where(o => o.IsPlayerObject).Select(o => new PlayerSnapshot
+                {
+                    owner = o.OwnerClientId, face = o.GetComponent<PlayerAppearance>().CurrentFace,
+                    carrying = o.GetComponent<PlayerCarry>().IsCarrying,
+                    samplingAnimatorReady = o.GetComponentInChildren<Animator>() != null
+                }).ToArray()
             };
+            if (player != null)
+            {
+                var arms = player.GetComponent<ProceduralPlayerArms>();
+                arms.TryGetCarryPhysicsGeometry(true, out snapshot.shoulderLeft, out snapshot.reachLeft);
+                arms.TryGetCarryPhysicsGeometry(false, out snapshot.shoulderRight, out snapshot.reachRight);
+                var carry = player.GetComponent<PlayerCarry>();
+                if (carry.IsCarrying)
+                {
+                    var physicalContact = typeof(PlayerCarry).GetMethod("GetPhysicalContact", privateInstance);
+                    snapshot.contactLeft = (Vector3)physicalContact.Invoke(carry, new object[] { true });
+                    snapshot.contactRight = (Vector3)physicalContact.Invoke(carry, new object[] { false });
+                }
+            }
             File.WriteAllText(Path.Combine(_directory, "snapshot.json"), JsonUtility.ToJson(snapshot, true));
+        }
+
+        private static float GripOverreach(NetworkObject player, bool left)
+        {
+            if (player == null) return 0;
+            var carry = player.GetComponent<PlayerCarry>();
+            if (carry == null || !carry.IsCarrying) return 0;
+            return (float)typeof(PlayerCarry).GetMethod("GripOverreach", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(carry, new object[] { left });
         }
     }
 }

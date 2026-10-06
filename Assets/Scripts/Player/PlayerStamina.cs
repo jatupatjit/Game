@@ -52,7 +52,7 @@ namespace CoopGame.Player
         private float _currentStamina;
         private bool _isExhausted = false;
         private float _lastExertionTime = -10f;
-        private bool _wasDrainingThisFrame = false;
+        private bool _wasUpdatedThisFrame = false;
 
         // Events
         public event Action<float, float> OnStaminaChanged;
@@ -74,8 +74,8 @@ namespace CoopGame.Player
 
         private void Update()
         {
-            // If not actively draining this frame, regenerate stamina after delay
-            if (!_wasDrainingThisFrame)
+            // Explicit carry drain/recovery already accounts for this frame.
+            if (!_wasUpdatedThisFrame)
             {
                 if (Time.time >= _lastExertionTime + _recoveryDelay && _currentStamina < _maxStamina)
                 {
@@ -96,7 +96,7 @@ namespace CoopGame.Player
                 }
             }
 
-            _wasDrainingThisFrame = false;
+            _wasUpdatedThisFrame = false;
         }
 
         /// <summary>
@@ -104,6 +104,7 @@ namespace CoopGame.Player
         /// </summary>
         public void RegenerateStamina(float deltaTime)
         {
+            _wasUpdatedThisFrame = true;
             if (_currentStamina < _maxStamina)
             {
                 float prev = _currentStamina;
@@ -132,6 +133,7 @@ namespace CoopGame.Player
         /// <param name="carrierCount">Number of players currently carrying this object</param>
         public void DrainStaminaContinuous(bool isOneHanded, float objectMass, int carrierCount = 1)
         {
+            _wasUpdatedThisFrame = true;
             // Co-op carry (2+ players): zero drain & active stamina regeneration
             if (carrierCount >= 2)
             {
@@ -139,7 +141,6 @@ namespace CoopGame.Player
                 return;
             }
 
-            _wasDrainingThisFrame = true;
             _lastExertionTime = Time.time;
 
             float baseRate = isOneHanded ? _oneHandDrainRate : _twoHandDrainRate;
