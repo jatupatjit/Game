@@ -10,7 +10,7 @@ namespace CoopGame.Network
     [DisallowMultipleComponent]
     public sealed class NetworkRouteHazard : NetworkBehaviour
     {
-        public enum HazardKind { SwingHammer, Crusher, CollapsingDeck }
+        public enum HazardKind { SwingHammer, Crusher, CollapsingDeck, DoublePendulum }
         [SerializeField] private HazardKind _kind;
         [SerializeField] private Rigidbody _primary;
         [SerializeField] private Rigidbody _secondary;
@@ -95,6 +95,13 @@ namespace CoopGame.Network
                 _primary.MovePosition(transform.TransformPoint(_primaryRest + Vector3.right * extension));
                 if (_secondary != null) _secondary.MovePosition(transform.TransformPoint(_secondaryRest - Vector3.right * extension));
             }
+            else if (_kind == HazardKind.DoublePendulum)
+            {
+                float angle1 = phase == 2 ? _swingAngle * Mathf.Cos(active * Mathf.PI * 2f) : _swingAngle;
+                float angle2 = phase == 2 ? -_swingAngle * 1.15f * Mathf.Cos(active * Mathf.PI * 2.5f) : -_swingAngle;
+                _primary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle1, Vector3.forward));
+                if (_secondary != null) _secondary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle2, Vector3.forward));
+            }
             else
             {
                 bool dropped = phase >= 2;
@@ -161,6 +168,8 @@ namespace CoopGame.Network
                 _label.text = phase == 0 ? "ค้อนหยุดแล้ว ขนลังผ่านได้" : phase == 1 ? "ค้อนจะเหวี่ยงแล้ว รอก่อน" : "รอค้อนผ่าน แล้วค่อยไป";
             else if (_kind == HazardKind.Crusher)
                 _label.text = phase == 0 ? "ทางเปิดแล้ว ขนลังผ่านได้" : phase == 1 ? "หินจะหนีบแล้ว ถอยมารอก่อน" : "รอหินแยก แล้วค่อยไป";
+            else if (_kind == HazardKind.DoublePendulum)
+                _label.text = phase == 0 ? "ลูกตุ้มหยุดแล้ว ขนลังผ่านได้" : phase == 1 ? "ลูกตุ้มคู่จะเหวี่ยงแล้ว รอก่อน" : "ระวังลูกตุ้มคู่! รอจังหวะก่อน";
             else
                 _label.text = phase == 0 ? "ข้ามได้เลย อย่าหยุดกลางสะพาน" : phase == 1 ? "พื้นจะยุบแล้ว ถอยไปจุดพัก" :
                     phase == 3 ? "ออกจากใต้สะพานก่อน\nพื้นถึงจะกลับมา" : "พื้นยุบแล้ว ใช้ทางลาดข้างสะพาน";
