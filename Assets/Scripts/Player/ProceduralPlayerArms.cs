@@ -211,6 +211,7 @@ namespace CoopGame.Player
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
         private PlayerInputReader _inputReader;
         private ProceduralPlayerLegs _legs;
+        private Unity.Netcode.NetworkObject _networkObject;
         private float _armCyclePhase = 0f;
         private float _walkSwingWeight = 0f;
         private float _requestedLeftWeight = 1f;
@@ -224,6 +225,7 @@ namespace CoopGame.Player
             _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
             _inputReader = GetComponent<PlayerInputReader>();
             _legs = GetComponent<ProceduralPlayerLegs>();
+            _networkObject = GetComponent<Unity.Netcode.NetworkObject>();
             EnsureTargetNodesCreated();
             LocateBones();
         }
@@ -349,13 +351,15 @@ namespace CoopGame.Player
             if (_characterVisual != null)
             {
                 _skinnedMeshRenderer = _characterVisual.GetComponentInChildren<SkinnedMeshRenderer>();
+                if (_skinnedMeshRenderer != null)
+                    _skinnedMeshRenderer.updateWhenOffscreen = true;
 
                 // Find UpperArm bones in the hierarchy
                 Transform boneL = FindChildRecursive(_characterVisual, "UpperArmL");
                 Transform boneR = FindChildRecursive(_characterVisual, "UpperArmR");
 
                 // Spatially map player's left arm (-X) and right arm (+X)
-                if (boneL != null && boneR != null)
+                if (!_bonesInitialized && boneL != null && boneR != null)
                 {
                     Transform leftBone = (transform.InverseTransformPoint(boneL.position).x < transform.InverseTransformPoint(boneR.position).x) ? boneL : boneR;
                     Transform rightBone = (leftBone == boneL) ? boneR : boneL;
@@ -368,7 +372,7 @@ namespace CoopGame.Player
                     _lowerArmR = (_upperArmR.childCount > 0) ? _upperArmR.GetChild(0) : FindChildRecursive(_characterVisual, "LowerArm.L");
                     _wristR = (_lowerArmR != null && _lowerArmR.childCount > 0) ? _lowerArmR.GetChild(0) : FindChildRecursive(_characterVisual, "Wrist.L");
                 }
-                else
+                else if (!_bonesInitialized)
                 {
                     if (_upperArmL == null) _upperArmL = FindChildRecursive(_characterVisual, "UpperArmR") ?? FindChildRecursive(_characterVisual, "UpperArmL");
                     if (_lowerArmL == null) _lowerArmL = FindChildRecursive(_characterVisual, "LowerArm.R") ?? FindChildRecursive(_characterVisual, "LowerArm.L");
@@ -702,7 +706,7 @@ namespace CoopGame.Player
             }
 
             // Manual user grab input (reaching arms to aim)
-            if (_inputReader != null)
+            if (_inputReader != null && (_networkObject == null || !_networkObject.IsSpawned || _networkObject.IsOwner))
             {
                 if (_inputReader.GrabLeftHeld || _inputReader.InteractHeld)
                 {
@@ -962,11 +966,16 @@ namespace CoopGame.Player
 
             _grabSamplingAnimator = _characterVisual.GetComponent<Animator>();
             if (_grabSamplingAnimator != null)
+            {
+                // Remote hands must keep their sampled pose even when the rig was
+                // outside this peer's camera in the preceding frame.
+                _grabSamplingAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
                 return;
+            }
 
             // This controller-free Animator supports explicit finger sampling only.
             // Keep it active offscreen/headless; procedural poses still run in LateUpdate.
-            // An Animator already supplied by the rig keeps its controller and settings.
+            // An Animator already supplied by the rig keeps its controller and timing.
             _grabSamplingAnimator = _characterVisual.gameObject.AddComponent<Animator>();
             _grabSamplingAnimator.applyRootMotion = false;
             _grabSamplingAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;

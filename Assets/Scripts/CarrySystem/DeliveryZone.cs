@@ -196,8 +196,8 @@ namespace CoopGame.CarrySystem
             if (_zoneLabel != null && _labelDelivered != shouldBeGreen)
             {
                 _labelDelivered = shouldBeGreen;
-                _zoneLabel.text = shouldBeGreen ? "DELIVERED\nSTAGE COMPLETE" :
-                    "DELIVERY ZONE\nPLACE CARGO IN THE RING";
+                _zoneLabel.text = shouldBeGreen ? "ส่งลังแล้ว ไปที่ประตูได้เลย" :
+                    "ถึงแล้ว วางลังในวงนี้เลย";
             }
             Color targetColor = shouldBeGreen ? _deliveredGreenColor : _waitingRedColor;
 

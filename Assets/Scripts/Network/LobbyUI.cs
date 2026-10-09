@@ -59,6 +59,9 @@ namespace CoopGame.Network
         private float     _statusTimer  = 0f;
         private bool      _fadingOut    = false;
 
+        public bool IsMenuVisible => isActiveAndEnabled &&
+            (_lobbyRoot == null || _lobbyRoot.alpha > 0.01f);
+
         // ─────────────────────────────────────────────────────────────────────
 
         private void Awake()

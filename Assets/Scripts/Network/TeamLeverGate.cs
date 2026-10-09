@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 
 namespace CoopGame.Network
 {
-    /// <summary>A nearby player holds E to open the gate for eight seconds; the team relays cargo through it.</summary>
+    /// <summary>A nearby player holds E to open the gate temporarily; the team relays cargo through it.</summary>
     [RequireComponent(typeof(NetworkObject))]
     public sealed class TeamLeverGate : NetworkBehaviour
     {
@@ -19,6 +19,7 @@ namespace CoopGame.Network
         private float _openUntil, _nextSend;
         private bool _wasHeld, _visualOpen;
         public bool IsOpen => _open.Value;
+        public float OpenDurationSeconds => _openSeconds;
         public bool IsLocalNear
         {
             get
@@ -72,8 +73,8 @@ namespace CoopGame.Network
                 _visualOpen = _open.Value;
                 if (_visualOpen) GameplayFeedback.Play(GameplayFeedback.Cue.Portal, transform.position);
             }
-            if (_label != null) _label.text = _open.Value ? "GATE OPEN — PASS THE CRATE" :
-                "HOLD E AT THE LEVER\nTEAMMATES CARRY THROUGH";
+            if (_label != null) _label.text = _open.Value ? "เปิดแล้ว ช่วยกันขนลังผ่านเลย" :
+                "คนหนึ่งกด E ค้างที่คันโยก\nที่เหลือขนลังผ่านประตู";
         }
     }
 }

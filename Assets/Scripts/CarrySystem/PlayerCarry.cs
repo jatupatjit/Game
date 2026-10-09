@@ -314,6 +314,9 @@ namespace CoopGame.CarrySystem
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            // NetworkPlayer can attach the procedural rig after this component's
+            // Awake. Bind it on every peer, including remote player proxies.
+            EnsureVisualHandsCreated();
             _gripRevision = _netGripState.Value.Revision;
             _acceptedGripRevision = 0;
             _releasePending = false;
@@ -1022,6 +1025,19 @@ namespace CoopGame.CarrySystem
         // wrists consume the cargo pose rendered in this exact frame.
         public void RefreshCarryHandTargets()
         {
+            if (IsNetworked && !IsOwner)
+            {
+                // Reconcile presentation from the atomic server snapshot. Local
+                // collision/respawn cleanup must not erase a friend's grip pose.
+                CargoGripState state = _netGripState.Value;
+                if (!state.Attached) return;
+                if (_currentCarryable == null || _currentCarryable.NetworkObjectId != state.CargoId)
+                    ApplyGripState(state);
+                _currentLocalContactLeft = state.LeftPoint;
+                _currentLocalContactRight = state.RightPoint;
+                _currentLocalRotationLeft = state.LeftRotation;
+                _currentLocalRotationRight = state.RightRotation;
+            }
             if (_currentCarryable == null || !IsCarrying) return;
             if (_wallClimb != null && _wallClimb.IsClimbing) return;
             Transform cargo = _currentCarryable.transform;
