@@ -32,6 +32,16 @@ namespace CoopGame.CarrySystem
         [Tooltip("Height above the player's ground position (waist/chest level)")]
         [SerializeField] private float _carryHeightOffset = 1.05f;
 
+        [Header("Hold Physics (Spring Force)")]
+        [Tooltip("Multiplier on the spring pull strength that drags the held object toward the player's hand target. Higher = stiffer / snappier hold. Default: 32")]
+        [SerializeField] private float _holdSpringMultiplier = 32f;
+
+        [Tooltip("Multiplier on the velocity-matching damping force. Higher = less oscillation / wobble. Default: 10")]
+        [SerializeField] private float _holdDampingMultiplier = 10f;
+
+        [Tooltip("Multiplier on the per-hand maximum clamped force. Higher = can lift heavier or faster. Default: 45")]
+        [SerializeField] private float _holdMaxForceMultiplier = 45f;
+
         [Header("Co-op Movement Settings")]
         [Tooltip("Speed multiplier applied to player when carrying alone (heavy feel)")]
         [SerializeField] private float _soloSpeedMultiplier = 0.6f;
@@ -287,9 +297,9 @@ namespace CoopGame.CarrySystem
             }
 
             // =========================================================================
-            // REALISTIC GRAVITY & TOUCH-POINT LIFTING (Human Fall Flat style)
+            // STABLE, STILL LIFTING & VELOCITY MATCHING (Human Fall Flat style)
             // =========================================================================
-            _rigidbody.useGravity = true;
+            _rigidbody.useGravity = false;
             _rigidbody.constraints = RigidbodyConstraints.None;
 
             int supportingCarrierCount = 0;
@@ -297,9 +307,16 @@ namespace CoopGame.CarrySystem
                 if (carrier.PlayerTransform != null && (carrier.LeftHandActive || carrier.RightHandActive))
                     supportingCarrierCount++;
 
-            if (supportingCarrierCount == 0) return;
+            if (supportingCarrierCount == 0)
+            {
+                _rigidbody.useGravity = true;
+                return;
+            }
 
             Vector3 objectScale = transform.lossyScale;
+            Vector3 combinedDesiredVelocity = Vector3.zero;
+            Vector3 combinedHeading = Vector3.zero;
+            int contributingCarriers = 0;
 
             foreach (var carrier in _activeCarriers.Values)
             {
@@ -311,8 +328,8 @@ namespace CoopGame.CarrySystem
                 carrier.PlayerVelocity = Vector3.ClampMagnitude(sampledVelocity, 12f);
                 float height = (carrier.HoldHeight > 0.05f) ? carrier.HoldHeight : _carryHeightOffset;
 
-                // Smoothly ease hold distance so there is no sudden snap
-                carrier.CurrentHoldDistance = Mathf.MoveTowards(carrier.CurrentHoldDistance, _carryForwardDistance, 2.5f * Time.fixedDeltaTime);
+                // Smoothly ease hold distance quickly so it settles firmly
+                carrier.CurrentHoldDistance = Mathf.MoveTowards(carrier.CurrentHoldDistance, _carryForwardDistance, 8.0f * Time.fixedDeltaTime);
 
                 Vector3 heading = (carrier.FacingHeading.sqrMagnitude > 0.01f) 
                     ? carrier.FacingHeading 
@@ -338,58 +355,61 @@ namespace CoopGame.CarrySystem
                     targetHandR = reachableRight;
                 }
 
-                // Start at the captured contacts and ease into the support pose;
-                // the first grab must not jerk a resting crate into the carrier.
+                // Initial grab settle: ease smoothly from the pickup position into the hold target
                 float settle = Mathf.SmoothStep(0f, 1f,
-                    Mathf.Clamp01((Time.fixedTime - carrier.AttachedAtFixedTime) / .35f));
+                    Mathf.Clamp01((Time.fixedTime - carrier.AttachedAtFixedTime) / .25f));
                 targetHandL = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetLeft, targetHandL, settle);
                 targetHandR = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetRight, targetHandR, settle);
 
-                // Physics reads the authoritative Rigidbody pose; rendered,
-                // interpolated transforms are reserved for the visual hand lock.
-                Vector3 currentWorldL = _rigidbody.position + _rigidbody.rotation * Vector3.Scale(carrier.LocalContactLeft, objectScale);
-                Vector3 currentWorldR = _rigidbody.position + _rigidbody.rotation * Vector3.Scale(carrier.LocalContactRight, objectScale);
-
                 bool hasLeft = carrier.LeftHandActive;
                 bool hasRight = carrier.RightHandActive;
-
                 if (!hasLeft && !hasRight) continue;
 
-                int activeHands = (hasLeft ? 1 : 0) + (hasRight ? 1 : 0);
-                float supportShare = 1f / (activeHands * supportingCarrierCount);
-                float supportedMass = _rigidbody.mass * supportShare;
-                Vector3 gravComp = -Physics.gravity * supportedMass;
-                float springStrength = supportedMass * 32f;
-                float dampingStrength = supportedMass * 10f;
-                float maximumForce = supportedMass * 45f;
+                Vector3 avgTargetHand = (hasLeft && hasRight) 
+                    ? (targetHandL + targetHandR) * 0.5f 
+                    : (hasLeft ? targetHandL : targetHandR);
 
-                // 1. Spring-damper force at Left Hand contact point (if left hand active)
-                if (hasLeft)
-                {
-                    Vector3 deltaL = (targetHandL - currentWorldL);
-                    Vector3 velL = _rigidbody.GetPointVelocity(currentWorldL);
-                    Vector3 forceL = deltaL * springStrength + (carrier.PlayerVelocity - velL) * dampingStrength + gravComp;
-                    forceL = Vector3.ClampMagnitude(forceL, maximumForce);
-                    _rigidbody.AddForceAtPosition(forceL, currentWorldL, ForceMode.Force);
-                }
+                Vector3 localGripCenter = (hasLeft && hasRight)
+                    ? (carrier.LocalContactLeft + carrier.LocalContactRight) * 0.5f
+                    : (hasLeft ? carrier.LocalContactLeft : carrier.LocalContactRight);
 
-                // 2. Spring-damper force at Right Hand contact point (if right hand active)
-                if (hasRight)
-                {
-                    Vector3 deltaR = (targetHandR - currentWorldR);
-                    Vector3 velR = _rigidbody.GetPointVelocity(currentWorldR);
-                    Vector3 forceR = deltaR * springStrength + (carrier.PlayerVelocity - velR) * dampingStrength + gravComp;
-                    forceR = Vector3.ClampMagnitude(forceR, maximumForce);
-                    _rigidbody.AddForceAtPosition(forceR, currentWorldR, ForceMode.Force);
-                }
+                Vector3 worldGripOffset = _rigidbody.rotation * Vector3.Scale(localGripCenter, objectScale);
+                Vector3 targetCratePos = avgTargetHand - worldGripOffset;
 
+                Vector3 displacement = targetCratePos - _rigidbody.position;
+
+                // Drive velocity to match the player's movement in real time + correct position firmly
+                // This keeps the item completely still relative to the player while walking and looking around!
+                float trackingGain = 20f;
+                Vector3 desiredVel = displacement * trackingGain + carrier.PlayerVelocity;
+                combinedDesiredVelocity += desiredVel;
+                combinedHeading += heading;
+                contributingCarriers++;
             }
 
-            // Apply damping once, so adding helpers does not multiply resistance.
-            float dampFactor = Mathf.Max(2.5f, _rotationSpeed * 0.01f);
-            _rigidbody.AddTorque(-_rigidbody.angularVelocity * dampFactor, ForceMode.Acceleration);
+            if (contributingCarriers > 0)
+            {
+                Vector3 finalDesiredVelocity = combinedDesiredVelocity / contributingCarriers;
+                _rigidbody.linearVelocity = Vector3.ClampMagnitude(finalDesiredVelocity, 14f);
 
-            _rigidbody.linearVelocity = Vector3.ClampMagnitude(_rigidbody.linearVelocity, 12.0f);
+                Vector3 finalHeading = combinedHeading.normalized;
+                if (finalHeading.sqrMagnitude > 0.001f)
+                {
+                    Quaternion targetRot = Quaternion.LookRotation(finalHeading, Vector3.up);
+                    Quaternion deltaRot = targetRot * Quaternion.Inverse(_rigidbody.rotation);
+                    deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
+                    if (angleDeg > 180f) angleDeg -= 360f;
+                    if (Mathf.Abs(angleDeg) > 0.05f && !float.IsNaN(axis.x) && !float.IsInfinity(axis.x))
+                    {
+                        Vector3 targetAngVel = axis.normalized * (angleDeg * Mathf.Deg2Rad * 16f);
+                        _rigidbody.angularVelocity = Vector3.MoveTowards(_rigidbody.angularVelocity, targetAngVel, 140f * Time.fixedDeltaTime);
+                    }
+                    else
+                    {
+                        _rigidbody.angularVelocity = Vector3.MoveTowards(_rigidbody.angularVelocity, Vector3.zero, 80f * Time.fixedDeltaTime);
+                    }
+                }
+            }
         }
 
         public void UpdateCarrierHandState(ulong clientId, Vector3 localContactLeft, Vector3 localContactRight, bool leftActive, bool rightActive)

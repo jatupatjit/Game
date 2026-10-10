@@ -49,14 +49,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2001774821
+  GlobalObjectIdHash: 824050374
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
-  m_InScenePlaced: 1
+  m_InScenePlaced: 0
   ActiveSceneSynchronization: 0
   SceneMigrationSynchronization: 0
   SpawnWithObservers: 1
@@ -167,8 +167,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.FragileCargo
   ShowTopMostFoldoutHeaderGroup: 1
   _sockets: []
-  _carryForwardDistance: 0.65
+  _carryForwardDistance: 1.59
   _carryHeightOffset: 1.05
+  _holdSpringMultiplier: 8.16
+  _holdDampingMultiplier: 0.44
+  _holdMaxForceMultiplier: 17.5
   _soloSpeedMultiplier: 0.6
   _coopSpeedMultiplier: 0.9
   _rotationSpeed: 360
@@ -182,6 +185,8 @@ MonoBehaviour:
   _impactInvulnerabilityDuration: 0.25
   _damageCooldownSeconds: 1.25
   _spawnDamageGraceSeconds: 1.25
+  _pickupDamageGraceSeconds: 0.8
+  _minimumScrapeDuration: 0.5
   _killZ: -15
   _spawnPosition: {x: 0, y: 0, z: 0}
   _spawnRotation: {x: 0, y: 0, z: 0, w: 0}

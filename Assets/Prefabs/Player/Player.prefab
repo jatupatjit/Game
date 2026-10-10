@@ -1987,15 +1987,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.CarrySystem.PlayerCarry
   ShowTopMostFoldoutHeaderGroup: 1
-  _grabContactDistance: 1.6
+  _grabContactDistance: 2.5
+  _holdForwardDistance: 1.15
   _maxScanDistance: 15
   _minFacingDot: 0
   _scanLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  _maxLiftHeight: 2.2
-  _normalLiftHeight: 1.05
-  _minLiftHeight: 0.45
+  _maxLiftHeight: 3.3
+  _normalLiftHeight: 1.61
+  _minLiftHeight: 0.5
   _leftHand: {fileID: 0}
   _rightHand: {fileID: 0}
   _leftMarker: {fileID: 0}

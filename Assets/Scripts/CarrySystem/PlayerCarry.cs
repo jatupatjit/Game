@@ -19,8 +19,11 @@ namespace CoopGame.CarrySystem
     public class PlayerCarry : NetworkBehaviour
     {
         [Header("Interaction & Facing Settings")]
-        [Tooltip("Object search distance. Each grip is also limited by the actual arm reach.")]
-        [SerializeField] private float _grabContactDistance = 1.6f;
+        [Tooltip("Object search and grab reach distance (meters). Increase this to grab and lift items from farther away!")]
+        [SerializeField] private float _grabContactDistance = 2.5f;
+
+        [Tooltip("How far forward in front of the player items are held while carrying (meters). Increase this so items are not held too close to the body!")]
+        [SerializeField] private float _holdForwardDistance = 1.15f;
 
         [Tooltip("Maximum distance to scan surfaces for the aim reticle")]
         [SerializeField] private float _maxScanDistance = 12.0f;
@@ -418,8 +421,8 @@ namespace CoopGame.CarrySystem
             Vector3 right = _cameraController != null ? _cameraController.HorizontalRight : transform.right;
             Vector2 input = _inputReader != null ? _inputReader.MoveInput : Vector2.zero;
             Vector3 direction = Vector3.ClampMagnitude(forward * input.y + right * input.x, 1f);
-            if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight);
-            else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, _carryFacing,
+            if (IsNetworked) StreamCarrierInputServerRpc(direction, forward, _currentHoldHeight);
+            else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, forward,
                 _currentHoldHeight, _leftHandGripping, _rightHandGripping);
             float excess = _leftHandGripping ? GripOverreach(true) : 0f;
             if (_rightHandGripping) excess = Mathf.Max(excess, GripOverreach(false));
@@ -1080,9 +1083,13 @@ namespace CoopGame.CarrySystem
 
         private void GetArmGeometry(bool left, out Vector3 shoulder, out float reach)
         {
-            if (_procArms != null && _procArms.TryGetCarryPhysicsGeometry(left, out shoulder, out reach)) return;
+            if (_procArms != null && _procArms.TryGetCarryPhysicsGeometry(left, out shoulder, out reach))
+            {
+                reach = Mathf.Max(reach, _grabContactDistance);
+                return;
+            }
             shoulder = transform.TransformPoint(new Vector3(left ? -.18f : .18f, 1.25f, 0f));
-            reach = .5f;
+            reach = Mathf.Max(.5f, _grabContactDistance);
         }
 
         public bool TryGetCarrySupportTargets(float height, Vector3 heading, out Vector3 left, out Vector3 right)
@@ -1095,8 +1102,8 @@ namespace CoopGame.CarrySystem
                 ? transform.TransformPoint(_characterController.center - Vector3.up * (_characterController.height * .5f)).y
                 : transform.position.y;
             GetBodyClearance(out Vector3 bodyCenter, out float bodyRadius);
-            bool leftValid = TryBuildSupportTarget(shoulderL, reachL, heading, footY + height, bodyCenter, bodyRadius, out left);
-            bool rightValid = TryBuildSupportTarget(shoulderR, reachR, heading, footY + height, bodyCenter, bodyRadius, out right);
+            bool leftValid = TryBuildSupportTarget(shoulderL, reachL, heading, footY + height, bodyCenter, bodyRadius, _holdForwardDistance, out left);
+            bool rightValid = TryBuildSupportTarget(shoulderR, reachR, heading, footY + height, bodyCenter, bodyRadius, _holdForwardDistance, out right);
             return leftValid && rightValid;
         }
 
@@ -1111,7 +1118,7 @@ namespace CoopGame.CarrySystem
         }
 
         private static bool TryBuildSupportTarget(Vector3 shoulder, float reach, Vector3 heading, float desiredY,
-            Vector3 bodyCenter, float bodyRadius, out Vector3 target)
+            Vector3 bodyCenter, float bodyRadius, float holdForwardDist, out Vector3 target)
         {
             Vector3 offset = shoulder - bodyCenter;
             offset.y = 0f;
@@ -1123,7 +1130,8 @@ namespace CoopGame.CarrySystem
             target = shoulder + heading * minimumForward;
             if (minimumForward > maximumReach) return false;
 
-            float forwardDistance = Mathf.Clamp(reach * .65f, minimumForward, maximumReach);
+            float desiredForward = (holdForwardDist > 0.05f) ? holdForwardDist : reach * .65f;
+            float forwardDistance = Mathf.Clamp(desiredForward, minimumForward, maximumReach);
             float verticalReach = Mathf.Sqrt(Mathf.Max(0f, maximumReach * maximumReach - forwardDistance * forwardDistance));
             target = shoulder + heading * forwardDistance;
             // A low requested height must not shorten forward clearance and pull

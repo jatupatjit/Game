@@ -233,11 +233,10 @@ namespace CoopGame.Player
 
             if (isReachingOrAiming)
             {
-                // While carrying, face the cargo center so co-op carriers look inward
-                // from their own side. Reaching and climbing retain camera-facing behavior.
+                // When aiming, reaching, climbing, or carrying/lifting, rotate character
+                // directly towards the camera look direction so the player can aim and steer freely
+                // without unwanted auto-spinning.
                 Vector3 targetFacing = cameraForward;
-                if (_playerCarry != null && _playerCarry.TryGetCarryFacing(out Vector3 carryFacing))
-                    targetFacing = carryFacing;
 
                 if (targetFacing.sqrMagnitude > 0.001f)
                 {
