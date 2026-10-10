@@ -1,4 +1,5 @@
 using CoopGame.Player;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -14,6 +15,8 @@ namespace CoopGame.Network
         private static int _closedFrame = -1;
         public static bool BlocksPause => IsVisible || _closedFrame == Time.frameCount;
         private GameObject _panel;
+        private Button _launchButton;
+        private LobbyUI _lobbyUI;
         private RawImage _preview;
         private Text _styleLabel;
         private Text _status;
@@ -22,9 +25,22 @@ namespace CoopGame.Network
         private bool _restoreCursorLock;
         private Font _font;
 
+        private bool CanCustomize
+        {
+            get
+            {
+                var manager = NetworkManager.Singleton;
+                var player = PlayerAppearance.LocalInstance;
+                return PlayerAppearance.IsLobby && manager != null && manager.IsConnectedClient &&
+                    !manager.ShutdownInProgress && player != null && player.IsSpawned && player.IsOwner &&
+                    (_lobbyUI == null || !_lobbyUI.IsMenuVisible);
+            }
+        }
+
         private void Awake()
         {
             if (!PlayerAppearance.IsLobby) { Destroy(gameObject); return; }
+            _lobbyUI = FindAnyObjectByType<LobbyUI>(FindObjectsInactive.Include);
             Build();
             SceneManager.activeSceneChanged += OnSceneChanged;
         }
@@ -33,6 +49,12 @@ namespace CoopGame.Network
         {
             SceneManager.activeSceneChanged -= OnSceneChanged;
             if (IsVisible) Close(false);
+        }
+
+        private void OnDisable()
+        {
+            Close(false);
+            if (_launchButton != null) _launchButton.gameObject.SetActive(false);
         }
 
         private void OnSceneChanged(Scene previous, Scene next)
@@ -46,7 +68,14 @@ namespace CoopGame.Network
 
         private void Update()
         {
-            if (!PlayerAppearance.IsLobby || PauseMenu.IsPaused) return;
+            bool available = CanCustomize && !PauseMenu.IsPaused;
+            if (_launchButton != null && _launchButton.gameObject.activeSelf != available)
+                _launchButton.gameObject.SetActive(available);
+            if (!available)
+            {
+                Close(false);
+                return;
+            }
             var keyboard = Keyboard.current;
             if (keyboard == null) return;
             // Do not steal typing from room-code input fields.
@@ -58,7 +87,7 @@ namespace CoopGame.Network
 
         public void Open()
         {
-            if (!PlayerAppearance.IsLobby || PauseMenu.IsPaused || IsVisible) return;
+            if (!CanCustomize || PauseMenu.IsPaused || IsVisible) return;
             _draft = PlayerAppearance.LocalInstance != null ? PlayerAppearance.LocalInstance.CurrentFace : PlayerAppearance.SavedFace;
             _restoreCursorLock = Cursor.lockState == CursorLockMode.Locked;
             IsVisible = true;
@@ -101,6 +130,7 @@ namespace CoopGame.Network
 
         private void Save()
         {
+            if (!CanCustomize || PauseMenu.IsPaused) { Close(false); return; }
             if (PlayerAppearance.SaveLocal(_draft)) Close(true);
         }
 
@@ -116,6 +146,8 @@ namespace CoopGame.Network
             scaler.matchWidthOrHeight = .5f;
             gameObject.AddComponent<GraphicRaycaster>();
             var launch = Button(transform, "CUSTOMIZE FACE  [C]", new Vector2(260, 52), new Vector2(0, 0), Open);
+            _launchButton = launch;
+            launch.gameObject.SetActive(false);
             var launchRect = (RectTransform)launch.transform;
             launchRect.anchorMin = launchRect.anchorMax = new Vector2(0, 0);
             launchRect.pivot = new Vector2(0, 0);

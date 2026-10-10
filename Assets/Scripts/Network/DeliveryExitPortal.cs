@@ -38,8 +38,8 @@ namespace CoopGame.Network
 
         private void Awake()
         {
-            _readyText = "PORTAL OPEN\nWALK IN TO " + _destinationSceneName;
-            _loadingText = "TRAVELLING TO\n" + _destinationSceneName;
+            _readyText = "ส่งลังแล้ว ประตูเปิดแล้ว\nเดินเข้าไปได้เลย: " + _destinationSceneName;
+            _loadingText = "รอสักครู่ กำลังไป " + _destinationSceneName;
         }
 
         public override void OnNetworkSpawn()
@@ -141,8 +141,8 @@ namespace CoopGame.Network
             if (_closedBarrier != null) _closedBarrier.SetActive(!open);
             if (_statusText != null)
                 _statusText.text = state == Loading ? _loadingText : state == Ready ? _readyText :
-                    state == Unavailable ? "DESTINATION UNAVAILABLE\nCONTACT THE HOST" :
-                    "DELIVER THE CARGO\nTO OPEN THE PORTAL";
+                    state == Unavailable ? "ยังไปต่อไม่ได้\nให้เจ้าของห้องตรวจด่านถัดไปก่อน" :
+                    "ส่งลังตรงจุดหมายก่อน\nแล้วประตูจะเปิด";
         }
 
         private string FindDestinationPath()

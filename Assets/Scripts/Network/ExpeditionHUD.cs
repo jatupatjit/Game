@@ -18,6 +18,7 @@ namespace CoopGame.Network
         private LevelMission _mission;
         private PlayerExpeditionState _player;
         private TeamLeverGate _lever;
+        private ClimbSwitchGate[] _climbGates;
         private Text _objective, _detail, _inventory, _title, _message;
         private GameObject _modal, _cards, _shop;
         private Text _shopWallet;
@@ -31,6 +32,7 @@ namespace CoopGame.Network
         {
             _mission = FindAnyObjectByType<LevelMission>();
             _lever = FindAnyObjectByType<TeamLeverGate>();
+            _climbGates = FindObjectsByType<ClimbSwitchGate>();
             if (_font == null) _font = Resources.Load<Font>("Fonts/GameThai");
             if (_font == null) _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
@@ -114,11 +116,18 @@ namespace CoopGame.Network
             {
                 int count = _mission.Cargo.CurrentCarrierCount;
                 detail = $"ลัง HP {_mission.Cargo.CurrentHP.Value}/{_mission.Cargo.MaxHP}   |   ผู้ยก {count}/4\n" +
-                    (count >= 2 ? "ยกด้วยกัน: Stamina ไม่ลด • คลิกซ้ำเพื่อปล่อย" : "เมาส์ซ้าย/ขวา: จับหรือปล่อย • E สองมือ • Q โยน");
+                    (count >= 2 ? "ช่วยกันยกแล้วไม่เสียแรง • คลิกอีกครั้งเพื่อปล่อย" : "คลิกซ้าย/ขวาเพื่อจับหรือปล่อย • E จับสองมือ • Q โยน");
             }
             else detail = "กำลังเตรียมลัง...";
             if (_lever != null && _lever.IsLocalNear && _mission.Phase.Value < 2)
-                detail = "กด E ค้างเพื่อเปิดประตู 8 วินาที\nให้เพื่อนช่วยขนลังผ่านประตู";
+                detail = $"กด E ค้าง ประตูจะเปิด {_lever.OpenDurationSeconds:0.#} วินาที\nให้เพื่อนขนลังผ่าน แล้วค่อยตามไป";
+            if (_mission.Phase.Value < 2)
+                for (int i = 0; i < _climbGates.Length; i++)
+                    if (_climbGates[i] != null && !_climbGates[i].IsOpen && _climbGates[i].IsLocalNear)
+                    {
+                        detail = "กด E เปิดประตูให้เพื่อน\nเปิดแล้ว ลงไปช่วยขนลังได้เลย";
+                        break;
+                    }
             string inventory = $"{PlayerExpeditionState.CardName(_player.Card.Value)}   |   เงิน {_player.Coins.Value}\n" +
                 $"[1] {PlayerExpeditionState.ItemName(_player.Slot1.Value)}\n[2] {PlayerExpeditionState.ItemName(_player.Slot2.Value)}\n[3] {PlayerExpeditionState.ItemName(_player.Slot3.Value)}";
             SetChanged(_objective, objective, ref _lastObjective);
