@@ -29,6 +29,7 @@ namespace CoopGame.Network
         [SerializeField, Min(.5f)] private float _warningSeconds = 1.75f;
         [SerializeField, Min(1f)] private float _activeSeconds = 2.5f;
         [SerializeField, Min(1)] private int _damage = 10;
+        [SerializeField, Min(0f)] private float _phaseOffset;
         private readonly NetworkVariable<double> _epoch = new(0);
         private readonly NetworkVariable<byte> _phase = new(0);
         private readonly Collider[] _overlaps = new Collider[64];
@@ -56,7 +57,7 @@ namespace CoopGame.Network
         {
             if (!IsSpawned || _primary == null) return;
             double duration = _safeSeconds + _warningSeconds + _activeSeconds;
-            double elapsed = Math.Max(0, NetworkManager.ServerTime.Time - _epoch.Value);
+            double elapsed = Math.Max(0, NetworkManager.ServerTime.Time - _epoch.Value + _phaseOffset);
             long cycle = (long)Math.Floor(elapsed / duration);
             double within = elapsed - cycle * duration;
             if (IsServer)
@@ -65,7 +66,7 @@ namespace CoopGame.Network
                 if (_kind == HazardKind.CollapsingDeck && (_phase.Value == 3 || (_phase.Value == 2 && next == 0)))
                 {
                     if (RestoreAreaOccupied()) next = 3;
-                    else { _epoch.Value = NetworkManager.ServerTime.Time; next = 0; within = 0; cycle = 0; }
+                    else { _epoch.Value = NetworkManager.ServerTime.Time + _phaseOffset; next = 0; within = 0; cycle = 0; }
                 }
                 if (_phase.Value != next) _phase.Value = next;
             }

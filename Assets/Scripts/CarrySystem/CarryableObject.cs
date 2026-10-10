@@ -39,6 +39,9 @@ namespace CoopGame.CarrySystem
         [Tooltip("Speed multiplier applied to players when carrying together (synergy)")]
         [SerializeField] private float _coopSpeedMultiplier = 0.9f;
 
+        [Tooltip("Maximum horizontal acceleration from the carriers' shared walking intent. World collisions still stop the cargo.")]
+        [SerializeField, Min(0f)] private float _carryTractionAcceleration = 8f;
+
         [Tooltip("Rotation alignment speed in degrees per second")]
         [SerializeField] private float _rotationSpeed = 360.0f;
 
@@ -65,6 +68,7 @@ namespace CoopGame.CarrySystem
             public Vector3 InitialSupportOffsetLeft;
             public Vector3 InitialSupportOffsetRight;
             public Vector3 InputDirection;
+            public float InputReceivedAt;
             public Vector3 FacingHeading;
             public float HoldHeight = 0.8f;
             public float CurrentHoldDistance = 1.2f;
@@ -293,11 +297,33 @@ namespace CoopGame.CarrySystem
             _rigidbody.constraints = RigidbodyConstraints.None;
 
             int supportingCarrierCount = 0;
+            Vector3 sharedIntent = Vector3.zero;
             foreach (var carrier in _activeCarriers.Values)
                 if (carrier.PlayerTransform != null && (carrier.LeftHandActive || carrier.RightHandActive))
+                {
                     supportingCarrierCount++;
+                    // A silent/disconnected input stream must not keep driving the crate.
+                    if (Time.fixedTime - carrier.InputReceivedAt <= .3f)
+                        sharedIntent += carrier.InputDirection;
+                }
 
             if (supportingCarrierCount == 0) return;
+
+            // Tight hand-reach constraints can stop the players before a support
+            // spring builds enough lateral error to start the crate. Use the
+            // already validated, server-held walking intent to initiate motion.
+            // Averaging keeps added helpers from multiplying force, and opposite
+            // directions cancel. Never write a position or override collision velocity.
+            sharedIntent /= supportingCarrierCount;
+            sharedIntent.y = 0f;
+            if (sharedIntent.sqrMagnitude > .0025f && _carryTractionAcceleration > 0f)
+            {
+                float speed = 5f * GetSpeedMultiplier();
+                Vector3 horizontalVelocity = Vector3.ProjectOnPlane(_rigidbody.linearVelocity, Vector3.up);
+                Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * 6f,
+                    _carryTractionAcceleration);
+                _rigidbody.AddForce(acceleration, ForceMode.Acceleration);
+            }
 
             Vector3 objectScale = transform.lossyScale;
 
@@ -641,6 +667,7 @@ namespace CoopGame.CarrySystem
             if (_activeCarriers.TryGetValue(clientId, out CarrierInfo data))
             {
                 data.InputDirection = worldMoveDirection;
+                data.InputReceivedAt = Time.fixedTime;
                 data.FacingHeading = forwardHeading;
                 data.HoldHeight = holdHeight;
                 // Input streaming is unreliable. Only the reliable hand-state

@@ -10,6 +10,8 @@ using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 
 namespace CoopGame.Network
 {
@@ -27,6 +29,10 @@ namespace CoopGame.Network
         }
         [Serializable] private sealed class Snapshot
         {
+            public float realtime, yaw, pitch, speed;
+            public Vector2 moveInput;
+            public bool grounded, climbing;
+            public MechanismSnapshot[] mechanisms;
             public bool connected, cameraOwned, cargoSecured, failed, gateOpen, relayBridgeOpen, wallSwitchAOpen, wallSwitchBOpen, padded, failureUI, carrying, damagePopup;
             public byte trapAPhase, trapBPhase;
             public string scene, error, command, hpLabel, damageLabel, cursor;
@@ -40,7 +46,19 @@ namespace CoopGame.Network
             public float reachLeft, reachRight;
             public PlayerSnapshot[] players;
         }
+        [Serializable] private sealed class MechanismSnapshot
+        {
+            public string name;
+            public Vector3 position, euler, button, primary, secondary;
+            public bool open, near;
+            public int phase;
+        }
         private string _directory, _lastCommand, _error;
+        private Keyboard _probeKeyboard;
+        private Mouse _probeMouse;
+        private Key[] _keys = Array.Empty<Key>();
+        private bool _leftMouse, _rightMouse;
+        private float _inputUntil;
         private float _nextPoll;
         private Vector3 _teleport;
         private bool _teleportPending;
@@ -58,6 +76,10 @@ namespace CoopGame.Network
                 var probe = new GameObject("ExpeditionNetworkProbe").AddComponent<ExpeditionNetworkProbe>();
                 DontDestroyOnLoad(probe.gameObject);
                 probe._directory = args[i + 1];
+                Application.runInBackground = true;
+                InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+                probe._probeKeyboard = InputSystem.AddDevice<Keyboard>("ExpeditionProbeKeyboard");
+                probe._probeMouse = InputSystem.AddDevice<Mouse>("ExpeditionProbeMouse");
                 Directory.CreateDirectory(probe._directory);
                 Application.logMessageReceived += probe.RecordError;
                 bool host = false;
@@ -113,9 +135,24 @@ namespace CoopGame.Network
         {
             if (type == LogType.Error || type == LogType.Exception) _error = message;
         }
-        private void OnDestroy() => Application.logMessageReceived -= RecordError;
+        private void OnDestroy()
+        {
+            Application.logMessageReceived -= RecordError;
+            if (_probeKeyboard != null) InputSystem.RemoveDevice(_probeKeyboard);
+            if (_probeMouse != null) InputSystem.RemoveDevice(_probeMouse);
+        }
         private void Update()
         {
+            // Development-only virtual devices exercise the production input actions.
+            // They do not move bodies, set grips or bypass server interaction validation.
+            if (_probeKeyboard != null)
+            {
+                bool held = Time.unscaledTime < _inputUntil;
+                InputSystem.QueueStateEvent(_probeKeyboard, new KeyboardState(held ? _keys : Array.Empty<Key>()));
+                var mouse = new MouseState();
+                mouse = mouse.WithButton(MouseButton.Left, held && _leftMouse).WithButton(MouseButton.Right, held && _rightMouse);
+                InputSystem.QueueStateEvent(_probeMouse, mouse);
+            }
             if (_directory == null || Time.unscaledTime < _nextPoll) return;
             _nextPoll = Time.unscaledTime + .25f;
             try
@@ -144,6 +181,33 @@ namespace CoopGame.Network
             var carry = player.GetComponent<PlayerCarry>();
             switch (parts[1])
             {
+                case "input":
+                    _inputUntil = Time.unscaledTime + float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
+                    _keys = parts.Length > 3 && parts[3].Length > 0 ? parts[3].Split(',').Select(k => (Key)Enum.Parse(typeof(Key), k, true)).ToArray() : Array.Empty<Key>();
+                    _leftMouse = parts.Length > 4 && parts[4].Contains("L");
+                    _rightMouse = parts.Length > 4 && parts[4].Contains("R");
+                    break;
+                case "look":
+                    var view = player.GetComponent<PlayerCameraController>();
+                    typeof(PlayerCameraController).GetField("_yaw", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(view, float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture));
+                    typeof(PlayerCameraController).GetField("_pitch", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(view, float.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture));
+                    break;
+                case "scene":
+                    if (manager.IsServer) manager.SceneManager.LoadScene(parts[2], LoadSceneMode.Single);
+                    break;
+                case "capture": ScreenCapture.CaptureScreenshot(Path.Combine(_directory, parts[2] + ".png")); break;
+                case "cargo_setup":
+                    // Explicit diagnostic setup, never counted as traversal evidence.
+                    if (!manager.IsServer) break;
+                    var setupPosition = new Vector3(float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture), float.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture), float.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture));
+                    QueuePhysicsAction(() => {
+                        var setupCargo = FindAnyObjectByType<FragileCargo>();
+                        if (setupCargo == null) return;
+                        var body = setupCargo.GetComponent<Rigidbody>();
+                        body.position = setupPosition; body.rotation = Quaternion.identity;
+                        body.linearVelocity = Vector3.zero; body.angularVelocity = Vector3.zero;
+                    });
+                    break;
                 case "card": state.SelectCardRpc(byte.Parse(parts[2])); break;
                 case "buy": state.BuyItemRpc(byte.Parse(parts[2])); break;
                 case "use": state.UseItemRpc(int.Parse(parts[2])); break;
@@ -213,6 +277,23 @@ namespace CoopGame.Network
             var fill = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_fill", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Image : null;
             var snapshot = new Snapshot
             {
+                realtime = Time.realtimeSinceStartup,
+                yaw = camera != null ? camera.Yaw : 0, pitch = camera != null ? camera.Pitch : 0,
+                speed = player != null ? player.GetComponent<PlayerMovement>().CurrentSpeed : 0,
+                moveInput = player != null ? player.GetComponent<PlayerInputReader>().MoveInput : Vector2.zero,
+                grounded = player != null && player.GetComponent<PlayerMovement>().IsGrounded,
+                climbing = player != null && player.GetComponent<Wallclimb>().IsClimbing,
+                mechanisms = FindObjectsByType<ClimbSwitchGate>().Select(g => new MechanismSnapshot {
+                    name=g.name, position=g.transform.position, euler=g.transform.eulerAngles, open=g.IsOpen, near=g.IsLocalNear,
+                    button=((Transform)typeof(ClimbSwitchGate).GetField("_button", privateInstance).GetValue(g)).position
+                }).Concat(FindObjectsByType<NetworkRouteHazard>().Select(g => new MechanismSnapshot {
+                    name=g.name, position=g.transform.position,euler=g.transform.eulerAngles,phase=g.Phase,
+                    primary=((Rigidbody)typeof(NetworkRouteHazard).GetField("_primary",privateInstance).GetValue(g)).position,
+                    secondary=typeof(NetworkRouteHazard).GetField("_secondary",privateInstance).GetValue(g) is Rigidbody second ? second.position : Vector3.zero
+                })).Concat(FindObjectsByType<RotatingLogHazard>().Select(g => new MechanismSnapshot {
+                    name=g.name,position=g.transform.position,euler=g.transform.eulerAngles,
+                    primary=((Rigidbody)typeof(RotatingLogHazard).GetField("_logRigidbody",privateInstance).GetValue(g)).rotation.eulerAngles
+                })).ToArray(),
                 connected = manager.IsConnectedClient, scene = SceneManager.GetActiveScene().name,
                 error = _error, command = _lastCommand,
                 cameraOwned = camera != null && camera == PlayerCameraController.LocalInstance && camera.PlayerCamera != null && camera.PlayerCamera.isActiveAndEnabled,
@@ -277,6 +358,7 @@ namespace CoopGame.Network
                 }
             }
             File.WriteAllText(Path.Combine(_directory, "snapshot.json"), JsonUtility.ToJson(snapshot, true));
+            File.AppendAllText(Path.Combine(_directory, "timeline.jsonl"), JsonUtility.ToJson(snapshot) + Environment.NewLine);
         }
 
         private static float GripOverreach(NetworkObject player, bool left)
