@@ -315,6 +315,12 @@ namespace CoopGame.CarrySystem
 
             if (supportingCarrierCount == 0) return;
 
+            // Support weight at the centre of mass. Applying gravity compensation
+            // at a side grip creates a pitching torque even when the crate is at
+            // its target, lifting the contact out of arm reach and into the body.
+            // Contact springs still control motion/rotation and world collisions.
+            _rigidbody.AddForce(-Physics.gravity, ForceMode.Acceleration);
+
             // Tight hand-reach constraints can stop the players before a support
             // spring builds enough lateral error to start the crate. Use the
             // already validated, server-held walking intent to initiate motion.
@@ -390,17 +396,19 @@ namespace CoopGame.CarrySystem
                 int activeHands = (hasLeft ? 1 : 0) + (hasRight ? 1 : 0);
                 float supportShare = 1f / (activeHands * supportingCarrierCount);
                 float supportedMass = _rigidbody.mass * supportShare;
-                Vector3 gravComp = -Physics.gravity * supportedMass;
-                float springStrength = supportedMass * (SoloAssistActive ? 40f : 32f);
-                float dampingStrength = supportedMass * (SoloAssistActive ? 12f : 10f);
-                float maximumForce = supportedMass * (SoloAssistActive ? 60f : 45f);
+                // Stronger support follows the hands with less lag. Damping is
+                // raised alongside stiffness to avoid adding bounce at pickup.
+                // Contributions remain mass-normalized across hands/carriers.
+                float springStrength = supportedMass * (SoloAssistActive ? 48f : 40f);
+                float dampingStrength = supportedMass * (SoloAssistActive ? 14f : 12f);
+                float maximumForce = supportedMass * (SoloAssistActive ? 75f : 60f);
 
                 // 1. Spring-damper force at Left Hand contact point (if left hand active)
                 if (hasLeft)
                 {
                     Vector3 deltaL = (targetHandL - currentWorldL);
                     Vector3 velL = _rigidbody.GetPointVelocity(currentWorldL);
-                    Vector3 forceL = deltaL * springStrength + (carrier.PlayerVelocity - velL) * dampingStrength + gravComp;
+                    Vector3 forceL = deltaL * springStrength + (carrier.PlayerVelocity - velL) * dampingStrength;
                     forceL = Vector3.ClampMagnitude(forceL, maximumForce);
                     _rigidbody.AddForceAtPosition(forceL, currentWorldL, ForceMode.Force);
                 }
@@ -410,7 +418,7 @@ namespace CoopGame.CarrySystem
                 {
                     Vector3 deltaR = (targetHandR - currentWorldR);
                     Vector3 velR = _rigidbody.GetPointVelocity(currentWorldR);
-                    Vector3 forceR = deltaR * springStrength + (carrier.PlayerVelocity - velR) * dampingStrength + gravComp;
+                    Vector3 forceR = deltaR * springStrength + (carrier.PlayerVelocity - velR) * dampingStrength;
                     forceR = Vector3.ClampMagnitude(forceR, maximumForce);
                     _rigidbody.AddForceAtPosition(forceR, currentWorldR, ForceMode.Force);
                 }
@@ -560,8 +568,8 @@ namespace CoopGame.CarrySystem
             // Update player movement speeds based on carrier count
             UpdateAllCarriersSpeedMultiplier();
 
-            // Keep the torso solid; auxiliary hand colliders must not fight
-            // the grip springs at their attached surface contacts.
+            // A carrier's body must not collide with their held cargo. Otherwise
+            // gravity and grip springs can push the controller and rotate the rig.
             SetCarrierCollisionIgnore(_activeCarriers[clientId].PlayerColliders, true);
 
             // Wake up Rigidbody with gravity active
@@ -578,8 +586,16 @@ namespace CoopGame.CarrySystem
         // Shared by authority and owner prediction so collision policy cannot differ.
         internal static bool ShouldIgnoreCarryCollision(Collider playerCollider)
         {
-            return !(playerCollider is CharacterController) &&
-                playerCollider.GetComponent<PlayerMovement>() == null;
+            return playerCollider != null && !playerCollider.isTrigger;
+        }
+
+        // Re-enabling a pair while the crate overlaps the former carrier would
+        // cause an immediate depenetration shove. Restore after they separate.
+        internal static bool CanRestoreCarryCollision(Collider player, Collider cargo)
+        {
+            return player == null || cargo == null || !player.enabled || !cargo.enabled ||
+                !player.gameObject.activeInHierarchy || !cargo.gameObject.activeInHierarchy ||
+                !player.bounds.Intersects(cargo.bounds);
         }
 
         /// <summary>
@@ -723,20 +739,29 @@ namespace CoopGame.CarrySystem
                 _ownColliders = GetComponentsInChildren<Collider>(true);
             }
 
-            for (int changeIndex = 0; changeIndex < _pendingCollisionChanges.Count; changeIndex++)
+            for (int changeIndex = _pendingCollisionChanges.Count - 1; changeIndex >= 0; changeIndex--)
             {
                 CollisionChange change = _pendingCollisionChanges[changeIndex];
+                bool deferred = false;
                 foreach (var pCol in change.PlayerColliders)
                 {
+                    bool currentlyAttached = false;
+                    foreach (var carrier in _activeCarriers.Values)
+                        if (pCol != null && carrier.PlayerTransform != null &&
+                            (pCol.transform == carrier.PlayerTransform || pCol.transform.IsChildOf(carrier.PlayerTransform)))
+                        { currentlyAttached = true; break; }
                     foreach (var oCol in _ownColliders)
                     {
                         if (pCol != null && oCol != null && !pCol.isTrigger && !oCol.isTrigger)
-                            Physics.IgnoreCollision(pCol, oCol,
-                                change.Ignore && ShouldIgnoreCarryCollision(pCol));
+                        {
+                            bool ignore = change.Ignore || currentlyAttached;
+                            if (!ignore && !CanRestoreCarryCollision(pCol, oCol)) { deferred = true; continue; }
+                            Physics.IgnoreCollision(pCol, oCol, ignore);
+                        }
                     }
                 }
+                if (!deferred) _pendingCollisionChanges.RemoveAt(changeIndex);
             }
-            _pendingCollisionChanges.Clear();
         }
 
         private void CreateFallbackSockets()

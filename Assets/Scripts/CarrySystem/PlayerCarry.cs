@@ -36,7 +36,7 @@ namespace CoopGame.CarrySystem
         [SerializeField] private float _maxLiftHeight = 2.2f;
 
         [Tooltip("Normal carry height when looking straight ahead")]
-        [SerializeField] private float _normalLiftHeight = 1.05f;
+        [SerializeField] private float _normalLiftHeight = 1.3f;
 
         [Tooltip("Minimum carry height when looking down into carts/ground")]
         [SerializeField] private float _minLiftHeight = 0.45f;
@@ -317,6 +317,8 @@ namespace CoopGame.CarrySystem
             // NetworkPlayer can attach the procedural rig after this component's
             // Awake. Bind it on every peer, including remote player proxies.
             EnsureVisualHandsCreated();
+            // NetworkPlayer may have created the visual rig after our Awake.
+            _playerColliders = GetComponentsInChildren<Collider>(true);
             _gripRevision = _netGripState.Value.Revision;
             _acceptedGripRevision = 0;
             _releasePending = false;
@@ -423,6 +425,9 @@ namespace CoopGame.CarrySystem
                 UpdatePersistentAimMarker(out _aimedCarryable, out _canGrabAimed);
                 ProcessGrabIntent();
             }
+            // A newly accepted/predicted grip must suppress body contacts before
+            // this physics step, rather than waiting for the next FixedUpdate.
+            FlushCollisionChanges();
             if (_currentCarryable == null || !IsCarrying) { _hasCarryFacing = false; return; }
             Vector3 toCargo = (_currentCargoRigidbody != null ? _currentCargoRigidbody.position : _currentCarryable.transform.position) - transform.position;
             toCargo.y = 0f;
@@ -584,8 +589,11 @@ namespace CoopGame.CarrySystem
         {
             if (_cameraController == null) return _normalLiftHeight;
             float pitch = _cameraController.Pitch;
+            // The default third-person camera looks slightly down. Treat that
+            // viewing angle as a normal carry, so simply looking ahead does not
+            // lower the crate into the floor while walking.
             return pitch < 0f ? Mathf.Lerp(_normalLiftHeight, _maxLiftHeight, Mathf.Clamp01(-pitch / 55f))
-                : Mathf.Lerp(_normalLiftHeight, _minLiftHeight, Mathf.Clamp01(pitch / 60f));
+                : Mathf.Lerp(_normalLiftHeight, _minLiftHeight, Mathf.Clamp01((pitch - 25f) / 35f));
         }
 
         private void ToggleHand(bool left)
@@ -1063,7 +1071,8 @@ namespace CoopGame.CarrySystem
                 _currentLocalRotationRight = state.RightRotation;
             }
             if (_currentCarryable == null || !IsCarrying) return;
-            if (_wallClimb != null && _wallClimb.IsClimbing) return;
+            // A confirmed cargo attachment takes priority over an older replicated
+            // climbing flag, which can arrive on a different network tick.
             Transform cargo = _currentCarryable.transform;
             if (LeftHandGripping)
                 ApplyHandTarget(true, cargo.TransformPoint(_currentLocalContactLeft), cargo.rotation * _currentLocalRotationLeft);
@@ -1184,17 +1193,18 @@ namespace CoopGame.CarrySystem
         {
             if (_currentCarryable == null || !IsCarrying || !HasLocalInput) return displacement;
             Vector3 original = displacement;
+            Vector3 requestedHorizontal = new(original.x, 0f, original.z);
+            float requestedSqr = requestedHorizontal.sqrMagnitude;
+            // Grip/cargo motion may limit walking, but must never walk the player.
+            if (requestedSqr < .0000001f) return original;
             for (int pass = 0; pass < 3; pass++)
             {
                 if (_leftHandGripping) ConstrainHand(true, ref displacement);
                 if (_rightHandGripping) ConstrainHand(false, ref displacement);
                 ConstrainBodyOverlap(ref displacement);
             }
-            Vector3 correction = displacement - original;
-            correction.y = 0f;
-            float requestedHorizontal = new Vector2(original.x, original.z).magnitude;
-            correction = Vector3.ClampMagnitude(correction, requestedHorizontal + 6f * Time.fixedDeltaTime);
-            return original + correction;
+            float allowed = Mathf.Clamp01(Vector3.Dot(displacement, requestedHorizontal) / requestedSqr);
+            return requestedHorizontal * allowed + Vector3.up * original.y;
         }
 
         private void ConstrainHand(bool left, ref Vector3 displacement)
@@ -1416,6 +1426,7 @@ namespace CoopGame.CarrySystem
 
         private void OnGrabSuccessful(CarryableObject carryable, int socketIndex)
         {
+            EnsureVisualHandsCreated();
             _currentCarryable = carryable;
             CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Lift, carryable.transform.position);
             _assignedSocketIndex = socketIndex;
@@ -1429,7 +1440,7 @@ namespace CoopGame.CarrySystem
                 _movement.SpeedMultiplier = carryable.GetSpeedMultiplier();
             }
 
-            // The torso remains solid; only auxiliary hand colliders are ignored.
+            // Apply the same carrier/cargo collision policy on every peer.
             SetLocalCollisionIgnore(_currentCarryable, true);
 
             Debug.Log($"[PlayerCarry] Client {OwnerClientId} attached to '{_currentCarryable.name}' (Socket #{socketIndex}) | Gravity: ACTIVE");
@@ -1448,25 +1459,37 @@ namespace CoopGame.CarrySystem
 
         private void FlushCollisionChanges()
         {
-            for (int i = 0; i < _collisionRestores.Count; i++)
-                SetCollisionPair(_collisionRestores[i], false);
-            _collisionRestores.Clear();
-            if (!_collisionIgnorePending || _currentCargoColliders == null) return;
+            for (int i = _collisionRestores.Count - 1; i >= 0; i--)
+            {
+                Collider oldCargo = _collisionRestores[i];
+                bool reattached = _currentCargoColliders != null &&
+                    System.Array.IndexOf(_currentCargoColliders, oldCargo) >= 0 && IsCarrying;
+                if (reattached || SetCollisionPair(oldCargo, false)) _collisionRestores.RemoveAt(i);
+            }
+            if (_currentCargoColliders == null || (!IsCarrying && !_collisionIgnorePending)) return;
             _collisionIgnorePending = false;
+            // Collider enable/disable can clear PhysX's ignore state. Keep the
+            // carrier's pair exemption valid throughout the attachment on all peers.
             for (int i = 0; i < _currentCargoColliders.Length; i++)
                 SetCollisionPair(_currentCargoColliders[i], true);
         }
 
-        private void SetCollisionPair(Collider cargoCollider, bool ignore)
+        private bool SetCollisionPair(Collider cargoCollider, bool ignore)
         {
-            if (cargoCollider == null || _playerColliders == null) return;
+            if (cargoCollider == null || _playerColliders == null) return true;
+            bool completed = true;
             for (int i = 0; i < _playerColliders.Length; i++)
             {
                 Collider playerCollider = _playerColliders[i];
                 if (playerCollider != null && !playerCollider.isTrigger && !cargoCollider.isTrigger)
+                {
+                    if (!ignore && !CarryableObject.CanRestoreCarryCollision(playerCollider, cargoCollider))
+                    { completed = false; continue; }
                     Physics.IgnoreCollision(playerCollider, cargoCollider,
                         ignore && CarryableObject.ShouldIgnoreCarryCollision(playerCollider));
+                }
             }
+            return completed;
         }
 
         private void ReleaseCarryState()

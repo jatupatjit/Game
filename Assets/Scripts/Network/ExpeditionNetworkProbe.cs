@@ -23,9 +23,10 @@ namespace CoopGame.Network
         {
             public ulong owner;
             public int face;
-            public bool carrying, samplingAnimatorReady, leftGripping, rightGripping;
+            public bool carrying, samplingAnimatorReady, leftGripping, rightGripping, heldCollisionIgnored;
             public float leftWeight, rightWeight, leftGrip, rightGrip;
             public Vector3 leftTarget, rightTarget, leftWrist, rightWrist;
+            public Vector3 position, euler;
         }
         [Serializable] private sealed class Snapshot
         {
@@ -62,9 +63,11 @@ namespace CoopGame.Network
         private Keyboard _probeKeyboard;
         private Mouse _probeMouse;
         private Key[] _keys = Array.Empty<Key>();
+        private readonly System.Collections.Generic.List<InputDevice> _isolatedDevices = new(8);
         private bool _leftMouse, _rightMouse;
         private float _inputUntil;
         private float _nextPoll;
+        private bool _snapshotPending;
         private Vector3 _teleport;
         private bool _teleportPending;
         private Action _fixedAction;
@@ -147,6 +150,7 @@ namespace CoopGame.Network
         private void OnDestroy()
         {
             Application.logMessageReceived -= RecordError;
+            RestorePhysicalInputs();
             if (_probeKeyboard != null) InputSystem.RemoveDevice(_probeKeyboard);
             if (_probeMouse != null) InputSystem.RemoveDevice(_probeMouse);
         }
@@ -172,8 +176,18 @@ namespace CoopGame.Network
                     string command = File.ReadAllText(path).Trim();
                     if (command != _lastCommand) { _lastCommand = command; Execute(command); }
                 }
-                SaveSnapshot();
+                _snapshotPending = true;
             }
+            catch (Exception error) { _error = error.Message; }
+        }
+
+        // Order500 runs after the procedural arms' LateUpdate (order110), so
+        // wrist/contact measurements describe the same rendered frame.
+        private void LateUpdate()
+        {
+            if (!_snapshotPending) return;
+            _snapshotPending = false;
+            try { SaveSnapshot(); }
             catch (Exception error) { _error = error.Message; }
         }
 
@@ -191,6 +205,15 @@ namespace CoopGame.Network
             var carry = player.GetComponent<PlayerCarry>();
             switch (parts[1])
             {
+                case "isolate_input":
+                    // Explicit probe-only command: isolate repeatable automated
+                    // cases from hardware input in this game process.
+                    foreach (var device in InputSystem.devices)
+                        if (device != _probeKeyboard && device != _probeMouse && device.enabled &&
+                            (device is Keyboard || device is Mouse || device is Gamepad))
+                        { _isolatedDevices.Add(device); InputSystem.DisableDevice(device); }
+                    break;
+                case "restore_input": RestorePhysicalInputs(); break;
                 case "input":
                     _inputUntil = Time.unscaledTime + float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
                     _keys = parts.Length > 3 && parts[3].Length > 0 ? parts[3].Split(',').Select(k => (Key)Enum.Parse(typeof(Key), k, true)).ToArray() : Array.Empty<Key>();
@@ -267,6 +290,27 @@ namespace CoopGame.Network
             player.GetComponent<Unity.Netcode.Components.NetworkTransform>().Teleport(_teleport, player.transform.rotation, player.transform.localScale);
             controller.enabled = true;
             player.GetComponent<PlayerMovement>().ResetVelocity();
+        }
+
+        private void RestorePhysicalInputs()
+        {
+            foreach (var device in _isolatedDevices)
+                if (device != null && device.added) InputSystem.EnableDevice(device);
+            _isolatedDevices.Clear();
+        }
+
+        private static bool HeldCollisionsIgnored(PlayerCarry carry)
+        {
+            if (carry == null || !carry.IsCarrying || carry.CurrentCarryable == null) return false;
+            var players = carry.GetComponentsInChildren<Collider>(true);
+            var cargo = carry.CurrentCarryable.CollisionColliders;
+            if (cargo == null) return false;
+            foreach (var playerCollider in players)
+                foreach (var cargoCollider in cargo)
+                    if (playerCollider != null && cargoCollider != null && playerCollider.enabled && cargoCollider.enabled &&
+                        !playerCollider.isTrigger && !cargoCollider.isTrigger &&
+                        !Physics.GetIgnoreCollision(playerCollider, cargoCollider)) return false;
+            return true;
         }
 
         private void SaveSnapshot()
@@ -370,6 +414,8 @@ namespace CoopGame.Network
                 {
                     owner = o.OwnerClientId, face = o.GetComponent<PlayerAppearance>().CurrentFace,
                     carrying = o.GetComponent<PlayerCarry>().IsCarrying,
+                    heldCollisionIgnored = HeldCollisionsIgnored(o.GetComponent<PlayerCarry>()),
+                    position = o.transform.position, euler = o.transform.eulerAngles,
                     samplingAnimatorReady = o.GetComponentInChildren<Animator>() != null,
                     leftGripping = o.GetComponent<PlayerCarry>().LeftHandGripping,
                     rightGripping = o.GetComponent<PlayerCarry>().RightHandGripping,
