@@ -58,6 +58,7 @@ namespace CoopGame.Network
         private MenuState _currentState = MenuState.Main;
         private float     _statusTimer  = 0f;
         private bool      _fadingOut    = false;
+        private bool      _waitingForHost;
 
         public bool IsMenuVisible => isActiveAndEnabled &&
             (_lobbyRoot == null || _lobbyRoot.alpha > 0.01f);
@@ -115,9 +116,20 @@ namespace CoopGame.Network
         {
             if (!_fadingOut && IsSessionActive())
             {
+                _waitingForHost = false;
                 _fadingOut = true;
                 StartCoroutine(FadeOutAndHide());
                 return;
+            }
+            // Once hosting succeeds, fading menu input must not cancel the live session.
+            if (_fadingOut) return;
+
+            var manager = SteamLobbyManager.Instance;
+            if (_waitingForHost && manager != null && !manager.IsStartingHost && !IsSessionActive())
+            {
+                _waitingForHost = false;
+                ShowPanel(MenuState.HostRoom);
+                SetStatus(manager.StatusMessage, true);
             }
 
             _statusTimer -= Time.unscaledDeltaTime;
@@ -157,6 +169,7 @@ namespace CoopGame.Network
         private void OnBackToHostRoom()      => ShowPanel(MenuState.HostRoom);
         private void OnCancelConnecting()
         {
+            _waitingForHost = false;
             var mgr = SteamLobbyManager.Instance;
             if (mgr != null)
             {
@@ -179,20 +192,22 @@ namespace CoopGame.Network
         private void OnHostClicked()
         {
             var mgr = SteamLobbyManager.Instance;
-            if (mgr == null || !mgr.IsSteamInitialized)
+            if (mgr == null)
             {
-                SetStatus("Steam is not running! Please launch Steam first.", true);
+                SetStatus("Game session manager is not ready. Please try again.", true);
                 return;
             }
+            if (mgr.IsStartingHost) return;
             ShowPanel(MenuState.Connecting);
+            _waitingForHost = true;
             if (_connectingLabel != null) _connectingLabel.text = "Creating room...";
-            mgr.HostSteamLobby(4);
+            mgr.HostLobby(4);
         }
 
         private void OnConfirmJoin()
         {
             var mgr = SteamLobbyManager.Instance;
-            if (mgr == null || !mgr.IsSteamInitialized)
+            if (mgr == null || !mgr.IsSteamMultiplayerAvailable)
             {
                 SetStatus("Steam is not running!", true);
                 return;
@@ -249,10 +264,11 @@ namespace CoopGame.Network
         private void UpdateStatusLabels()
         {
             var mgr = SteamLobbyManager.Instance;
-            bool steamReady = mgr != null && mgr.IsSteamInitialized;
+            bool steamReady = mgr != null && mgr.IsSteamMultiplayerAvailable;
+            bool canHost = mgr != null && !mgr.IsStartingHost;
 
-            if (_hostRoomMenuButton != null) _hostRoomMenuButton.interactable = steamReady;
-            if (_hostButton         != null) _hostButton.interactable         = steamReady;
+            if (_hostRoomMenuButton != null) _hostRoomMenuButton.interactable = canHost;
+            if (_hostButton         != null) _hostButton.interactable         = canHost;
             if (_joinButton         != null) _joinButton.interactable         = steamReady;
             if (_confirmJoinButton  != null) _confirmJoinButton.interactable  = steamReady;
 

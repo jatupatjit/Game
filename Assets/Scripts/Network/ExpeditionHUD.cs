@@ -116,9 +116,14 @@ namespace CoopGame.Network
             {
                 int count = _mission.Cargo.CurrentCarrierCount;
                 detail = $"ลัง HP {_mission.Cargo.CurrentHP.Value}/{_mission.Cargo.MaxHP}   |   ผู้ยก {count}/4\n" +
-                    (count >= 2 ? "ช่วยกันยกแล้วไม่เสียแรง • คลิกอีกครั้งเพื่อปล่อย" : "คลิกซ้าย/ขวาเพื่อจับหรือปล่อย • E จับสองมือ • Q โยน");
+                    (count >= 2 ? "ช่วยกันยกแล้วไม่เสียแรง • คลิกอีกครั้งเพื่อปล่อย" : "คลิกซ้าย/ขวาเพื่อจับหรือปล่อย • E จับสองมือ • F วาง • Q โยน");
             }
             else detail = "กำลังเตรียมลัง...";
+            if (_mission.Cargo != null && _mission.Cargo.SoloAssistActive && _mission.Phase.Value < 2)
+                detail += "\nเล่นคนเดียว: ลังเบาลง 50%";
+            var localCarry = _player.GetComponent<PlayerCarry>();
+            if (localCarry != null && localCarry.PlacementFeedback != null)
+                detail = localCarry.PlacementFeedback;
             if (_lever != null && _lever.IsLocalNear && _mission.Phase.Value < 2)
                 detail = $"กด E ค้าง ประตูจะเปิด {_lever.OpenDurationSeconds:0.#} วินาที\nให้เพื่อนขนลังผ่าน แล้วค่อยตามไป";
             if (_mission.Phase.Value < 2)

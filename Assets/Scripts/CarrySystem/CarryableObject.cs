@@ -19,7 +19,7 @@ namespace CoopGame.CarrySystem
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(NetworkObject))]
     [DisallowMultipleComponent]
-    public class CarryableObject : NetworkBehaviour, ICarryable
+    public partial class CarryableObject : NetworkBehaviour, ICarryable
     {
         [Header("Carry Sockets (Multi-player attachment)")]
         [Tooltip("Transform locations where players attach in co-op (Front, Back, Left, Right).")]
@@ -109,7 +109,7 @@ namespace CoopGame.CarrySystem
         private Vector3 _deliveryPlacementPosition;
         private Quaternion _deliveryPlacementRotation = Quaternion.identity;
         public bool IsSecured => _secured.Value;
-        public virtual bool CanBeCarried => !IsSecured && CurrentCarrierCount < MaxCarriers;
+        public virtual bool CanBeCarried => !IsSecured && !IsPlacing && CurrentCarrierCount < MaxCarriers;
         public bool IsCarried => (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             ? (SyncedCarrierCount.Value > 0)
             : (_activeCarriers.Count > 0);
@@ -118,11 +118,12 @@ namespace CoopGame.CarrySystem
             : _activeCarriers.Count;
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
         public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
-        public float GetSpeedMultiplier() => CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : _soloSpeedMultiplier;
+        public float GetSpeedMultiplier() => SoloAssistActive ? .85f : CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : _soloSpeedMultiplier;
 
         protected virtual void Awake()
         {
             _rigidbody = GetComponent<Rigidbody>();
+            _baseMass = _rigidbody.mass;
             _physicsSetupPending = true;
             _ownColliders = GetComponentsInChildren<Collider>(true);
 
@@ -179,6 +180,8 @@ namespace CoopGame.CarrySystem
             _occupiedSockets.Clear();
             _staleCarriers.Clear();
             _throwPending = false;
+            if (IsServer) _placing.Value = false;
+            _placementFloorCount = 0;
             base.OnNetworkDespawn();
         }
 
@@ -233,6 +236,7 @@ namespace CoopGame.CarrySystem
                 _rigidbody.isKinematic = isNetworked && !IsServer;
                 _rigidbody.useGravity = !isNetworked || IsServer;
             }
+            UpdateSessionProfile(isNetworked);
             if (isNetworked && !IsServer) return;
 
             foreach (var pair in _activeCarriers)
@@ -282,6 +286,8 @@ namespace CoopGame.CarrySystem
                 _rigidbody.WakeUp();
             }
 
+            if (TickGentlePlacement()) return;
+
             // When no one is carrying: allow full PhysX gravity and free tumbling
             if (_activeCarriers.Count == 0)
             {
@@ -321,7 +327,7 @@ namespace CoopGame.CarrySystem
                 float speed = 5f * GetSpeedMultiplier();
                 Vector3 horizontalVelocity = Vector3.ProjectOnPlane(_rigidbody.linearVelocity, Vector3.up);
                 Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * 6f,
-                    _carryTractionAcceleration);
+                    _carryTractionAcceleration * (SoloAssistActive ? 1.5f : 1f));
                 _rigidbody.AddForce(acceleration, ForceMode.Acceleration);
             }
 
@@ -385,9 +391,9 @@ namespace CoopGame.CarrySystem
                 float supportShare = 1f / (activeHands * supportingCarrierCount);
                 float supportedMass = _rigidbody.mass * supportShare;
                 Vector3 gravComp = -Physics.gravity * supportedMass;
-                float springStrength = supportedMass * 32f;
-                float dampingStrength = supportedMass * 10f;
-                float maximumForce = supportedMass * 45f;
+                float springStrength = supportedMass * (SoloAssistActive ? 40f : 32f);
+                float dampingStrength = supportedMass * (SoloAssistActive ? 12f : 10f);
+                float maximumForce = supportedMass * (SoloAssistActive ? 60f : 45f);
 
                 // 1. Spring-damper force at Left Hand contact point (if left hand active)
                 if (hasLeft)
@@ -567,7 +573,7 @@ namespace CoopGame.CarrySystem
         }
 
         /// <summary>Attachment lifecycle hook; called before the next support physics step.</summary>
-        protected virtual void OnCarrierAttached(bool firstCarrier) { }
+        protected virtual void OnCarrierAttached(bool firstCarrier) { _supportProtectionEnd = -1f; _placementFloorCount = 0; }
 
         // Shared by authority and owner prediction so collision policy cannot differ.
         internal static bool ShouldIgnoreCarryCollision(Collider playerCollider)

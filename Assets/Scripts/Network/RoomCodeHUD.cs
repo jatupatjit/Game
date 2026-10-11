@@ -106,12 +106,16 @@ namespace CoopGame.Network
             var nm  = NetworkManager.Singleton;
             var mgr = SteamLobbyManager.Instance;
 
+            bool local = mgr != null && mgr.IsLocalSession;
             if (_roomCodeText != null)
-                _roomCodeText.text = (mgr != null && !string.IsNullOrEmpty(mgr.CurrentRoomCode))
+                _roomCodeText.text = local ? "OFFLINE" : (mgr != null && !string.IsNullOrEmpty(mgr.CurrentRoomCode))
                     ? mgr.CurrentRoomCode : "------";
 
             if (_modeLabel != null && nm != null)
-                _modeLabel.text = nm.IsHost ? "● HOST" : (nm.IsServer ? "● SERVER" : "● CLIENT");
+                _modeLabel.text = local ? "● SOLO" : nm.IsHost ? "● HOST" : (nm.IsServer ? "● SERVER" : "● CLIENT");
+
+            if (_copyButton != null)
+                _copyButton.gameObject.SetActive(!local);
 
             var names = mgr != null ? mgr.GetCurrentPlayerNames() : new List<string>();
             int count = names.Count;
@@ -120,7 +124,7 @@ namespace CoopGame.Network
 
             if (_playerCountText != null)
             {
-                _playerCountText.text = $"PLAYERS ({count}/4)";
+                _playerCountText.text = $"PLAYERS ({count}/{(local ? 1 : 4)})";
             }
 
             if (_playerNamesText != null)

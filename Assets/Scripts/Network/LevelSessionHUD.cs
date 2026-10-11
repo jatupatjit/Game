@@ -81,7 +81,8 @@ namespace CoopGame.Network
             }
 
             if (_modeLabel != null)
-                _modeLabel.text = manager.IsHost ? "● HOST" : manager.IsServer ? "● SERVER" : "● CLIENT";
+                _modeLabel.text = _lobbyManager != null && _lobbyManager.IsLocalSession
+                    ? "● SOLO" : manager.IsHost ? "● HOST" : manager.IsServer ? "● SERVER" : "● CLIENT";
 
             List<string> names = _lobbyManager != null ? _lobbyManager.GetCurrentPlayerNames() : null;
             int count = names != null && names.Count > 0 ? names.Count : manager.ConnectedClientsIds.Count;

@@ -333,7 +333,7 @@ namespace CoopGame.CarrySystem
                 if (sample.Other == null || !sample.Other.enabled) continue;
                 AddUniqueCollider(_recentContactColliders, ref _recentContactColliderCount, sample.Other);
 
-                if (sample.IsImpact && canTakePhysicsDamage && !IsPickupSettlingContact(sample.Other, now))
+                if (sample.IsImpact && canTakePhysicsDamage && !IsPickupSettlingContact(sample.Other, now) && !IsGentleSupportContact(sample.Other, sample.Normal, sample.Point))
                 {
                     // Tangential walking/sliding speed is not an impact into a surface.
                     float normalSpeed = Mathf.Abs(Vector3.Dot(sample.RelativeVelocity, sample.Normal));
@@ -347,7 +347,8 @@ namespace CoopGame.CarrySystem
                 // Use actual support contact near the cargo's measured collider
                 // bottom. Merely carrying close to a floor is never scraping.
                 if (_rigidbody != null && !float.IsPositiveInfinity(colliderBottom) &&
-                    sample.Normal.y >= 0.55f && sample.Point.y <= colliderBottom + 0.12f)
+                    sample.Normal.y >= 0.55f && sample.Point.y <= colliderBottom + 0.12f &&
+                    !IsGentleSupportContact(sample.Other, sample.Normal, sample.Point))
                 {
                     Vector3 relativeVelocity = _rigidbody.GetPointVelocity(sample.Point);
                     Rigidbody surfaceBody = sample.Other.attachedRigidbody;

@@ -131,7 +131,7 @@ namespace CoopGame.Player
         /// <param name="isOneHanded">True if only one hand is holding the object</param>
         /// <param name="objectMass">Mass of the object in kg</param>
         /// <param name="carrierCount">Number of players currently carrying this object</param>
-        public void DrainStaminaContinuous(bool isOneHanded, float objectMass, int carrierCount = 1)
+        public void DrainStaminaContinuous(bool isOneHanded, float objectMass, int carrierCount = 1, float sessionDrainMultiplier = 1f)
         {
             _wasUpdatedThisFrame = true;
             // Co-op carry (2+ players): zero drain & active stamina regeneration
@@ -148,7 +148,7 @@ namespace CoopGame.Player
             float massExcess = Mathf.Max(0f, objectMass - _baseMass);
             float massScale = 1.0f + (massExcess * _massDrainMultiplier);
 
-            float totalDrain = baseRate * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Time.deltaTime;
+            float totalDrain = baseRate * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Mathf.Clamp01(sessionDrainMultiplier) * Time.deltaTime;
 
             ApplyDrain(totalDrain);
         }

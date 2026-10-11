@@ -185,21 +185,19 @@ namespace CoopGame.Network
             GUILayout.Space(2);
 
             // Steam status
-            bool steamReady = steamManager != null && steamManager.IsSteamInitialized;
+            bool steamReady = steamManager != null && steamManager.IsSteamMultiplayerAvailable;
             if (steamReady)
             {
                 GUILayout.Label($"<color=#70d6ff>● {steamManager.SteamPlayerName}</color>", GetCenteredLabelStyle());
             }
             else
             {
-                int dotCount = ((int)(Time.unscaledTime * 2.5f) % 4);
-                string dots = new string('.', dotCount);
-                GUILayout.Label($"<color=#ffb703>● Waiting for Steam{dots}</color>", GetCenteredLabelStyle());
+                GUILayout.Label("<color=#ffb703>● Offline play available</color>", GetCenteredLabelStyle());
             }
 
             GUILayout.Space(12);
 
-            GUI.enabled = steamReady;
+            GUI.enabled = true;
 
             switch (_lobbyState)
             {
@@ -271,19 +269,21 @@ namespace CoopGame.Network
             GUI.backgroundColor = new Color(0.2f, 0.6f, 1.0f);
             if (GUILayout.Button("<b>▶  Host</b>", GUILayout.Height(44)))
             {
-                steamManager?.HostSteamLobby(4);
+                steamManager?.HostLobby(4);
             }
             GUI.backgroundColor = Color.white;
 
             GUILayout.Space(8);
 
             // Button 2: Join (Opens input for code game)
+            GUI.enabled = steamManager != null && steamManager.IsSteamMultiplayerAvailable;
             GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
             if (GUILayout.Button("<b>🔑  Join</b>", GUILayout.Height(44)))
             {
                 _lobbyState = LobbyMenuState.Join;
             }
             GUI.backgroundColor = Color.white;
+            GUI.enabled = true;
 
             GUILayout.Space(8);
 
@@ -377,8 +377,9 @@ namespace CoopGame.Network
 
         private void DrawAboveLeftRoomCodeHUD(NetworkManager nm, SteamLobbyManager steamManager)
         {
-            string mode = nm.IsHost ? "HOST" : (nm.IsServer ? "SERVER" : "CLIENT");
-            string roomCode = (steamManager != null && !string.IsNullOrEmpty(steamManager.CurrentRoomCode))
+            bool local = steamManager != null && steamManager.IsLocalSession;
+            string mode = local ? "SOLO" : nm.IsHost ? "HOST" : (nm.IsServer ? "SERVER" : "CLIENT");
+            string roomCode = local ? "OFFLINE" : (steamManager != null && !string.IsNullOrEmpty(steamManager.CurrentRoomCode))
                 ? steamManager.CurrentRoomCode
                 : "------";
 
@@ -394,6 +395,11 @@ namespace CoopGame.Network
                 GUILayout.Label($"Players: {nm.ConnectedClientsIds.Count}");
             }
 
+            if (local)
+            {
+                GUILayout.EndArea();
+                return;
+            }
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("📋 Copy", GUILayout.Height(22)))
             {

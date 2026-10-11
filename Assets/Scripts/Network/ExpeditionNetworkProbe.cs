@@ -31,13 +31,18 @@ namespace CoopGame.Network
         {
             public float realtime, yaw, pitch, speed;
             public Vector2 moveInput;
-            public bool grounded, climbing;
+            public bool grounded, climbing, localSession, portalActivated;
+            public string transport;
+            public int managerCount, activeCameraCount;
+            public Vector3 portalButton, portalEntryCenter, portalEntryExtents;
             public MechanismSnapshot[] mechanisms;
             public bool connected, cameraOwned, cargoSecured, failed, gateOpen, relayBridgeOpen, wallSwitchAOpen, wallSwitchBOpen, padded, failureUI, carrying, damagePopup;
             public byte trapAPhase, trapBPhase;
             public string scene, error, command, hpLabel, damageLabel, cursor;
             public int hp, carriers, coins, card, slot1, slot2, slot3, score, face;
-            public float stamina, hpFill;
+            public float stamina, hpFill, cargoMass, carrySpeedMultiplier, carryDrainMultiplier;
+            public bool soloAssist, placing;
+            public string placeFeedback;
             public float overreachTime, leftOverreach, rightOverreach;
             public bool leftGripping, rightGripping;
             public Vector3 cargoPosition, playerPosition;
@@ -51,7 +56,7 @@ namespace CoopGame.Network
             public string name;
             public Vector3 position, euler, button, primary, secondary;
             public bool open, near;
-            public int phase;
+            public int phase, progress, required;
         }
         private string _directory, _lastCommand, _error;
         private Keyboard _probeKeyboard;
@@ -83,17 +88,21 @@ namespace CoopGame.Network
                 Directory.CreateDirectory(probe._directory);
                 Application.logMessageReceived += probe.RecordError;
                 bool host = false;
+                bool observeMenu = false;
                 for (int j = 0; j + 1 < args.Length; j++)
                 {
                     if (args[j] != "--expedition-role") continue;
-                    if (args[j + 1] != "host" && args[j + 1] != "client")
+                    if (args[j + 1] != "host" && args[j + 1] != "client" && args[j + 1] != "menu")
                     {
-                        Debug.LogError("[ExpeditionNetworkProbe] Role must be host or client.");
+                        Debug.LogError("[ExpeditionNetworkProbe] Role must be host, client or menu.");
                         return;
                     }
                     host = args[j + 1] == "host";
+                    observeMenu = args[j + 1] == "menu";
                 }
-                probe.StartCoroutine(probe.StartLocalNetwork(host));
+                // Menu verification must exercise the production PLAY/HOST ROOM path.
+                // This role observes it without selecting a transport or starting NGO.
+                if (!observeMenu) probe.StartCoroutine(probe.StartLocalNetwork(host));
                 return;
             }
         }
@@ -174,6 +183,7 @@ namespace CoopGame.Network
             if (parts.Length < 2) return;
             var manager = NetworkManager.Singleton;
             if (parts[1] == "quit") { Application.Quit(); return; }
+            if (parts[1] == "capture") { ScreenCapture.CaptureScreenshot(Path.Combine(_directory, parts[2] + ".png")); return; }
             if (parts[1] == "disconnect") { manager.Shutdown(); return; }
             var player = manager.LocalClient?.PlayerObject;
             if (player == null) return;
@@ -195,7 +205,6 @@ namespace CoopGame.Network
                 case "scene":
                     if (manager.IsServer) manager.SceneManager.LoadScene(parts[2], LoadSceneMode.Single);
                     break;
-                case "capture": ScreenCapture.CaptureScreenshot(Path.Combine(_directory, parts[2] + ".png")); break;
                 case "cargo_setup":
                     // Explicit diagnostic setup, never counted as traversal evidence.
                     if (!manager.IsServer) break;
@@ -275,8 +284,20 @@ namespace CoopGame.Network
             var label = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_label", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Text : null;
             var damage = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_damageText", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Text : null;
             var fill = healthUI != null ? typeof(FragileCargoHealthUI).GetField("_fill", privateInstance)?.GetValue(healthUI) as UnityEngine.UI.Image : null;
+            var portal = FindAnyObjectByType<LobbyPortalGate>();
+            var portalButton = portal != null ? typeof(LobbyPortalGate).GetField("_interactionPoint", privateInstance)?.GetValue(portal) as Transform : null;
+            var portalEntry = portal != null ? typeof(LobbyPortalGate).GetField("_portalEntryZone", privateInstance)?.GetValue(portal) as Collider : null;
+            var portalState = portal != null ? typeof(LobbyPortalGate).GetField("_portalActivated", privateInstance)?.GetValue(portal) as NetworkVariable<bool> : null;
             var snapshot = new Snapshot
             {
+                localSession = SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsLocalSession,
+                transport = manager.NetworkConfig.NetworkTransport != null ? manager.NetworkConfig.NetworkTransport.GetType().Name : null,
+                managerCount = FindObjectsByType<NetworkManager>().Length,
+                activeCameraCount = FindObjectsByType<Camera>().Count(c => c.isActiveAndEnabled),
+                portalButton = portalButton != null ? portalButton.position : Vector3.zero,
+                portalEntryCenter = portalEntry != null ? portalEntry.bounds.center : Vector3.zero,
+                portalEntryExtents = portalEntry != null ? portalEntry.bounds.extents : Vector3.zero,
+                portalActivated = portalState != null && portalState.Value,
                 realtime = Time.realtimeSinceStartup,
                 yaw = camera != null ? camera.Yaw : 0, pitch = camera != null ? camera.Pitch : 0,
                 speed = player != null ? player.GetComponent<PlayerMovement>().CurrentSpeed : 0,
@@ -293,6 +314,18 @@ namespace CoopGame.Network
                 })).Concat(FindObjectsByType<RotatingLogHazard>().Select(g => new MechanismSnapshot {
                     name=g.name,position=g.transform.position,euler=g.transform.eulerAngles,
                     primary=((Rigidbody)typeof(RotatingLogHazard).GetField("_logRigidbody",privateInstance).GetValue(g)).rotation.eulerAngles
+                })).Concat(FindObjectsByType<CoopPressureGate>().Select(g => new MechanismSnapshot {
+                    name=g.name, position=g.transform.position, open=g.IsOpen, progress=g.ProgressPercent, required=g.RequiredPadCount,
+                    primary=((BoxCollider)typeof(CoopPressureGate).GetField("_leftPad",privateInstance).GetValue(g)).bounds.center,
+                    secondary=((BoxCollider)typeof(CoopPressureGate).GetField("_rightPad",privateInstance).GetValue(g)).bounds.center
+                })).Concat(FindObjectsByType<CoopChargeGate>().Select(g => new MechanismSnapshot {
+                    name=g.name,position=g.transform.position,open=g.IsOpen,progress=g.ProgressPercent,required=g.RequiredPadCount,
+                    primary=((BoxCollider)typeof(CoopChargeGate).GetField("_leftPad",privateInstance).GetValue(g)).bounds.center,
+                    secondary=((BoxCollider)typeof(CoopChargeGate).GetField("_rightPad",privateInstance).GetValue(g)).bounds.center
+                })).Concat(FindObjectsByType<CoopRelayBridge>().Select(g => new MechanismSnapshot {
+                    name=g.name,position=g.transform.position,open=g.IsDeployed,progress=g.ProgressPercent,required=g.RequiredPadCount,
+                    primary=((BoxCollider)typeof(CoopRelayBridge).GetField("_leftPad",privateInstance).GetValue(g)).bounds.center,
+                    secondary=((BoxCollider)typeof(CoopRelayBridge).GetField("_rightPad",privateInstance).GetValue(g)).bounds.center
                 })).ToArray(),
                 connected = manager.IsConnectedClient, scene = SceneManager.GetActiveScene().name,
                 error = _error, command = _lastCommand,
@@ -305,6 +338,12 @@ namespace CoopGame.Network
                 face = player != null ? player.GetComponent<PlayerAppearance>().CurrentFace : -1,
                 carriers = cargo != null ? cargo.CurrentCarrierCount : 0,
                 cargoSecured = cargo != null && cargo.IsSecured,
+                cargoMass = cargo != null ? cargo.TotalMass : 0,
+                soloAssist = cargo != null && cargo.SoloAssistActive,
+                placing = cargo != null && cargo.IsPlacing,
+                carrySpeedMultiplier = cargo != null ? cargo.GetSpeedMultiplier() : 0,
+                carryDrainMultiplier = cargo != null ? cargo.StaminaDrainMultiplier : 0,
+                placeFeedback = player != null ? player.GetComponent<PlayerCarry>().PlacementFeedback : null,
                 padded = cargo != null && cargo.HasPadding,
                 gateOpen = gate != null && gate.IsOpen,
                 relayBridgeOpen = FindAnyObjectByType<CoopRelayBridge>() is CoopRelayBridge relay && relay.IsDeployed,

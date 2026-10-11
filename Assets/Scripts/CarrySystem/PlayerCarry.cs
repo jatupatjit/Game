@@ -389,8 +389,26 @@ namespace CoopGame.CarrySystem
             _carryFacingTarget = Vector3.forward;
         }
 
+        private bool _placeIntent, _serverPlaceIntent;
+        private float _placeFeedbackUntil;
+        public string PlacementFeedback => Time.unscaledTime < _placeFeedbackUntil ? "ตรงนี้ยังวางไม่ได้" : null;
+
         private void FixedUpdate()
         {
+            if (_placeIntent)
+            {
+                _placeIntent = false;
+                if (IsNetworked) RequestPlaceServerRpc();
+                else _serverPlaceIntent = true;
+            }
+            if (_serverPlaceIntent && (IsServer || !IsNetworked))
+            {
+                _serverPlaceIntent = false;
+                bool success = _currentCarryable != null && _currentCarryable.TryPlaceGently(OwnerClientId);
+                if (success) { PublishRelease(); ReleaseCarryState(); }
+                if (IsNetworked) PlaceResultClientRpc(success);
+                else if (!success) _placeFeedbackUntil = Time.unscaledTime + 2f;
+            }
             FlushCollisionChanges();
             if (IsServer && _pendingServerGripKind != 0)
             {
@@ -445,7 +463,7 @@ namespace CoopGame.CarrySystem
             // Menus block new input while held cargo still requires support.
             if (IsCarrying && _currentCarryable != null && _stamina != null)
             {
-                _stamina.DrainStaminaContinuous(!(_leftHandGripping && _rightHandGripping), _currentCarryable.TotalMass, _currentCarryable.CurrentCarrierCount);
+                _stamina.DrainStaminaContinuous(!(_leftHandGripping && _rightHandGripping), _currentCarryable.TotalMass, _currentCarryable.CurrentCarrierCount, _currentCarryable.StaminaDrainMultiplier);
                 if (_stamina.IsExhausted) { DropForRespawn(); return; }
             }
             if (CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
@@ -475,7 +493,13 @@ namespace CoopGame.CarrySystem
                     if (_currentCarryable.CurrentCarrierCount >= 2 && TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) && state.Card.Value == 3) speed *= 1.15f;
                     _movement.SpeedMultiplier = speed;
                 }
-                if (_inputReader.ThrowHeld)
+                if (_inputReader.PlacePressed && !_releasePending)
+                {
+                    _placeIntent = true;
+                    _isChargingThrow = false;
+                    _currentThrowCharge = 0f;
+                }
+                else if (_inputReader.ThrowHeld)
                 {
                     _isChargingThrow = true;
                     _currentThrowCharge = Mathf.Clamp01(_currentThrowCharge + Time.deltaTime / Mathf.Max(.05f, _maxChargeTime));
@@ -1324,9 +1348,23 @@ namespace CoopGame.CarrySystem
         private void RestoreGripClientRpc(CargoGripState state) => ApplyGripState(state);
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        private void RequestPlaceServerRpc()
+        {
+            if (_currentCarryable != null && _currentCarryable.HasCarrier(OwnerClientId))
+                _serverPlaceIntent = true;
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void PlaceResultClientRpc(bool success)
+        {
+            if (!success) _placeFeedbackUntil = Time.unscaledTime + 2f;
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         private void RequestDropServerRpc()
         {
             _pendingServerGripKind = 0;
+            _serverPlaceIntent = false;
             if (_currentCarryable != null) _currentCarryable.DetachCarrier(OwnerClientId);
             PublishRelease();
             ReleaseCarryState();

@@ -51,6 +51,9 @@ namespace CoopGame.Network
 
         public TransportType CurrentTransportType => _currentTransportType;
         public bool IsSteamInitialized => SteamClient.IsValid;
+        public bool IsSteamMultiplayerAvailable => IsSteamInitialized && SteamClient.IsLoggedOn;
+        public bool IsLocalSession { get; private set; }
+        public bool IsStartingHost => _creatingHostLobby || _returningToLobby;
         public string SteamPlayerName => IsSteamInitialized ? SteamClient.Name : "Offline / No Steam";
         public ulong SteamPlayerId => IsSteamInitialized ? SteamClient.SteamId.Value : 0;
         public Lobby? CurrentLobby { get; private set; }
@@ -66,6 +69,7 @@ namespace CoopGame.Network
         private float _lastRetryTime = 0f;
         private bool _callbacksRegistered = false;
         private bool _creatingHostLobby;
+        private int _hostRequestVersion;
 
         // Cached Transports
         private FacepunchTransport _facepunchTransport;
@@ -129,7 +133,7 @@ namespace CoopGame.Network
             {
                 SteamClient.RunCallbacks();
             }
-            else if (_autoRetrySteam)
+            else if (_autoRetrySteam && !IsLocalSession && !_creatingHostLobby)
             {
                 // Automatically retry connecting in the background without requiring user clicks
                 if (Time.unscaledTime >= _lastRetryTime + _retryInterval)
@@ -142,6 +146,7 @@ namespace CoopGame.Network
 
         private void OnDestroy()
         {
+            _hostRequestVersion++;
             UnregisterSteamCallbacks();
             if (Instance == this)
             {
@@ -153,6 +158,7 @@ namespace CoopGame.Network
 
         private void OnApplicationQuit()
         {
+            _hostRequestVersion++;
             UnregisterSteamCallbacks();
             if (IsSteamInitialized)
             {
@@ -167,6 +173,7 @@ namespace CoopGame.Network
         /// </summary>
         public void InitializeSteam(bool force = false)
         {
+            if (IsLocalSession) return;
             if (SteamClient.IsValid)
             {
                 StatusMessage = "Ready";
@@ -187,12 +194,12 @@ namespace CoopGame.Network
                 }
                 else
                 {
-                    StatusMessage = "Waiting for Steam client to launch...";
+                    StatusMessage = "Steam unavailable. HOST ROOM can start offline.";
                 }
             }
             catch (Exception)
             {
-                StatusMessage = "Waiting for Steam client to launch...";
+                StatusMessage = "Steam unavailable. HOST ROOM can start offline.";
             }
         }
 
@@ -332,7 +339,7 @@ namespace CoopGame.Network
                 var nm = NetworkManager.Singleton;
                 if (nm != null && (nm.IsHost || nm.IsServer || nm.IsClient))
                 {
-                    string localName = IsSteamInitialized ? SteamPlayerName : "Player 1";
+                    string localName = !IsLocalSession && IsSteamInitialized ? SteamPlayerName : "Player 1";
                     if (nm.IsHost || nm.IsServer) localName += " (Host)";
                     names.Add(localName);
 
@@ -356,10 +363,19 @@ namespace CoopGame.Network
 
         private void OnLobbyCreated(Result result, Lobby lobby)
         {
+            // A timed-out/cancelled Steam request must never replace a local session.
+            var manager = NetworkManager.Singleton;
+            bool ownsActiveLobby = manager != null && manager.IsHost && CurrentLobby.HasValue &&
+                                   CurrentLobby.Value.Id == lobby.Id;
+            if ((!_creatingHostLobby && !ownsActiveLobby) || IsLocalSession || _returningToLobby)
+            {
+                if (result == Result.OK) lobby.Leave();
+                return;
+            }
             if (result != Result.OK)
             {
                 StatusMessage = $"Failed to create Steam Lobby: {result}";
-                Debug.LogError($"[SteamLobbyManager] Lobby creation failed: {result}");
+                Debug.LogWarning($"[SteamLobbyManager] Steam lobby unavailable: {result}; trying offline hosting.");
                 return;
             }
 
@@ -379,6 +395,13 @@ namespace CoopGame.Network
 
         private void OnLobbyEntered(Lobby lobby)
         {
+            if (IsLocalSession || _returningToLobby ||
+                (!_creatingHostLobby && lobby.Owner.Id == SteamClient.SteamId &&
+                 (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)))
+            {
+                lobby.Leave();
+                return;
+            }
             CurrentLobby = lobby;
             string code = lobby.GetData(RoomCodeKey);
             if (!string.IsNullOrEmpty(code))
@@ -415,6 +438,7 @@ namespace CoopGame.Network
 
         private async void OnGameLobbyJoinRequested(Lobby lobby, SteamId friendSteamId)
         {
+            if (IsLocalSession || IsStartingHost) return;
             Debug.Log($"[SteamLobbyManager] Received join request from friend: {friendSteamId} to Lobby: {lobby.Id}");
             StatusMessage = $"Joining Lobby from invite: {lobby.Id}...";
 
@@ -438,48 +462,122 @@ namespace CoopGame.Network
         #region Public Actions
 
         /// <summary>
-        /// Creates a Steam Lobby and starts hosting Netcode session.
+        /// Hosts through Steam when available, otherwise starts an isolated local session.
         /// </summary>
-        public async void HostSteamLobby(int maxMembers = 4)
+        public async void HostLobby(int maxMembers = 4)
         {
-            if (_creatingHostLobby) return;
-            if (!IsSteamInitialized)
+            if (IsStartingHost) return;
+            NetworkManager nm = NetworkManager.Singleton;
+            if (nm == null)
             {
-                StatusMessage = "Cannot host Steam lobby: Steam is not running!";
-                Debug.LogError("[SteamLobbyManager] Steam is not initialized.");
+                StatusMessage = "Cannot start: NetworkManager is missing.";
                 return;
             }
-
-            SetTransportType(TransportType.Steam);
-
-            NetworkManager nm = NetworkManager.Singleton;
-            if (nm == null || nm.IsListening) return;
+            if (nm.IsListening || nm.ShutdownInProgress) return;
 
             _creatingHostLobby = true;
+            int request = ++_hostRequestVersion;
             try
             {
-                StatusMessage = "Creating Steam Lobby...";
-                Lobby? lobby = await SteamMatchmaking.CreateLobbyAsync(maxMembers);
-                if (lobby.HasValue && nm != null && !nm.IsListening)
+                if (IsSteamMultiplayerAvailable)
                 {
-                    if (!nm.StartHost())
+                    StatusMessage = "Creating Steam Lobby...";
+                    try
                     {
-                        lobby.Value.Leave();
-                        StatusMessage = "Failed to start the network host.";
-                        Debug.LogError("[SteamLobbyManager] NetworkManager.StartHost failed after creating the Steam lobby.");
+                        Task<Lobby?> creation = SteamMatchmaking.CreateLobbyAsync(Mathf.Clamp(maxMembers, 1, 4));
+                        Task completed = await Task.WhenAny(creation, Task.Delay(8000));
+                        if (completed != creation)
+                        {
+                            ReleaseLateLobby(creation);
+                            Debug.LogWarning("[SteamLobbyManager] Steam lobby timed out; starting offline.");
+                        }
+                        else
+                        {
+                            Lobby? lobby = await creation;
+                            if (this == null || request != _hostRequestVersion)
+                            {
+                                if (lobby.HasValue && SteamClient.IsValid) lobby.Value.Leave();
+                                return;
+                            }
+                            if (lobby.HasValue)
+                            {
+                                CurrentLobby = lobby;
+                                SetTransportType(TransportType.Steam);
+                                if (nm.StartHost())
+                                {
+                                    StatusMessage = $"Room Created! Code: {CurrentRoomCode}";
+                                    OnLobbyMembersChanged?.Invoke();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning($"[SteamLobbyManager] Steam hosting unavailable: {exception.Message}; trying offline.");
                     }
                 }
-                else if (!lobby.HasValue)
+
+                if (this == null || request != _hostRequestVersion || nm == null) return;
+                // Failed transport startup may schedule NGO shutdown for the next frame.
+                if (nm.IsListening) nm.Shutdown();
+                float deadline = Time.realtimeSinceStartup + 3f;
+                while (nm != null && nm.ShutdownInProgress && Time.realtimeSinceStartup < deadline)
+                    await Task.Delay(16);
+                if (this == null || request != _hostRequestVersion || nm == null) return;
+                if (nm.ShutdownInProgress)
                 {
-                    StatusMessage = "Failed to create Steam Lobby async.";
+                    StatusMessage = "Connection is still closing. Please try HOST ROOM again.";
+                    return;
                 }
+                StartLocalHost(nm);
             }
             catch (Exception exception)
             {
-                StatusMessage = "Failed to create Steam Lobby.";
+                IsLocalSession = false;
+                StatusMessage = "Could not start the game. Please try HOST ROOM again.";
                 Debug.LogException(exception);
             }
             finally { _creatingHostLobby = false; }
+        }
+
+        // Preserve existing scene/UI callers while using the same automatic selection.
+        public void HostSteamLobby(int maxMembers = 4) => HostLobby(maxMembers);
+
+        private void StartLocalHost(NetworkManager nm)
+        {
+            ClearSteamLobby();
+            EnsureTransports();
+            if (_unityTransport == null)
+                throw new InvalidOperationException("UnityTransport is missing.");
+
+            IsLocalSession = true;
+            SetTransportType(TransportType.UnityTransport);
+            // Loopback only; port zero selects a free port. No Steam, internet or LAN listener.
+            _unityTransport.SetConnectionData(true, "127.0.0.1", 0, "127.0.0.1");
+            StatusMessage = "Starting offline game...";
+            if (!nm.StartHost())
+            {
+                IsLocalSession = false;
+                StatusMessage = "Offline game could not start. Please try HOST ROOM again.";
+                return;
+            }
+            StatusMessage = "Playing offline";
+            Debug.Log("[SteamLobbyManager] Offline host started using loopback UnityTransport.");
+            OnLobbyMembersChanged?.Invoke();
+        }
+
+        private static async void ReleaseLateLobby(Task<Lobby?> creation)
+        {
+            try
+            {
+                Lobby? lobby = await creation;
+                if (lobby.HasValue && SteamClient.IsValid) lobby.Value.Leave();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[SteamLobbyManager] Late Steam lobby request ended: {exception.Message}");
+            }
         }
 
         /// <summary>
@@ -487,6 +585,7 @@ namespace CoopGame.Network
         /// </summary>
         public void OpenSteamInviteOverlay()
         {
+            if (IsLocalSession) return;
             if (!IsSteamInitialized)
             {
                 Debug.LogWarning("[SteamLobbyManager] Steam is not running.");
@@ -541,7 +640,7 @@ namespace CoopGame.Network
 
             string cleanCode = roomCode.Trim().ToUpperInvariant();
 
-            if (!IsSteamInitialized)
+            if (!IsSteamMultiplayerAvailable || IsLocalSession)
             {
                 StatusMessage = "Steam is not running or offline!";
                 return;
@@ -596,7 +695,7 @@ namespace CoopGame.Network
         /// </summary>
         public async void JoinLobbyById(ulong lobbyId)
         {
-            if (!IsSteamInitialized)
+            if (!IsSteamMultiplayerAvailable || IsLocalSession || IsStartingHost)
             {
                 StatusMessage = "Steam is not running!";
                 return;
@@ -631,13 +730,20 @@ namespace CoopGame.Network
         /// </summary>
         public void LeaveLobby()
         {
+            _hostRequestVersion++;
+            ClearSteamLobby();
+            IsLocalSession = false;
+            StatusMessage = "Ready";
+        }
+
+        private void ClearSteamLobby()
+        {
             if (CurrentLobby.HasValue)
             {
-                CurrentLobby.Value.Leave();
+                if (IsSteamInitialized) CurrentLobby.Value.Leave();
                 CurrentLobby = null;
             }
             CurrentRoomCode = "";
-            StatusMessage = "Ready";
         }
 
         /// <summary>

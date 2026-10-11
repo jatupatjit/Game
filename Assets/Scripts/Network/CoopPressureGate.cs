@@ -16,6 +16,7 @@ namespace CoopGame.Network
         [SerializeField] private Renderer _rightIndicator;
         [SerializeField] private Material _idleMaterial;
         [SerializeField] private Material _activeMaterial;
+        [SerializeField] private Material _disabledMaterial;
         [SerializeField] private GameObject _openIndicator;
         [SerializeField] private TextMesh _statusText;
         [SerializeField, Min(0.1f)] private float _holdSeconds = 1.5f;
@@ -25,7 +26,12 @@ namespace CoopGame.Network
         private const byte Open = 4;
         private readonly NetworkVariable<byte> _state = new(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<byte> _required = new(1);
+        private readonly NetworkVariable<byte> _progress = new(0);
+        private int _lastRequired;
         private float _holdTimer;
+        public int RequiredPadCount => _required.Value;
+        public int ProgressPercent => _progress.Value;
         private byte _visualState = byte.MaxValue;
 
         public bool IsOpen => IsSpawned && (_state.Value & Open) != 0;
@@ -49,7 +55,7 @@ namespace CoopGame.Network
 
             // Collider activation is applied in the physics tick on every peer.
             byte state = IsSpawned ? _state.Value : (byte)0;
-            if (_visualState != state)
+            if (_visualState != state || _lastRequired != RequiredPadCount)
                 ApplyState(state);
         }
 
@@ -58,69 +64,31 @@ namespace CoopGame.Network
             if (_leftPad == null || _rightPad == null || NetworkManager == null)
                 return;
 
-            ulong firstLeft = ulong.MaxValue;
-            ulong firstRight = ulong.MaxValue;
-            bool multipleLeft = false;
-            bool multipleRight = false;
-            var clients = NetworkManager.ConnectedClientsList;
-            for (int i = 0; i < clients.Count; i++)
-            {
-                var player = clients[i].PlayerObject;
-                if (player == null || !player.IsSpawned ||
-                    !player.TryGetComponent<NetworkPlayer>(out _) ||
-                    !player.TryGetComponent<CharacterController>(out var controller))
-                    continue;
-
-                // Remote CharacterControllers are disabled. Use their replicated transforms,
-                // rather than a physics overlap that would miss those players on the host.
-                Vector3 feet = player.transform.TransformPoint(
-                    controller.center - Vector3.up * (controller.height * 0.5f));
-                ulong id = clients[i].ClientId;
-                if (ContainsFeet(_leftPad, feet))
-                {
-                    if (firstLeft == ulong.MaxValue) firstLeft = id;
-                    else if (firstLeft != id) multipleLeft = true;
-                }
-                if (ContainsFeet(_rightPad, feet))
-                {
-                    if (firstRight == ulong.MaxValue) firstRight = id;
-                    else if (firstRight != id) multipleRight = true;
-                }
-            }
-
-            byte state = 0;
-            if (firstLeft != ulong.MaxValue) state |= Left;
-            if (firstRight != ulong.MaxValue) state |= Right;
-            bool twoPlayers = state == (Left | Right) &&
-                (firstLeft != firstRight || multipleLeft || multipleRight);
-            _holdTimer = twoPlayers ? _holdTimer + Time.fixedDeltaTime : 0f;
-            if (_holdTimer >= _holdSeconds) state |= Open;
+            int players = SessionPlayers.Count(NetworkManager);
+            byte required = (byte)(players > 1 ? 2 : 1);
+            if (_required.Value != required) { _required.Value = required; _holdTimer = 0f; }
+            bool powered = SessionPlayers.Pads(NetworkManager, _leftPad, _rightPad, required, out bool left, out bool right);
+            byte state = (byte)((left ? Left : 0) | (right ? Right : 0));
+            _holdTimer = players > 0 && powered ? _holdTimer + Time.fixedDeltaTime : 0f;
+            _progress.Value = (byte)Mathf.Clamp(Mathf.FloorToInt(_holdTimer / _holdSeconds * 100f), 0, 100);
+            if (_holdTimer >= _holdSeconds) { state |= Open; _progress.Value = 100; }
             if (_state.Value != state) _state.Value = state;
-        }
-
-        private static bool ContainsFeet(BoxCollider pad, Vector3 feet)
-        {
-            if (!pad.enabled || !pad.gameObject.activeInHierarchy) return false;
-            Vector3 local = pad.transform.InverseTransformPoint(feet) - pad.center;
-            Vector3 half = pad.size * 0.5f;
-            return Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.z) <= half.z &&
-                local.y >= -half.y && local.y <= half.y;
         }
 
         private void ApplyState(byte state)
         {
             _visualState = state;
+            _lastRequired = RequiredPadCount;
             bool open = (state & Open) != 0;
             if (_blocker != null) _blocker.SetActive(!open);
             if (_openIndicator != null) _openIndicator.SetActive(open);
             if (_leftIndicator != null)
                 _leftIndicator.sharedMaterial = (state & Left) != 0 || open ? _activeMaterial : _idleMaterial;
             if (_rightIndicator != null)
-                _rightIndicator.sharedMaterial = (state & Right) != 0 || open ? _activeMaterial : _idleMaterial;
+                _rightIndicator.sharedMaterial = RequiredPadCount == 1 ? _disabledMaterial : (state & Right) != 0 || open ? _activeMaterial : _idleMaterial;
             if (_statusText != null)
-                _statusText.text = open ? "GATE OPEN\nBRING THE CARGO" :
-                    (state & (Left | Right)) == (Left | Right) ? "HOLD BOTH PADS\nTOGETHER" :
-                    "2 PLAYERS REQUIRED\nONE ON EACH PAD";
+                _statusText.text = open ? "ประตูเปิดแล้ว" : RequiredPadCount == 1 ?
+                    "ยืนบนแผ่นสีฟ้าสักครู่" : "ช่วยกันเหยียบคนละแผ่น";
         }
     }
 }
