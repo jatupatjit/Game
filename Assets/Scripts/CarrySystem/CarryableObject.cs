@@ -49,6 +49,24 @@ namespace CoopGame.CarrySystem
         protected Rigidbody _rigidbody;
         protected Collider[] _ownColliders;
         internal IReadOnlyList<Collider> CollisionColliders => _ownColliders;
+
+        /// <summary>Collider-bounds center, not the transform origin (pivots can be off-center).</summary>
+        public Vector3 ApproximateBoundsCenter
+        {
+            get
+            {
+                if (_ownColliders == null || _ownColliders.Length == 0) return transform.position;
+                bool found = false;
+                Bounds bounds = default;
+                foreach (var col in _ownColliders)
+                {
+                    if (col == null || !col.enabled || col.isTrigger) continue;
+                    if (!found) { bounds = col.bounds; found = true; }
+                    else bounds.Encapsulate(col.bounds);
+                }
+                return found ? bounds.center : transform.position;
+            }
+        }
         protected CarryableOutline _outline;
 
         public CarryableOutline Outline => _outline;
@@ -319,7 +337,14 @@ namespace CoopGame.CarrySystem
             // at a side grip creates a pitching torque even when the crate is at
             // its target, lifting the contact out of arm reach and into the body.
             // Contact springs still control motion/rotation and world collisions.
-            _rigidbody.AddForce(-Physics.gravity, ForceMode.Acceleration);
+            // Relieve only part of the weight: the hand springs bear the rest, so the cargo hangs,
+            // sags and lags with its mass instead of floating weightless. Kept small so the sag
+            // stays inside arm reach (a few cm); extra carriers share the load.
+            float massLoad = Mathf.Clamp01(_rigidbody.mass / 15f);
+            float handLoad = supportingCarrierCount > 1
+                ? Mathf.Lerp(.06f, .12f, massLoad) / Mathf.Sqrt(supportingCarrierCount * .5f)
+                : Mathf.Lerp(.08f, .22f, massLoad);
+            _rigidbody.AddForce(-Physics.gravity * (1f - handLoad), ForceMode.Acceleration);
 
             // Tight hand-reach constraints can stop the players before a support
             // spring builds enough lateral error to start the crate. Use the
@@ -403,27 +428,18 @@ namespace CoopGame.CarrySystem
                 float dampingStrength = supportedMass * (SoloAssistActive ? 14f : 12f);
                 float maximumForce = supportedMass * (SoloAssistActive ? 75f : 60f);
 
-                // 1. Spring-damper force at Left Hand contact point (if left hand active)
-                if (hasLeft)
-                {
-                    Vector3 deltaL = (targetHandL - currentWorldL);
-                    Vector3 velL = _rigidbody.GetPointVelocity(currentWorldL);
-                    Vector3 forceL = deltaL * springStrength + (carrier.PlayerVelocity - velL) * dampingStrength;
-                    forceL = Vector3.ClampMagnitude(forceL, maximumForce);
-                    _rigidbody.AddForceAtPosition(forceL, currentWorldL, ForceMode.Force);
-                }
-
-                // 2. Spring-damper force at Right Hand contact point (if right hand active)
-                if (hasRight)
-                {
-                    Vector3 deltaR = (targetHandR - currentWorldR);
-                    Vector3 velR = _rigidbody.GetPointVelocity(currentWorldR);
-                    Vector3 forceR = deltaR * springStrength + (carrier.PlayerVelocity - velR) * dampingStrength;
-                    forceR = Vector3.ClampMagnitude(forceR, maximumForce);
-                    _rigidbody.AddForceAtPosition(forceR, currentWorldR, ForceMode.Force);
-                }
-
+                if (hasLeft) ApplyHandSupport(targetHandL, currentWorldL, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce);
+                if (hasRight) ApplyHandSupport(targetHandR, currentWorldR, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce);
             }
+
+            PushOutOfCarriers();
+            if (supportingCarrierCount == 1) TurnWithSoloCarrier(objectScale);
+
+            // Carriers hold the load level; without this, near-face grips on deep cargo pitch it like a seesaw.
+            Vector3 up = _rigidbody.rotation * Vector3.up;
+            Vector3 tiltAngularVelocity = Vector3.ProjectOnPlane(_rigidbody.angularVelocity, Vector3.up);
+            _rigidbody.AddTorque(Vector3.Cross(up, Vector3.up) * LevelingStiffness - tiltAngularVelocity * LevelingDamping,
+                ForceMode.Acceleration);
 
             // Apply damping once, so adding helpers does not multiply resistance.
             float dampFactor = Mathf.Max(2.5f, _rotationSpeed * 0.01f);
@@ -431,6 +447,89 @@ namespace CoopGame.CarrySystem
 
             _rigidbody.linearVelocity = Vector3.ClampMagnitude(_rigidbody.linearVelocity, 12.0f);
         }
+
+        // Arms hold a load firmly up/down (a hop must not bounce it) but give horizontally.
+        private const float VerticalStiffnessScale = 3f;
+        private const float VerticalDampingScale = 1.8f;
+        private const float LevelingStiffness = 30f;
+        private const float LevelingDamping = 6f;
+
+        private const float SoloYawStiffness = 40f;
+        private const float SoloYawDamping = 12f;
+
+        /// <summary>A lone carrier turning should swing the cargo round with them: keep the gripped
+        /// face pointed back at the carrier. Grip springs alone cannot turn a long crate.</summary>
+        private void TurnWithSoloCarrier(Vector3 objectScale)
+        {
+            foreach (var carrier in _activeCarriers.Values)
+            {
+                if (carrier.PlayerTransform == null || (!carrier.LeftHandActive && !carrier.RightHandActive)) continue;
+                Vector3 heading = carrier.FacingHeading;
+                heading.y = 0f;
+                if (heading.sqrMagnitude < .01f) return;
+                Vector3 localGrip = carrier.LeftHandActive && carrier.RightHandActive
+                    ? (carrier.LocalContactLeft + carrier.LocalContactRight) * .5f
+                    : carrier.LeftHandActive ? carrier.LocalContactLeft : carrier.RightHandActive ? carrier.LocalContactRight : Vector3.zero;
+                Vector3 gripDirection = _rigidbody.position + _rigidbody.rotation * Vector3.Scale(localGrip, objectScale) -
+                    _rigidbody.worldCenterOfMass;
+                gripDirection.y = 0f;
+                // A grip near the centre (e.g. top face) has no meaningful "front" to align.
+                if (gripDirection.sqrMagnitude < .01f) return;
+                float angle = Vector3.SignedAngle(gripDirection, -heading.normalized, Vector3.up) * Mathf.Deg2Rad;
+                float yawAcceleration = angle * SoloYawStiffness - _rigidbody.angularVelocity.y * SoloYawDamping;
+                _rigidbody.AddTorque(Vector3.up * yawAcceleration, ForceMode.Acceleration);
+                return;
+            }
+        }
+
+        /// <summary>Horizontal pull acts at the grip (steers and turns the cargo); vertical support acts
+        /// through the centre of mass so it lifts without pitching deep cargo held by one face.</summary>
+        private void ApplyHandSupport(Vector3 target, Vector3 contact, Vector3 carrierVelocity,
+            float springStrength, float dampingStrength, float maximumForce)
+        {
+            Vector3 delta = target - contact;
+            Vector3 relativeVelocity = carrierVelocity - _rigidbody.GetPointVelocity(contact);
+            Vector3 horizontal = new Vector3(delta.x, 0f, delta.z) * springStrength +
+                new Vector3(relativeVelocity.x, 0f, relativeVelocity.z) * dampingStrength;
+            float vertical = delta.y * springStrength * VerticalStiffnessScale +
+                relativeVelocity.y * dampingStrength * VerticalDampingScale;
+            _rigidbody.AddForceAtPosition(Vector3.ClampMagnitude(horizontal, maximumForce), contact, ForceMode.Force);
+            _rigidbody.AddForce(Vector3.up * Mathf.Clamp(vertical, -maximumForce, maximumForce), ForceMode.Force);
+        }
+
+        /// <summary>Carrier/cargo collision is ignored while carrying (so grip springs cannot shove the
+        /// controller), which lets swinging, jumping or landing cargo sink into the carrier's body.
+        /// Overlap is measured directly and resolved on the cargo only.</summary>
+        private void PushOutOfCarriers()
+        {
+            if (_ownColliders == null || _ownColliders.Length == 0) return;
+            Quaternion poseCorrection = _rigidbody.rotation * Quaternion.Inverse(transform.rotation);
+            foreach (var carrier in _activeCarriers.Values)
+            {
+                if (carrier.PlayerColliders == null || carrier.PlayerTransform == null) continue;
+                foreach (var playerCollider in carrier.PlayerColliders)
+                {
+                    if (!IsSolidCollider(playerCollider)) continue;
+                    Transform playerTransform = playerCollider.transform;
+                    foreach (var cargoCollider in _ownColliders)
+                    {
+                        if (!IsSolidCollider(cargoCollider)) continue;
+                        Vector3 cargoPosition = _rigidbody.position + poseCorrection * (cargoCollider.transform.position - transform.position);
+                        Quaternion cargoRotation = poseCorrection * cargoCollider.transform.rotation;
+                        if (!Physics.ComputePenetration(cargoCollider, cargoPosition, cargoRotation,
+                            playerCollider, playerTransform.position, playerTransform.rotation,
+                            out Vector3 direction, out float depth)) continue;
+                        float closing = Vector3.Dot(_rigidbody.linearVelocity - carrier.PlayerVelocity, direction);
+                        Vector3 push = direction * (depth * 400f - Mathf.Min(0f, closing) * 20f);
+                        _rigidbody.AddForce(Vector3.ClampMagnitude(push, 80f), ForceMode.Acceleration);
+                    }
+                }
+            }
+        }
+
+        private static bool IsSolidCollider(Collider collider) =>
+            collider != null && collider.enabled && !collider.isTrigger && collider.gameObject.activeInHierarchy &&
+            !(collider is MeshCollider mesh && !mesh.convex);
 
         public void UpdateCarrierHandState(ulong clientId, Vector3 localContactLeft, Vector3 localContactRight, bool leftActive, bool rightActive)
         {

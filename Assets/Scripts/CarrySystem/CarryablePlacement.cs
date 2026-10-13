@@ -11,7 +11,11 @@ namespace CoopGame.CarrySystem
         private readonly Collider[] _placeOverlaps = new Collider[64];
         private readonly Collider[] _placementFloors = new Collider[5];
         private int _placementFloorCount;
-        private float _baseMass, _placementEnd, _supportProtectionEnd;
+        private float _baseMass, _placementEnd, _supportProtectionEnd, _placementSpeed;
+        private const float PlacementAcceleration = 14f;
+        private const float PlacementMaxSpeed = 4f;
+        // Braking used only for the final approach, so a fast drop still lands without a slam.
+        private const float PlacementLandingDeceleration = 30f;
         private Vector3 _placementTarget;
         public bool SoloAssistActive => _soloAssist.Value;
         public bool IsPlacing => _placing.Value;
@@ -38,6 +42,7 @@ namespace CoopGame.CarrySystem
             if (!TryPlacementTarget(out Vector3 target)) return false;
             DetachCarrier(carrierId);
             _placementTarget = target;
+            _placementSpeed = 0f;
             _placing.Value = true;
             _throwPending = false;
             _placementEnd = Time.fixedTime + 2f;
@@ -120,7 +125,11 @@ namespace CoopGame.CarrySystem
             bool valid = !IsSecured && _activeCarriers.Count == 0 && Time.fixedTime < _placementEnd;
             for (int i = 0; i < _placementFloorCount; i++)
                 valid &= _placementFloors[i] != null && _placementFloors[i].enabled && _placementFloors[i].gameObject.activeInHierarchy;
-            Vector3 next = Vector3.MoveTowards(_rigidbody.position, _placementTarget, 1.25f * Time.fixedDeltaTime);
+            float remaining = Vector3.Distance(_rigidbody.position, _placementTarget);
+            float landingLimit = Mathf.Sqrt(2f * PlacementLandingDeceleration * remaining) + .3f;
+            _placementSpeed = Mathf.Min(_placementSpeed + PlacementAcceleration * Time.fixedDeltaTime,
+                PlacementMaxSpeed, landingLimit);
+            Vector3 next = Vector3.MoveTowards(_rigidbody.position, _placementTarget, _placementSpeed * Time.fixedDeltaTime);
             valid &= PlacementClear(SolidBounds(), next - _rigidbody.position);
             if (!valid) { EndPlacement(false); return false; }
             _rigidbody.useGravity = false;

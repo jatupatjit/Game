@@ -38,6 +38,8 @@ namespace CoopGame.Player
         [Header("Jumping & Gravity (Crisp Platforming Physics)")]
         [Tooltip("Maximum jump height in meters")]
         [SerializeField] private float _jumpHeight = 1.6f;
+        [Tooltip("Jump height while carrying cargo; a small hop keeps the load in the hands")]
+        [SerializeField] private float _carryJumpHeight = 0.7f;
 
         [Tooltip("Custom downward gravity acceleration (m/s^2). Default Unity -9.81 feels floaty for platforming.")]
         [SerializeField] private float _gravity = -24.0f;
@@ -343,7 +345,9 @@ namespace CoopGame.Player
         /// </summary>
         private void ExecuteJump()
         {
-            _verticalVelocity = Mathf.Sqrt(2.0f * _jumpHeight * Mathf.Abs(_gravity));
+            float height = _playerCarry != null && _playerCarry.IsCarrying
+                ? Mathf.Min(_jumpHeight, _carryJumpHeight) : _jumpHeight;
+            _verticalVelocity = Mathf.Sqrt(2.0f * height * Mathf.Abs(_gravity));
             _jumpBufferTimer = 0f;
             _coyoteTimer = 0f;
         }

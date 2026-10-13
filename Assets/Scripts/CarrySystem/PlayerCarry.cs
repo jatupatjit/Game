@@ -216,6 +216,14 @@ namespace CoopGame.CarrySystem
         private Vector3 _carryFacingTarget = Vector3.forward;
         private bool _hasCarryFacing;
         private const float CarryFacingTurnSpeed = 900f;
+        // Slower than free walking so a held load swings round with some weight.
+        private const float SoloCarryTurnSpeed = 140f;
+
+        private static Vector3 Flat(Vector3 v)
+        {
+            v.y = 0f;
+            return v.sqrMagnitude > .0001f ? v.normalized : Vector3.forward;
+        }
 
         // Exposed properties
         public bool IsCarrying => HasLocalInput
@@ -429,21 +437,38 @@ namespace CoopGame.CarrySystem
             // this physics step, rather than waiting for the next FixedUpdate.
             FlushCollisionChanges();
             if (_currentCarryable == null || !IsCarrying) { _hasCarryFacing = false; return; }
-            Vector3 toCargo = (_currentCargoRigidbody != null ? _currentCargoRigidbody.position : _currentCarryable.transform.position) - transform.position;
-            toCargo.y = 0f;
-            if (toCargo.sqrMagnitude > .0025f) _carryFacingTarget = toCargo.normalized;
+            Vector3 direction = Vector3.zero;
+            if (HasLocalInput)
+            {
+                Vector3 forward = _cameraController != null ? _cameraController.HorizontalForward : transform.forward;
+                Vector3 right = _cameraController != null ? _cameraController.HorizontalRight : transform.right;
+                Vector2 input = _inputReader != null ? _inputReader.MoveInput : Vector2.zero;
+                direction = Vector3.ClampMagnitude(forward * input.y + right * input.x, 1f);
+            }
+            // A solo carrier steers: body and cargo turn toward where they walk, leaving the
+            // camera free. Co-op carriers keep facing the shared cargo from their own side.
+            bool soloSteering = HasLocalInput && _currentCarryable.CurrentCarrierCount <= 1;
+            float turnSpeed = CarryFacingTurnSpeed;
+            if (soloSteering)
+            {
+                if (direction.sqrMagnitude > .01f) _carryFacingTarget = direction.normalized;
+                else if (!_hasCarryFacing) _carryFacingTarget = Flat(transform.forward);
+                turnSpeed = SoloCarryTurnSpeed;
+            }
+            else
+            {
+                Vector3 toCargo = (_currentCargoRigidbody != null ? _currentCargoRigidbody.position : _currentCarryable.transform.position) - transform.position;
+                toCargo.y = 0f;
+                if (toCargo.sqrMagnitude > .0025f) _carryFacingTarget = toCargo.normalized;
+            }
             if (!_hasCarryFacing)
             {
                 _carryFacing = _carryFacingTarget.sqrMagnitude > .01f ? _carryFacingTarget : transform.forward;
                 _hasCarryFacing = true;
             }
             else _carryFacing = Vector3.RotateTowards(_carryFacing, _carryFacingTarget,
-                CarryFacingTurnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f).normalized;
+                turnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f).normalized;
             if (!HasLocalInput) return;
-            Vector3 forward = _cameraController != null ? _cameraController.HorizontalForward : transform.forward;
-            Vector3 right = _cameraController != null ? _cameraController.HorizontalRight : transform.right;
-            Vector2 input = _inputReader != null ? _inputReader.MoveInput : Vector2.zero;
-            Vector3 direction = Vector3.ClampMagnitude(forward * input.y + right * input.x, 1f);
             if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight);
             else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, _carryFacing,
                 _currentHoldHeight, _leftHandGripping, _rightHandGripping);
@@ -478,16 +503,8 @@ namespace CoopGame.CarrySystem
             _throwReleaseCooldown = Mathf.Max(0f, _throwReleaseCooldown - Time.deltaTime);
             if (!_inputReader.IsGrabbing) _requireGrabRelease = false;
             _canAttemptGrab = !_requireGrabRelease && _throwReleaseCooldown <= 0f && !_grabPending && !_releasePending;
-            if (_inputReader.InteractPressed)
-            {
-                _pendingDualToggle = !_pendingDualToggle;
-            }
-            else
-            {
-                bool left = _inputReader.GrabLeftPressed, right = _inputReader.GrabRightPressed;
-                if (left) _pendingToggleMask ^= 1;
-                if (right) _pendingToggleMask ^= 2;
-            }
+            // Left click picks up with both hands; right click (or the place key) sets it down.
+            if (!IsCarrying && !_grabPending && _inputReader.GrabLeftPressed) _pendingDualToggle = true;
             if (IsCarrying && _currentCarryable != null)
             {
                 if (_movement != null)
@@ -498,7 +515,7 @@ namespace CoopGame.CarrySystem
                     if (_currentCarryable.CurrentCarrierCount >= 2 && TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) && state.Card.Value == 3) speed *= 1.15f;
                     _movement.SpeedMultiplier = speed;
                 }
-                if (_inputReader.PlacePressed && !_releasePending)
+                if ((_inputReader.PlacePressed || _inputReader.GrabRightPressed) && !_releasePending)
                 {
                     _placeIntent = true;
                     _isChargingThrow = false;
@@ -555,9 +572,7 @@ namespace CoopGame.CarrySystem
                 CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
             if (requested != null)
             {
-                if ((hands & 1) != 0) CaptureHandContact(requested, true);
-                if ((hands & 2) != 0) CaptureHandContact(requested, false);
-                SendGrabState(requested);
+                if (_currentCarryable == null && CaptureCenteredGrip(requested)) SendGrabState(requested);
             }
             else if (dual)
             {
@@ -617,9 +632,100 @@ namespace CoopGame.CarrySystem
                 target = FindNearbyCarryable();
                 if (target == null) return;
             }
-            if (left) CaptureHandContact(target, true);
-            if (right) CaptureHandContact(target, false);
+            if (_currentCarryable == null)
+            {
+                if (!CaptureCenteredGrip(target)) return;
+            }
+            else
+            {
+                if (left) CaptureHandContact(target, true);
+                if (right) CaptureHandContact(target, false);
+            }
             SendGrabState(target);
+        }
+
+        /// <summary>Fixed two-hand grip on the face nearest the player, symmetric about the cargo centre.</summary>
+        private bool TryComputeCenteredGrip(CarryableObject target, out Vector3 leftPoint, out Vector3 leftNormal,
+            out Vector3 rightPoint, out Vector3 rightNormal)
+        {
+            leftPoint = rightPoint = Vector3.zero;
+            leftNormal = rightNormal = Vector3.up;
+            Vector3 center = target.ApproximateBoundsCenter;
+            Vector3 toPlayer = transform.position - center;
+            toPlayer.y = 0f;
+            if (toPlayer.sqrMagnitude < .0001f) toPlayer = -transform.forward;
+            Vector3 axisA = FlatAxis(target.transform.right, Vector3.right);
+            Vector3 axisB = FlatAxis(target.transform.forward, Vector3.forward);
+            float dotA = Vector3.Dot(axisA, toPlayer), dotB = Vector3.Dot(axisB, toPlayer);
+            Vector3 approach = Mathf.Abs(dotA) >= Mathf.Abs(dotB) ? axisA * Mathf.Sign(dotA) : axisB * Mathf.Sign(dotB);
+            Vector3 rightDir = Vector3.Cross(Vector3.up, -approach).normalized;
+
+            // Stay horizontally centred; start at mid-height and rise toward the top edge
+            // only as far as needed for both hands to reach (cargo resting on the floor).
+            float top = Mathf.Max(center.y, BoundsTop(target) - .04f);
+            for (int step = 0; step <= 6; step++)
+            {
+                Vector3 grip = new Vector3(center.x, Mathf.Lerp(center.y, top, step / 6f), center.z);
+                if (TryGripAtHeight(target, grip, approach, rightDir,
+                    out leftPoint, out leftNormal, out rightPoint, out rightNormal)) return true;
+            }
+            return false;
+        }
+
+        private bool TryGripAtHeight(CarryableObject target, Vector3 grip, Vector3 approach, Vector3 rightDir,
+            out Vector3 leftPoint, out Vector3 leftNormal, out Vector3 rightPoint, out Vector3 rightNormal)
+        {
+            // Narrow items get a proportionally narrower grip so both palms stay on the face.
+            bool sidesFound = FindSurfaceContact(target, grip, -rightDir, grip, out Vector3 leftSide, out _) &
+                FindSurfaceContact(target, grip, rightDir, grip, out Vector3 rightSide, out _);
+            float halfWidth = sidesFound ? Vector3.Dot(rightSide - leftSide, rightDir) * .5f : .3f;
+            float spread = Mathf.Min(.2f, halfWidth * .75f);
+            rightPoint = Vector3.zero; rightNormal = Vector3.up;
+            return FindSurfaceContact(target, grip - rightDir * spread, approach, grip, out leftPoint, out leftNormal) &&
+                FindSurfaceContact(target, grip + rightDir * spread, approach, grip, out rightPoint, out rightNormal) &&
+                IsContactReachable(true, leftPoint) && IsContactReachable(false, rightPoint);
+        }
+
+        private static float BoundsTop(CarryableObject target)
+        {
+            float top = float.NegativeInfinity;
+            var colliders = target.CollisionColliders;
+            if (colliders != null)
+                foreach (var col in colliders)
+                    if (col != null && col.enabled && !col.isTrigger) top = Mathf.Max(top, col.bounds.max.y);
+            return float.IsInfinity(top) ? target.ApproximateBoundsCenter.y : top;
+        }
+
+        private static Vector3 FlatAxis(Vector3 axis, Vector3 fallback)
+        {
+            axis.y = 0f;
+            return axis.sqrMagnitude > .01f ? axis.normalized : fallback;
+        }
+
+        private bool IsContactReachable(bool left, Vector3 point)
+        {
+            GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            float maximum = reach + LocalContactSlack;
+            return (point - shoulder).sqrMagnitude <= maximum * maximum;
+        }
+
+        private bool CaptureCenteredGrip(CarryableObject target)
+        {
+            if (target == null || !TryComputeCenteredGrip(target, out Vector3 leftPoint, out Vector3 leftNormal,
+                out Vector3 rightPoint, out Vector3 rightNormal)) return false;
+            SetHandContact(target, true, leftPoint, leftNormal);
+            SetHandContact(target, false, rightPoint, rightNormal);
+            return true;
+        }
+
+        private void SetHandContact(CarryableObject target, bool left, Vector3 contact, Vector3 surfaceNormal)
+        {
+            Vector3 fingers = Vector3.ProjectOnPlane(Vector3.up, surfaceNormal);
+            if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
+            Quaternion localRot = Quaternion.Inverse(target.transform.rotation) * Quaternion.LookRotation(surfaceNormal, fingers.normalized);
+            Vector3 localPoint = target.transform.InverseTransformPoint(contact);
+            if (left) { _leftHandGripping = true; _currentLocalContactLeft = localPoint; _currentLocalRotationLeft = localRot; }
+            else { _rightHandGripping = true; _currentLocalContactRight = localPoint; _currentLocalRotationRight = localRot; }
         }
 
         private void GrabSingleHand(CarryableObject target, bool isLeft)
@@ -807,26 +913,10 @@ namespace CoopGame.CarrySystem
 
                     if (effectiveDist <= _grabContactDistance)
                     {
-                        Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
-                        Vector3 surfaceLateral = Vector3.ProjectOnPlane(camRight, validHit.normal).normalized;
-                        if (surfaceLateral.sqrMagnitude < 0.01f) surfaceLateral = transform.right;
-
-                        float handSpacing = 0.22f;
-                        leftAimPoint = validHit.point - surfaceLateral * handSpacing;
-                        rightAimPoint = validHit.point + surfaceLateral * handSpacing;
-
-                        Collider hitCol = validHit.collider;
-                        if (hitCol != null && !(hitCol is MeshCollider mc && !mc.convex))
-                        {
-                            leftAimPoint = hitCol.ClosestPoint(leftAimPoint);
-                            rightAimPoint = hitCol.ClosestPoint(rightAimPoint);
-                        }
-
-                        leftReachable = TryResolveReachableContact(carryable, true, leftAimPoint, validHit.normal,
-                            out leftAimPoint, out leftAimNormal);
-                        rightReachable = TryResolveReachableContact(carryable, false, rightAimPoint, validHit.normal,
+                        bool centered = TryComputeCenteredGrip(carryable, out leftAimPoint, out leftAimNormal,
                             out rightAimPoint, out rightAimNormal);
-                        reachableHit = leftReachable || rightReachable;
+                        leftReachable = rightReachable = centered;
+                        reachableHit = centered;
                         if (reachableHit) aimedCarryable = carryable;
                         canGrabAimed = reachableHit && !isExhausted;
                         _lastAimLeftPoint = leftAimPoint;
