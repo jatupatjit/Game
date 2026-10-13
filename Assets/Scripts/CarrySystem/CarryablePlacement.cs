@@ -17,6 +17,7 @@ namespace CoopGame.CarrySystem
         // Braking used only for the final approach, so a fast drop still lands without a slam.
         private const float PlacementLandingDeceleration = 30f;
         private Vector3 _placementTarget;
+        private Collider[] _placingCarrierColliders;
         public bool SoloAssistActive => _soloAssist.Value;
         public bool IsPlacing => _placing.Value;
         public float StaminaDrainMultiplier => SoloAssistActive ? .65f : 1f;
@@ -39,7 +40,10 @@ namespace CoopGame.CarrySystem
         {
             if ((IsSpawned && !IsServer) || IsSecured || IsPlacing || !HasCarrier(carrierId)) return false;
             if (_activeCarriers.Count > 1) { DetachCarrier(carrierId); return true; }
-            if (!TryPlacementTarget(out Vector3 target)) return false;
+            // The carrier setting it down stands against the cargo; their own body must not
+            // block the spot (their collision with it stays ignored until they step apart).
+            _placingCarrierColliders = _activeCarriers.TryGetValue(carrierId, out var placer) ? placer.PlayerColliders : null;
+            if (!TryPlacementTarget(out Vector3 target)) { _placingCarrierColliders = null; return false; }
             DetachCarrier(carrierId);
             _placementTarget = target;
             _placementSpeed = 0f;
@@ -115,9 +119,12 @@ namespace CoopGame.CarrySystem
                 _placeOverlaps, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
             if (count == _placeOverlaps.Length) return false;
             for (int i = 0; i < count; i++)
-                if (!Own(_placeOverlaps[i])) return false;
+                if (!Own(_placeOverlaps[i]) && !IsPlacingCarrier(_placeOverlaps[i])) return false;
             return true;
         }
+
+        private bool IsPlacingCarrier(Collider collider) =>
+            _placingCarrierColliders != null && System.Array.IndexOf(_placingCarrierColliders, collider) >= 0;
 
         private bool TickGentlePlacement()
         {
@@ -143,6 +150,7 @@ namespace CoopGame.CarrySystem
         private void EndPlacement(bool completed)
         {
             _placing.Value = false;
+            _placingCarrierColliders = null;
             _rigidbody.useGravity = true;
             _supportProtectionEnd = completed ? Time.fixedTime + .35f : -1f;
             if (!completed) _placementFloorCount = 0;
