@@ -432,8 +432,13 @@ namespace CoopGame.CarrySystem
                 if (hasRight) ApplyHandSupport(targetHandR, currentWorldR, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce);
             }
 
-            PushOutOfCarriers();
-            if (supportingCarrierCount == 1) TurnWithSoloCarrier(objectScale);
+            // Solo only: with carriers at both ends, the front carrier's back meets the advancing
+            // cargo while their hands are at full reach, and pushing it out stalls the whole team.
+            if (supportingCarrierCount == 1)
+            {
+                PushOutOfCarriers();
+                TurnWithSoloCarrier(objectScale);
+            }
 
             // Carriers hold the load level; without this, near-face grips on deep cargo pitch it like a seesaw.
             Vector3 up = _rigidbody.rotation * Vector3.up;
