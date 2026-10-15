@@ -81,6 +81,7 @@ namespace CoopGame.Player
         private float _pitch = 15f;
         private float _desiredDistance;
         private float _currentDistance;
+        private float _resolvedDistance; // _currentDistance after wall occlusion
 
         // Cached colliders on this player to ignore during occlusion check
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
@@ -352,7 +353,7 @@ namespace CoopGame.Player
 
             // 4. Handle First-Person vs Third-Person View
             bool inFirstPerson = _currentDistance < _firstPersonThreshold;
-            UpdatePlayerBodyVisibility(inFirstPerson);
+            bool hideBody = inFirstPerson;
 
             Vector3 finalPosition;
 
@@ -401,9 +402,18 @@ namespace CoopGame.Player
                     targetDistance = Mathf.Clamp(closestValidHitDistance - _collisionRadius, _firstPersonDistance, _currentDistance);
                 }
 
-                finalPosition = pivotPosition + (desiredCameraDirection * targetDistance);
+                // Pull in instantly so the camera never clips a wall, but ease back out so it
+                // does not snap when sliding past an edge.
+                if (targetDistance < _resolvedDistance || _resolvedDistance <= 0f) _resolvedDistance = targetDistance;
+                else _resolvedDistance = Mathf.Lerp(_resolvedDistance, targetDistance, Time.deltaTime * _zoomSpeed);
+                // A wall may squeeze the camera into the body even while zoomed out.
+                hideBody = _resolvedDistance < _firstPersonThreshold;
+
+                finalPosition = pivotPosition + (desiredCameraDirection * _resolvedDistance);
             }
 
+            if (inFirstPerson) _resolvedDistance = _currentDistance;
+            UpdatePlayerBodyVisibility(hideBody);
             _playerCamera.transform.position = finalPosition;
             _playerCamera.transform.rotation = targetRotation;
         }

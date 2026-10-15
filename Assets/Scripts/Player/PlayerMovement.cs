@@ -88,6 +88,9 @@ namespace CoopGame.Player
         /// </summary>
         public float SpeedMultiplier { get; set; } = 1.0f;
 
+        /// <summary>Last requested walk/sprint speed (m/s) including SpeedMultiplier; carry traction matches it.</summary>
+        public float RequestedSpeed { get; private set; }
+
         /// <summary>
         /// When true, character is attached to and climbing a wall; disables downward gravity.
         /// </summary>
@@ -208,6 +211,7 @@ namespace CoopGame.Player
             }
 
             float baseTargetSpeed = (canSprint ? _sprintSpeed : _walkSpeed) * SpeedMultiplier;
+            RequestedSpeed = baseTargetSpeed;
             Vector3 targetHorizontalVelocity = desiredMoveDirection * baseTargetSpeed;
 
             // 3. Smooth Acceleration / Deceleration

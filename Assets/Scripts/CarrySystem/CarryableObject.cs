@@ -32,6 +32,11 @@ namespace CoopGame.CarrySystem
         [Tooltip("Height above the player's ground position (waist/chest level)")]
         [SerializeField] private float _carryHeightOffset = 1.05f;
 
+        [Header("Cargo Size Rule")]
+        [Tooltip("Big cargo: with a single carrier the far end sinks to the ground and drags; 2+ carriers carry it normally.")]
+        [SerializeField] private bool _requiresTwoCarriers;
+        public bool RequiresTwoCarriers { get => _requiresTwoCarriers; set => _requiresTwoCarriers = value; }
+
         [Header("Co-op Movement Settings")]
         [Tooltip("Speed multiplier applied to player when carrying alone (heavy feel)")]
         [SerializeField] private float _soloSpeedMultiplier = 0.6f;
@@ -136,7 +141,12 @@ namespace CoopGame.CarrySystem
             : _activeCarriers.Count;
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
         public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
-        public float GetSpeedMultiplier() => SoloAssistActive ? .85f : CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : _soloSpeedMultiplier;
+        // A big crate held by one person drags its far end: slow, and needs extra pull (see FixedUpdate).
+        private const float DragTractionScale = 4f;
+        private const float DragSpeedMultiplier = .4f;
+        public bool IsSoloDragging => _requiresTwoCarriers && CurrentCarrierCount == 1;
+        public float GetSpeedMultiplier() => IsSoloDragging ? DragSpeedMultiplier :
+            SoloAssistActive ? .85f : CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : _soloSpeedMultiplier;
 
         protected virtual void Awake()
         {
@@ -344,7 +354,13 @@ namespace CoopGame.CarrySystem
             float handLoad = supportingCarrierCount > 1
                 ? Mathf.Lerp(.06f, .12f, massLoad) / Mathf.Sqrt(supportingCarrierCount * .5f)
                 : Mathf.Lerp(.08f, .22f, massLoad);
-            _rigidbody.AddForce(-Physics.gravity * (1f - handLoad), ForceMode.Acceleration);
+            handLoad = Mathf.Min(handLoad * CarryWeightPreset.HandLoadScale(supportingCarrierCount > 1), .5f);
+
+            // Big cargo held by one person: no weightless support and no levelling, so the far end
+            // swings down and rests on the ground (drags) until a second carrier helps.
+            bool soloDrag = _requiresTwoCarriers && supportingCarrierCount == 1;
+            if (!soloDrag)
+                _rigidbody.AddForce(-Physics.gravity * (1f - handLoad), ForceMode.Acceleration);
 
             // Tight hand-reach constraints can stop the players before a support
             // spring builds enough lateral error to start the crate. Use the
@@ -357,8 +373,9 @@ namespace CoopGame.CarrySystem
             {
                 float speed = 5f * GetSpeedMultiplier();
                 Vector3 horizontalVelocity = Vector3.ProjectOnPlane(_rigidbody.linearVelocity, Vector3.up);
-                Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * 6f,
-                    _carryTractionAcceleration * (SoloAssistActive ? 1.5f : 1f));
+                // Dragging a far end along the ground needs a much stronger pull to overcome friction.
+                Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * (soloDrag ? 6f * DragTractionScale : 6f),
+                    _carryTractionAcceleration * (SoloAssistActive ? 1.5f : 1f) * (soloDrag ? DragTractionScale : 1f));
                 _rigidbody.AddForce(acceleration, ForceMode.Acceleration);
             }
 
@@ -428,8 +445,8 @@ namespace CoopGame.CarrySystem
                 float dampingStrength = supportedMass * (SoloAssistActive ? 14f : 12f);
                 float maximumForce = supportedMass * (SoloAssistActive ? 75f : 60f);
 
-                if (hasLeft) ApplyHandSupport(targetHandL, currentWorldL, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce);
-                if (hasRight) ApplyHandSupport(targetHandR, currentWorldR, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce);
+                if (hasLeft) ApplyHandSupport(targetHandL, currentWorldL, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce, soloDrag);
+                if (hasRight) ApplyHandSupport(targetHandR, currentWorldR, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce, soloDrag);
             }
 
             // Solo only: with carriers at both ends, the front carrier's back meets the advancing
@@ -441,10 +458,11 @@ namespace CoopGame.CarrySystem
             }
 
             // Carriers hold the load level; without this, near-face grips on deep cargo pitch it like a seesaw.
+            // Dragged big cargo is deliberately allowed to pitch (damped only) so its far end can drop.
             Vector3 up = _rigidbody.rotation * Vector3.up;
             Vector3 tiltAngularVelocity = Vector3.ProjectOnPlane(_rigidbody.angularVelocity, Vector3.up);
-            _rigidbody.AddTorque(Vector3.Cross(up, Vector3.up) * LevelingStiffness - tiltAngularVelocity * LevelingDamping,
-                ForceMode.Acceleration);
+            _rigidbody.AddTorque((soloDrag ? Vector3.zero : Vector3.Cross(up, Vector3.up) * LevelingStiffness) -
+                tiltAngularVelocity * LevelingDamping, ForceMode.Acceleration);
 
             // Apply damping once, so adding helpers does not multiply resistance.
             float dampFactor = Mathf.Max(2.5f, _rotationSpeed * 0.01f);
@@ -490,7 +508,7 @@ namespace CoopGame.CarrySystem
         /// <summary>Horizontal pull acts at the grip (steers and turns the cargo); vertical support acts
         /// through the centre of mass so it lifts without pitching deep cargo held by one face.</summary>
         private void ApplyHandSupport(Vector3 target, Vector3 contact, Vector3 carrierVelocity,
-            float springStrength, float dampingStrength, float maximumForce)
+            float springStrength, float dampingStrength, float maximumForce, bool liftAtGrip = false)
         {
             Vector3 delta = target - contact;
             Vector3 relativeVelocity = carrierVelocity - _rigidbody.GetPointVelocity(contact);
@@ -499,7 +517,10 @@ namespace CoopGame.CarrySystem
             float vertical = delta.y * springStrength * VerticalStiffnessScale +
                 relativeVelocity.y * dampingStrength * VerticalDampingScale;
             _rigidbody.AddForceAtPosition(Vector3.ClampMagnitude(horizontal, maximumForce), contact, ForceMode.Force);
-            _rigidbody.AddForce(Vector3.up * Mathf.Clamp(vertical, -maximumForce, maximumForce), ForceMode.Force);
+            Vector3 lift = Vector3.up * Mathf.Clamp(vertical, -maximumForce, maximumForce);
+            // Dragged cargo is lifted at the grip only, so just the carried end rises.
+            if (liftAtGrip) _rigidbody.AddForceAtPosition(lift, contact, ForceMode.Force);
+            else _rigidbody.AddForce(lift, ForceMode.Force);
         }
 
         /// <summary>Carrier/cargo collision is ignored while carrying (so grip springs cannot shove the

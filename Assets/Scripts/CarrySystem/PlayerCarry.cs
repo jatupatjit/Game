@@ -469,6 +469,11 @@ namespace CoopGame.CarrySystem
             else _carryFacing = Vector3.RotateTowards(_carryFacing, _carryFacingTarget,
                 turnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f).normalized;
             if (!HasLocalInput) return;
+            // Carry traction aims at the speed this player actually requests (sprint, tiredness,
+            // charge, cards), not a fixed walk speed, so cargo and carrier targets agree.
+            float cargoSpeed = 5f * _currentCarryable.GetSpeedMultiplier();
+            if (_movement != null && cargoSpeed > .01f && direction.sqrMagnitude > .0001f)
+                direction *= Mathf.Clamp(_movement.RequestedSpeed / cargoSpeed, .25f, 2f);
             if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight);
             else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, _carryFacing,
                 _currentHoldHeight, _leftHandGripping, _rightHandGripping);
@@ -1278,6 +1283,9 @@ namespace CoopGame.CarrySystem
             return Vector3.Distance(shoulder, contact) - reach;
         }
 
+        /// <summary>Fraction (0-1) of the requested walk step the reach/body constraint allowed last step; read by tests.</summary>
+        public float LastCarryAllowedRatio { get; private set; } = 1f;
+
         /// <summary>FixedUpdate movement constraint; wall collisions are still resolved by CharacterController.Move.</summary>
         public Vector3 ConstrainCarryDisplacement(Vector3 displacement)
         {
@@ -1294,6 +1302,7 @@ namespace CoopGame.CarrySystem
                 ConstrainBodyOverlap(ref displacement);
             }
             float allowed = Mathf.Clamp01(Vector3.Dot(displacement, requestedHorizontal) / requestedSqr);
+            LastCarryAllowedRatio = allowed;
             return requestedHorizontal * allowed + Vector3.up * original.y;
         }
 
@@ -1484,7 +1493,7 @@ namespace CoopGame.CarrySystem
         private void StreamCarrierInputServerRpc(Vector3 direction, Vector3 heading, float height)
         {
             if (_currentCarryable == null || !Finite(direction) || !Finite(heading) || !float.IsFinite(height)) return;
-            _currentCarryable.UpdateCarrierInput(OwnerClientId, Vector3.ClampMagnitude(direction, 1f), Vector3.ClampMagnitude(heading, 1f),
+            _currentCarryable.UpdateCarrierInput(OwnerClientId, Vector3.ClampMagnitude(direction, 2f), Vector3.ClampMagnitude(heading, 1f),
                 Mathf.Clamp(height, .3f, 2.5f), LeftHandGripping, RightHandGripping);
         }
 
