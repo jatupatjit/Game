@@ -83,6 +83,126 @@ namespace CoopGame.Network
             if (_pauseRoot == null)
                 BuildRuntime();
             ApplyTheme();
+            BuildRoomCodeSection();
+        }
+
+        // ─────────────────────────────────────────── Room Code Section ────────
+        // Room code + Copy + player list inside the main pause card (replaces the always-visible
+        // RoomCodeHUD card). Hidden when there is no code (solo / offline / not connected).
+
+        private GameObject _roomSection;
+        private Text _roomCodeValue, _roomPlayersTitle, _roomPlayersList;
+        private Button _copyCodeButton;
+        private Text _copyCodeLabel;
+        private float _roomRefreshAt, _copiedUntil;
+        private const string CopyLabel = "Copy Code", CopiedLabel = "✓ Copied!";
+
+        private void BuildRoomCodeSection()
+        {
+            if (_pausePanel == null || _roomSection != null) return;
+            _roomSection = new GameObject("RoomCodeSection", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            _roomSection.transform.SetParent(_pausePanel.transform, false);
+            var layout = _roomSection.GetComponent<VerticalLayoutGroup>();
+            layout.spacing = 6f;
+            layout.padding = new RectOffset(0, 0, 0, 4);
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            // Sits between the title divider and CONTINUE.
+            Transform divider = _pausePanel.transform.Find("Divider");
+            int index = divider != null ? divider.GetSiblingIndex() + 1 :
+                (_continueButton != null ? _continueButton.transform.GetSiblingIndex() : 0);
+            _roomSection.transform.SetSiblingIndex(index);
+
+            Transform section = _roomSection.transform;
+            Text heading = UITheme.MakeText(section, "RoomCodeLabel", "ROOM CODE", UITheme.CardLabelFontSize, UITextRole.Accent);
+            heading.fontStyle = FontStyle.Bold;
+            UITheme.SetPreferredHeight(heading.gameObject, 22f);
+
+            var codeRow = new GameObject("CodeRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            codeRow.transform.SetParent(section, false);
+            var row = codeRow.GetComponent<HorizontalLayoutGroup>();
+            row.spacing = 12f;
+            row.childAlignment = TextAnchor.MiddleLeft;
+            row.childControlWidth = row.childControlHeight = true;
+            row.childForceExpandWidth = false;
+            row.childForceExpandHeight = false;
+            UITheme.SetPreferredHeight(codeRow, 48f);
+
+            _roomCodeValue = UITheme.MakeText(codeRow.transform, "RoomCodeValue", "------", 36, UITextRole.Primary);
+            _roomCodeValue.fontStyle = FontStyle.Bold;
+            _roomCodeValue.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var codeElement = _roomCodeValue.gameObject.AddComponent<LayoutElement>();
+            codeElement.flexibleWidth = 1f;
+            codeElement.preferredHeight = 48f;
+
+            _copyCodeButton = UITheme.MakeButton(codeRow.transform, "CopyCodeButton", CopyLabel, UIButtonStyle.Secondary, new Vector2(140f, 40f), 17);
+            var buttonElement = _copyCodeButton.gameObject.AddComponent<LayoutElement>();
+            buttonElement.preferredWidth = 140f;
+            buttonElement.preferredHeight = 40f;
+            _copyCodeLabel = _copyCodeButton.GetComponentInChildren<Text>();
+            _copyCodeButton.onClick.AddListener(OnCopyCodeClicked);
+
+            _roomPlayersTitle = UITheme.MakeText(section, "PlayersTitle", "PLAYERS", UITheme.CardLabelFontSize, UITextRole.Accent);
+            _roomPlayersTitle.fontStyle = FontStyle.Bold;
+            UITheme.SetPreferredHeight(_roomPlayersTitle.gameObject, 24f);
+
+            _roomPlayersList = UITheme.MakeText(section, "PlayersList", "", 17, UITextRole.Primary, TextAnchor.UpperLeft);
+            UITheme.SetPreferredHeight(_roomPlayersList.gameObject, -1f); // fit the list
+
+            var bottomRule = new GameObject("SectionDivider", typeof(RectTransform), typeof(Image));
+            bottomRule.transform.SetParent(section, false);
+            bottomRule.GetComponent<Image>().color = UITheme.Track;
+            bottomRule.GetComponent<Image>().raycastTarget = false;
+            UITheme.SetPreferredHeight(bottomRule, 2f);
+
+            _roomSection.SetActive(false);
+        }
+
+        private void OnCopyCodeClicked()
+        {
+            SteamLobbyManager.Instance?.CopyRoomCodeToClipboard();
+            ShowCopiedFeedback();
+        }
+
+        /// <summary>The single "✓ Copied!" cue: the Copy button's own label, for 1.5 s.</summary>
+        internal void ShowCopiedFeedback()
+        {
+            _copiedUntil = Time.unscaledTime + 1.5f;
+            if (_copyCodeLabel != null) _copyCodeLabel.text = CopiedLabel;
+        }
+
+        private void RefreshRoomCodeSection()
+        {
+            if (_roomSection == null) return;
+            if (_copyCodeLabel != null && _copiedUntil > 0f && Time.unscaledTime >= _copiedUntil)
+            {
+                _copiedUntil = 0f;
+                _copyCodeLabel.text = CopyLabel;
+            }
+            if (Time.unscaledTime < _roomRefreshAt) return;
+            _roomRefreshAt = Time.unscaledTime + 0.5f;
+
+            var mgr = SteamLobbyManager.Instance;
+            var nm = NetworkManager.Singleton;
+            bool show = mgr != null && !mgr.IsLocalSession && !string.IsNullOrEmpty(mgr.CurrentRoomCode) &&
+                        nm != null && nm.IsListening;
+            if (_roomSection.activeSelf != show) _roomSection.SetActive(show);
+            if (!show) return;
+
+            _roomCodeValue.text = mgr.CurrentRoomCode;
+            var names = mgr.GetCurrentPlayerNames();
+            int count = names.Count > 0 ? names.Count : Mathf.Max(1, nm.ConnectedClientsIds.Count);
+            _roomPlayersTitle.text = $"PLAYERS ({count}/4)";
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (i > 0) sb.Append('\n');
+                sb.Append("• ").Append(names[i]);
+            }
+            _roomPlayersList.text = sb.Length > 0 ? sb.ToString() : "• Connecting...";
         }
 
         /// <summary>
@@ -218,6 +338,7 @@ namespace CoopGame.Network
 
         private void Update()
         {
+            if (_isPaused) RefreshRoomCodeSection();
             if (LobbyCharacterCustomizationUI.BlocksPause || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             bool escPressed = UnityEngine.InputSystem.Keyboard.current != null &&
                               UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame;
@@ -240,6 +361,8 @@ namespace CoopGame.Network
             HideSettingsPanel();
             HideConfirmDialog();
             if (_pausePanel != null) _pausePanel.SetActive(true);
+            _roomRefreshAt = 0f;
+            RefreshRoomCodeSection();
 
             StopAllCoroutines();
             StartCoroutine(FadeTo(1f));

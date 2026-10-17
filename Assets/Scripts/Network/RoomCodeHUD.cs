@@ -48,7 +48,19 @@ namespace CoopGame.Network
             if (_hudGroup == null)
                 BuildRuntime();
             ApplyTheme();
+            // The room code and player list now live in the Pause menu (PauseMenu room-code section).
+            // The component stays in the scene (ConnectionHUD treats it as "modern HUD present"), but the
+            // card itself is never shown.
+            if (!_showCard)
+            {
+                if (_hudGroup != null) { _hudGroup.alpha = 0f; _hudGroup.interactable = false; _hudGroup.blocksRaycasts = false; }
+                if (_canvas != null) _canvas.enabled = false;
+                enabled = false;
+            }
         }
+
+        [Tooltip("Show the always-visible top-left card. Off: the code is shown in the Pause menu instead.")]
+        [SerializeField] private bool _showCard = false;
 
         // Compact, readable card matching LevelSessionHUD (1080p reference pixels; labels ≈11 px at 720p).
         private const float CardWidth = 300f, CopyButtonWidth = 150f, CopyRowHeight = 38f;
