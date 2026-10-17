@@ -96,6 +96,18 @@ namespace CoopGame.CarrySystem
             public float HoldHeight = 0.8f;
             public float CurrentHoldDistance = 1.2f;
 
+            // A remote carrier's transform reaches the server one network delay late; their client
+            // reports where it really has them alongside the streamed input.
+            public Vector3 ReportedPosition;
+            public Vector3 ReportedVelocity;
+            public float ReportedOneWayDelay;
+            public bool ReportedDecelerating;
+            public float ReportedPeakSpeed;
+            public bool HasReportedPosition;
+            public float LeadWeight;
+            public float ObservedSpeed;
+            public Unity.Netcode.Components.NetworkTransform ReplicatedTransform;
+
             // Physical contact points in object local space
             public Vector3 LocalContactLeft = new Vector3(-0.25f, 0f, -0.4f);
             public Vector3 LocalContactRight = new Vector3(0.25f, 0f, -0.4f);
@@ -337,7 +349,7 @@ namespace CoopGame.CarrySystem
                 {
                     supportingCarrierCount++;
                     // A silent/disconnected input stream must not keep driving the crate.
-                    if (Time.fixedTime - carrier.InputReceivedAt <= .3f)
+                    if (Time.fixedTime - carrier.InputReceivedAt <= InputStaleSeconds)
                         sharedIntent += carrier.InputDirection;
                 }
 
@@ -425,6 +437,17 @@ namespace CoopGame.CarrySystem
                 targetHandL = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetLeft, targetHandL, settle);
                 targetHandR = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetRight, targetHandR, settle);
 
+                // A remote co-op carrier is seen where they were one network delay ago. Without this their
+                // grip targets (and the velocity the grips damp toward) trail them, the springs drag that
+                // end back and the team stalls; on stopping the stale velocity would push the cargo on.
+                Vector3 supportVelocity = carrier.PlayerVelocity;
+                if (TryGetRemoteCarrierMotion(carrier, isNetworked && supportingCarrierCount > 1, out Vector3 lead, out Vector3 reportedVelocity))
+                {
+                    targetHandL += lead;
+                    targetHandR += lead;
+                    supportVelocity = new Vector3(reportedVelocity.x, carrier.PlayerVelocity.y, reportedVelocity.z);
+                }
+
                 // Physics reads the authoritative Rigidbody pose; rendered,
                 // interpolated transforms are reserved for the visual hand lock.
                 Vector3 currentWorldL = _rigidbody.position + _rigidbody.rotation * Vector3.Scale(carrier.LocalContactLeft, objectScale);
@@ -445,8 +468,8 @@ namespace CoopGame.CarrySystem
                 float dampingStrength = supportedMass * (SoloAssistActive ? 14f : 12f);
                 float maximumForce = supportedMass * (SoloAssistActive ? 75f : 60f);
 
-                if (hasLeft) ApplyHandSupport(targetHandL, currentWorldL, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce, soloDrag);
-                if (hasRight) ApplyHandSupport(targetHandR, currentWorldR, carrier.PlayerVelocity, springStrength, dampingStrength, maximumForce, soloDrag);
+                if (hasLeft) ApplyHandSupport(targetHandL, currentWorldL, supportVelocity, springStrength, dampingStrength, maximumForce, soloDrag);
+                if (hasRight) ApplyHandSupport(targetHandR, currentWorldR, supportVelocity, springStrength, dampingStrength, maximumForce, soloDrag);
             }
 
             // Solo only: with carriers at both ends, the front carrier's back meets the advancing
@@ -504,6 +527,66 @@ namespace CoopGame.CarrySystem
                 return;
             }
         }
+
+        /// <summary>Where a remote co-op carrier really is relative to their (late, interpolated) transform,
+        /// and how fast they move, from what their client reports with the streamed input. False for the
+        /// local (host) carrier, solo carry, offline play and stale reports: behaviour is then unchanged.</summary>
+        private bool TryGetRemoteCarrierMotion(CarrierInfo carrier, bool applies, out Vector3 lead, out Vector3 velocity)
+        {
+            lead = velocity = Vector3.zero;
+            // The server's own view of how fast this carrier moves. Peak-held because a replicated
+            // transform can skip a physics step; this bounds what a client may report.
+            carrier.ObservedSpeed = Mathf.Max(Vector3.ProjectOnPlane(carrier.PlayerVelocity, Vector3.up).magnitude,
+                carrier.ObservedSpeed - ObservedSpeedDecay * Time.fixedDeltaTime);
+            if (carrier.HasReportedPosition && Time.fixedTime - carrier.InputReceivedAt > InputStaleSeconds)
+                carrier.HasReportedPosition = false;
+            if (!applies || NetworkManager == null || carrier.ClientId == NetworkManager.LocalClientId || !carrier.HasReportedPosition)
+            {
+                carrier.LeadWeight = 0f;
+                return false;
+            }
+
+            // Measured, not modelled: the report is one transit old, the transform much older (interpolation).
+            float transit = NetworkMotionDelay.CompensatedTransit(carrier.ReportedOneWayDelay > 0f
+                ? carrier.ReportedOneWayDelay
+                : NetworkMotionDelay.HalfRoundTrip(NetworkManager, carrier.ClientId));
+            // How old the server's copy of this carrier is (with headroom for model error), and from that how far
+            // the real carrier can plausibly be from it: what it covers at the observed speed plus what it can gain
+            // by accelerating/braking that the late copy does not show yet. Reports beyond that are clamped.
+            float age = Mathf.Min(NetworkMotionDelay.Estimate(NetworkManager, carrier.ReplicatedTransform, transit) * AgeHeadroom +
+                AgeMargin, NetworkMotionDelay.MaxDelay);
+            float plausibleSpeed = Mathf.Min(carrier.ObservedSpeed + MaxCarrierAcceleration * age, MaxReportedCarrierSpeed);
+            velocity = Vector3.ClampMagnitude(carrier.ReportedVelocity, plausibleSpeed + ReportedSpeedMargin);
+            Vector3 gap = carrier.ReportedPosition + velocity * transit - carrier.PlayerTransform.position;
+            gap.y = 0f;
+            float plausibleGap = carrier.ObservedSpeed * age + .5f * MaxCarrierAcceleration * age * age + ReportedPositionMargin;
+            gap = Vector3.ClampMagnitude(gap, Mathf.Min(MaxRemoteCarrierLead, plausibleGap));
+
+            // Stopping: input reaches the server before the late transform does. Fade the lead out
+            // instead of carrying the cargo on past where the carrier stopped.
+            bool walking = carrier.InputDirection.sqrMagnitude > .0025f && !carrier.ReportedDecelerating;
+            carrier.LeadWeight = Mathf.MoveTowards(carrier.LeadWeight, walking ? 1f : 0f, Time.fixedDeltaTime / LeadFadeSeconds);
+            lead = gap * carrier.LeadWeight;
+            return true;
+        }
+
+        private const float InputStaleSeconds = .3f;
+        // Carry sprint is 8 m/s x 0.9 co-op x 1.15 Teamwork card = 8.3 m/s; reports above this are not plausible.
+        private const float MaxReportedCarrierSpeed = 9f;
+        private const float ReportedSpeedMargin = 1f;
+        // PlayerMovement accelerates at 12 and decelerates at 16 m/s^2.
+        private const float MaxCarrierAcceleration = 16f;
+        private const float AgeHeadroom = 1.5f;
+        private const float AgeMargin = .05f;
+        private const float ReportedPositionMargin = .1f;
+        private const float ObservedSpeedDecay = 8f;
+        private const float PeakSpeedDecay = 2f;
+        private const float StoppingMinPeakSpeed = .5f;
+        private const float StoppingSpeedFraction = .7f;
+        private const float LeadFadeSeconds = .25f;
+        // Hard cap: fastest plausible carrier over the largest delay NetworkMotionDelay accepts (9 x 0.35 = 3.15 m).
+        // The per-step plausibility bound above is normally far tighter.
+        private const float MaxRemoteCarrierLead = MaxReportedCarrierSpeed * NetworkMotionDelay.MaxDelay;
 
         /// <summary>Horizontal pull acts at the grip (steers and turns the cargo); vertical support acts
         /// through the centre of mass so it lifts without pitching deep cargo held by one face.</summary>
@@ -669,6 +752,7 @@ namespace CoopGame.CarrySystem
                 Carry = playerTransform.GetComponent<PlayerCarry>(),
                 PlayerColliders = playerTransform.GetComponentsInChildren<Collider>(true),
                 PreviousPlayerPosition = playerTransform.position,
+                ReplicatedTransform = playerTransform.GetComponent<Unity.Netcode.Components.NetworkTransform>(),
                 PlayerVelocity = Vector3.zero,
                 AttachedAtFixedTime = Time.fixedTime,
                 InitialSupportOffsetLeft = _rigidbody.position + _rigidbody.rotation *
@@ -808,18 +892,43 @@ namespace CoopGame.CarrySystem
 
         public void UpdateCarrierInput(ulong clientId, Vector3 worldMoveDirection, Vector3 forwardHeading, float holdHeight, bool leftHandActive, bool rightHandActive)
         {
-            bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
-            if (isNetworked && !IsServer) return;
+            // Input without a position report must never keep applying an older report's lead.
+            if (StoreCarrierInput(clientId, worldMoveDirection, forwardHeading, holdHeight, out CarrierInfo data))
+                data.HasReportedPosition = false;
+        }
 
-            if (_activeCarriers.TryGetValue(clientId, out CarrierInfo data))
-            {
-                data.InputDirection = worldMoveDirection;
-                data.InputReceivedAt = Time.fixedTime;
-                data.FacingHeading = forwardHeading;
-                data.HoldHeight = holdHeight;
-                // Input streaming is unreliable. Only the reliable hand-state
-                // transition may enable or release physical surface attachments.
-            }
+        /// <summary>As above, plus where the carrier's own simulation has them this step and how old that is on
+        /// arrival (one-way transit). The server uses it to place a remote carrier's support targets at their real,
+        /// not interpolated, position. Reported values are bounded here and again against the server's view on use.</summary>
+        public void UpdateCarrierInput(ulong clientId, Vector3 worldMoveDirection, Vector3 forwardHeading, float holdHeight,
+            bool leftHandActive, bool rightHandActive, Vector3 carrierPosition, Vector3 carrierVelocity, float oneWayDelay)
+        {
+            if (!StoreCarrierInput(clientId, worldMoveDirection, forwardHeading, holdHeight, out CarrierInfo data)) return;
+            Vector3 velocity = Vector3.ClampMagnitude(Vector3.ProjectOnPlane(carrierVelocity, Vector3.up), MaxReportedCarrierSpeed);
+            float speed = velocity.magnitude;
+            // Compare with a slowly decaying recent peak: step-to-step jitter of a reach-limited walk must
+            // not read as stopping, a real stop (a large drop within a fraction of a second) must.
+            data.ReportedPeakSpeed = Mathf.Max(speed, data.ReportedPeakSpeed - PeakSpeedDecay * Time.fixedDeltaTime);
+            data.ReportedPosition = carrierPosition;
+            data.ReportedVelocity = velocity;
+            data.ReportedDecelerating = data.ReportedPeakSpeed > StoppingMinPeakSpeed && speed < data.ReportedPeakSpeed * StoppingSpeedFraction;
+            data.ReportedOneWayDelay = Mathf.Clamp(oneWayDelay, 0f, NetworkMotionDelay.MaxDelay);
+            data.HasReportedPosition = true;
+        }
+
+        private bool StoreCarrierInput(ulong clientId, Vector3 worldMoveDirection, Vector3 forwardHeading, float holdHeight, out CarrierInfo data)
+        {
+            data = null;
+            bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
+            if (isNetworked && !IsServer) return false;
+            if (!_activeCarriers.TryGetValue(clientId, out data)) return false;
+            data.InputDirection = worldMoveDirection;
+            data.InputReceivedAt = Time.fixedTime;
+            data.FacingHeading = forwardHeading;
+            data.HoldHeight = holdHeight;
+            // Input streaming is unreliable. Only the reliable hand-state
+            // transition may enable or release physical surface attachments.
+            return true;
         }
 
         public Transform GetSocketTransform(int socketIndex)

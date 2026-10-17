@@ -150,6 +150,14 @@ namespace CoopGame.CarrySystem
         private float _overreachTime;
         private Collider[] _currentCargoColliders;
         private Rigidbody _currentCargoRigidbody;
+        // A client's cargo is a kinematic replica rendered one network delay behind the server's.
+        private Unity.Netcode.Components.NetworkTransform _cargoNetworkTransform;
+        private Vector3 _cargoReplicaVelocity;
+        private Vector3 _cargoReplicaLastPosition;
+        private float _cargoReplicaMovedAt;
+        private float _cargoReplicaSampledAt = -1f;
+        private Vector3 _lastStreamPosition;
+        private bool _streamPositionValid;
         private readonly System.Collections.Generic.List<Collider> _collisionRestores = new(8);
         private bool _collisionIgnorePending;
 
@@ -474,9 +482,14 @@ namespace CoopGame.CarrySystem
             float cargoSpeed = 5f * _currentCarryable.GetSpeedMultiplier();
             if (_movement != null && cargoSpeed > .01f && direction.sqrMagnitude > .0001f)
                 direction *= Mathf.Clamp(_movement.RequestedSpeed / cargoSpeed, .25f, 2f);
-            if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight);
+            // Report where this simulation really has the carrier: the server only sees a late copy.
+            Vector3 position = transform.position;
+            Vector3 velocity = _streamPositionValid ? (position - _lastStreamPosition) / Time.fixedDeltaTime : Vector3.zero;
+            _lastStreamPosition = position;
+            _streamPositionValid = true;
+            if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight, position, velocity, OneWayDelayToServer);
             else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, _carryFacing,
-                _currentHoldHeight, _leftHandGripping, _rightHandGripping);
+                _currentHoldHeight, _leftHandGripping, _rightHandGripping, position, velocity, OneWayDelayToServer);
             float excess = _leftHandGripping ? GripOverreach(true) : 0f;
             if (_rightHandGripping) excess = Mathf.Max(excess, GripOverreach(false));
             _overreachTime = excess > .2f ? _overreachTime + Time.fixedDeltaTime : 0f;
@@ -485,6 +498,7 @@ namespace CoopGame.CarrySystem
 
         private void Update()
         {
+            UpdateTransitPing();
             if (_netGripState.Value.Attached && _currentCarryable == null && IsNetworked && !_releasePending)
                 ResolveCarriedObject(_netGripState.Value.CargoId);
             if (!HasLocalInput || _inputReader == null) return;
@@ -1325,7 +1339,7 @@ namespace CoopGame.CarrySystem
             Transform cargo = _currentCarryable.transform;
             Quaternion poseCorrection = _currentCargoRigidbody != null
                 ? _currentCargoRigidbody.rotation * Quaternion.Inverse(cargo.rotation) : Quaternion.identity;
-            Vector3 cargoPosition = _currentCargoRigidbody != null ? _currentCargoRigidbody.position : cargo.position;
+            Vector3 cargoPosition = _currentCargoRigidbody != null ? PredictedServerCargoPosition() : cargo.position;
             for (int i = 0; i < _currentCargoColliders.Length; i++)
             {
                 Collider collider = _currentCargoColliders[i];
@@ -1362,7 +1376,67 @@ namespace CoopGame.CarrySystem
         {
             Vector3 local = left ? _currentLocalContactLeft : _currentLocalContactRight;
             if (_currentCargoRigidbody == null) return _currentCarryable.transform.TransformPoint(local);
-            return _currentCargoRigidbody.position + _currentCargoRigidbody.rotation * Vector3.Scale(local, _currentCarryable.transform.lossyScale);
+            return PredictedServerCargoPosition() + _currentCargoRigidbody.rotation * Vector3.Scale(local, _currentCarryable.transform.lossyScale);
+        }
+
+        /// <summary>Cargo position for reach/body limits: where the server has the cargo now. On a client the
+        /// co-op cargo is a replica one network delay behind the server; a carrier walking away from it would
+        /// look over-reached and have every step cut, so it is extrapolated. The server simulates the cargo
+        /// itself (including kinematic delivery/placement states), and solo/offline carry is unchanged.</summary>
+        private Vector3 PredictedServerCargoPosition()
+        {
+            Vector3 position = _currentCargoRigidbody.position;
+            if (IsServer || !_currentCarryable.IsSpawned || _currentCarryable.CurrentCarrierCount < 2) return position;
+            if (_cargoReplicaSampledAt != Time.fixedTime)
+            {
+                _cargoReplicaSampledAt = Time.fixedTime;
+                // The replica moves once per rendered frame; measure over actual position changes.
+                Vector3 moved = position - _cargoReplicaLastPosition;
+                if (moved.sqrMagnitude > 1e-8f)
+                {
+                    float span = Mathf.Max(Time.fixedDeltaTime, Time.fixedTime - _cargoReplicaMovedAt);
+                    _cargoReplicaVelocity = Vector3.Lerp(_cargoReplicaVelocity, Vector3.ClampMagnitude(moved / span, MaxReplicaCargoSpeed), .5f);
+                    _cargoReplicaLastPosition = position;
+                    _cargoReplicaMovedAt = Time.fixedTime;
+                }
+                else if (Time.fixedTime - _cargoReplicaMovedAt > ReplicaStillSeconds) _cargoReplicaVelocity = Vector3.zero;
+            }
+            return position + _cargoReplicaVelocity *
+                NetworkMotionDelay.Estimate(NetworkManager.Singleton, _cargoNetworkTransform, OneWayDelayToServer);
+        }
+
+        private const float MaxReplicaCargoSpeed = 12f;
+        private const float ReplicaStillSeconds = .2f;
+
+        // ---- One-way transit to the server, measured in-game (transports such as Facepunch report no RTT) ----
+        private const float TransitPingInterval = .5f;
+        private const float TransitSmoothing = .2f;
+        private const float MaxPlausibleRoundTrip = 2f;
+        private float _measuredOneWay = -1f;
+        private float _nextTransitPingAt;
+
+        /// <summary>Seconds a message takes from this owner to the server; 0 on the server itself.</summary>
+        private float OneWayDelayToServer => IsServer ? 0f
+            : _measuredOneWay >= 0f ? _measuredOneWay
+            : NetworkMotionDelay.HalfRoundTrip(NetworkManager.Singleton, NetworkManager.ServerClientId);
+
+        private void UpdateTransitPing()
+        {
+            if (!IsNetworked || !IsOwner || IsServer || Time.unscaledTime < _nextTransitPingAt) return;
+            _nextTransitPingAt = Time.unscaledTime + TransitPingInterval;
+            TransitPingServerRpc(Time.realtimeSinceStartup);
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner, Delivery = RpcDelivery.Unreliable)]
+        private void TransitPingServerRpc(float sentAt) => TransitPongRpc(sentAt);
+
+        [Rpc(SendTo.Owner, Delivery = RpcDelivery.Unreliable)]
+        private void TransitPongRpc(float sentAt)
+        {
+            float roundTrip = Time.realtimeSinceStartup - sentAt;
+            if (!float.IsFinite(roundTrip) || roundTrip < 0f || roundTrip > MaxPlausibleRoundTrip) return;
+            float oneWay = Mathf.Min(roundTrip * .5f, NetworkMotionDelay.MaxDelay);
+            _measuredOneWay = _measuredOneWay < 0f ? oneWay : Mathf.Lerp(_measuredOneWay, oneWay, TransitSmoothing);
         }
 
         private static bool Finite(Quaternion q) => float.IsFinite(q.x) && float.IsFinite(q.y) && float.IsFinite(q.z) && float.IsFinite(q.w) &&
@@ -1490,11 +1564,14 @@ namespace CoopGame.CarrySystem
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner, Delivery = RpcDelivery.Unreliable)]
-        private void StreamCarrierInputServerRpc(Vector3 direction, Vector3 heading, float height)
+        private void StreamCarrierInputServerRpc(Vector3 direction, Vector3 heading, float height, Vector3 position, Vector3 velocity, float oneWayDelay)
         {
-            if (_currentCarryable == null || !Finite(direction) || !Finite(heading) || !float.IsFinite(height)) return;
+            if (_currentCarryable == null || !Finite(direction) || !Finite(heading) || !float.IsFinite(height) ||
+                !Finite(position) || !Finite(velocity) || !float.IsFinite(oneWayDelay)) return;
+            // The reported motion only offsets/damps this carrier's own support targets and is bounded server-side
+            // against the server's view of this player.
             _currentCarryable.UpdateCarrierInput(OwnerClientId, Vector3.ClampMagnitude(direction, 2f), Vector3.ClampMagnitude(heading, 1f),
-                Mathf.Clamp(height, .3f, 2.5f), LeftHandGripping, RightHandGripping);
+                Mathf.Clamp(height, .3f, 2.5f), LeftHandGripping, RightHandGripping, position, velocity, oneWayDelay);
         }
 
         #endregion
@@ -1533,6 +1610,12 @@ namespace CoopGame.CarrySystem
             _overreachTime = 0f;
             _currentCargoColliders = carryable.GetComponentsInChildren<Collider>(true);
             _currentCargoRigidbody = carryable.GetComponent<Rigidbody>();
+            _cargoNetworkTransform = carryable.GetComponent<Unity.Netcode.Components.NetworkTransform>();
+            _cargoReplicaVelocity = Vector3.zero;
+            _cargoReplicaLastPosition = _currentCargoRigidbody != null ? _currentCargoRigidbody.position : carryable.transform.position;
+            _cargoReplicaMovedAt = Time.fixedTime;
+            _cargoReplicaSampledAt = -1f;
+            _streamPositionValid = false;
 
             if (_movement != null)
             {
