@@ -297,6 +297,44 @@ namespace CoopGame.CarrySystem
             NetworkVariableWritePermission.Server
         );
 
+        /// <summary>Where a carrier stands relative to the cargo, in the cargo's yaw frame, as its owner
+        /// simulates it. Replicated presentation-only data: physics and validation never read it.</summary>
+        public struct CarryBodyPose : INetworkSerializable, IEquatable<CarryBodyPose>
+        {
+            public bool Valid;
+            public ulong CargoId;
+            public Vector2 Offset;
+            public float Yaw;
+
+            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+            {
+                serializer.SerializeValue(ref Valid);
+                serializer.SerializeValue(ref CargoId);
+                serializer.SerializeValue(ref Offset);
+                serializer.SerializeValue(ref Yaw);
+            }
+
+            public bool Equals(CarryBodyPose other) => Valid == other.Valid && CargoId == other.CargoId &&
+                Offset.Equals(other.Offset) && Yaw.Equals(other.Yaw);
+        }
+
+        // Every peer draws its own interpolated copy of the carrier and of the cargo, and the two copies are
+        // sampled at different times (owner vs server transforms, different send phases, interpolated vs
+        // raw poses). Drawing a remote carrier relative to the cargo as drawn here keeps its hands on it.
+        private readonly NetworkVariable<CarryBodyPose> _netCarryBodyPose = new NetworkVariable<CarryBodyPose>(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Owner
+        );
+        private const float CarryPoseSendDistance = .003f;
+        private const float CarryPoseSendYaw = .3f;
+        private const float RemoteCarryPoseBlendSeconds = .2f;
+        // Larger corrections mean a teleport or respawn, not replication timing; keep the plain proxy then.
+        private const float MaxRemoteCarryRenderCorrection = 2.5f;
+        private float _remoteCarryPoseWeight;
+        private Vector3 _remoteCarryCorrection;
+        private float _remoteCarryYawCorrection;
+
         private void Awake()
         {
             _inputReader = GetComponent<PlayerInputReader>();
@@ -444,7 +482,7 @@ namespace CoopGame.CarrySystem
             // A newly accepted/predicted grip must suppress body contacts before
             // this physics step, rather than waiting for the next FixedUpdate.
             FlushCollisionChanges();
-            if (_currentCarryable == null || !IsCarrying) { _hasCarryFacing = false; return; }
+            if (_currentCarryable == null || !IsCarrying) { _hasCarryFacing = false; PublishCarryBodyPose(false); return; }
             Vector3 direction = Vector3.zero;
             if (HasLocalInput)
             {
@@ -490,6 +528,7 @@ namespace CoopGame.CarrySystem
             if (IsNetworked) StreamCarrierInputServerRpc(direction, _carryFacing, _currentHoldHeight, position, velocity, OneWayDelayToServer);
             else _currentCarryable.UpdateCarrierInput(OwnerClientId, direction, _carryFacing,
                 _currentHoldHeight, _leftHandGripping, _rightHandGripping, position, velocity, OneWayDelayToServer);
+            PublishCarryBodyPose(true);
             float excess = _leftHandGripping ? GripOverreach(true) : 0f;
             if (_rightHandGripping) excess = Mathf.Max(excess, GripOverreach(false));
             _overreachTime = excess > .2f ? _overreachTime + Time.fixedDeltaTime : 0f;
@@ -1370,6 +1409,98 @@ namespace CoopGame.CarrySystem
             if (_wallClimb != null) return;
             RelaxFreeHand(true);
             RelaxFreeHand(false);
+        }
+
+        /// <summary>Owner, FixedUpdate: publishes where this body stands relative to the cargo pose that its
+        /// own reach and body limits use (the predicted server cargo on a co-op client), so the published
+        /// relation is one in which the hands reach.</summary>
+        private void PublishCarryBodyPose(bool carrying)
+        {
+            if (!IsNetworked || !IsOwner) return;
+            CarryBodyPose current = _netCarryBodyPose.Value;
+            if (!carrying || _currentCarryable == null || _currentCargoRigidbody == null)
+            {
+                if (current.Valid) _netCarryBodyPose.Value = default;
+                return;
+            }
+            float cargoYaw = FlatYaw(_currentCargoRigidbody.rotation);
+            Vector3 offset = Quaternion.Euler(0f, -cargoYaw, 0f) * (transform.position - PredictedServerCargoPosition());
+            var pose = new CarryBodyPose
+            {
+                Valid = true,
+                CargoId = _currentCarryable.NetworkObjectId,
+                Offset = new Vector2(offset.x, offset.z),
+                Yaw = Mathf.DeltaAngle(cargoYaw, transform.eulerAngles.y)
+            };
+            if (!Finite(new Vector3(pose.Offset.x, pose.Offset.y, pose.Yaw))) return;
+            if (current.Valid && current.CargoId == pose.CargoId &&
+                (current.Offset - pose.Offset).sqrMagnitude < CarryPoseSendDistance * CarryPoseSendDistance &&
+                Mathf.Abs(Mathf.DeltaAngle(current.Yaw, pose.Yaw)) < CarryPoseSendYaw) return;
+            _netCarryBodyPose.Value = pose;
+        }
+
+        /// <summary>
+        /// Remote carriers only, called once per rendered frame by the body visual before the arms solve.
+        /// Moves the drawn body (never the networked root, which physics and the server's lead measurement
+        /// read) to the owner's published place relative to the cargo as drawn on this peer, blending in and
+        /// out over <see cref="RemoteCarryPoseBlendSeconds"/>. Returns false when nothing is applied.
+        /// </summary>
+        public bool ApplyRemoteCarryRenderPose(ref Vector3 position, ref Quaternion rotation)
+        {
+            if (!IsNetworked || IsOwner) { _remoteCarryPoseWeight = 0f; return false; }
+            CarryBodyPose pose = _netCarryBodyPose.Value;
+            CargoGripState grip = _netGripState.Value;
+            bool active = pose.Valid && grip.Attached && pose.CargoId == grip.CargoId &&
+                _currentCarryable != null && _currentCarryable.NetworkObjectId == pose.CargoId;
+            if (active)
+            {
+                Transform cargo = _currentCarryable.transform;
+                float cargoYaw = FlatYaw(cargo.rotation);
+                Vector3 target = cargo.position + Quaternion.Euler(0f, cargoYaw, 0f) * new Vector3(pose.Offset.x, 0f, pose.Offset.y);
+                Vector3 correction = target - position;
+                correction.y = 0f;
+                active = correction.sqrMagnitude <= MaxRemoteCarryRenderCorrection * MaxRemoteCarryRenderCorrection;
+                if (active)
+                {
+                    _remoteCarryCorrection = correction;
+                    _remoteCarryYawCorrection = Mathf.DeltaAngle(rotation.eulerAngles.y, cargoYaw + pose.Yaw);
+                }
+            }
+            _remoteCarryPoseWeight = Mathf.MoveTowards(_remoteCarryPoseWeight, active ? 1f : 0f,
+                Time.deltaTime / RemoteCarryPoseBlendSeconds);
+            if (_remoteCarryPoseWeight <= 0f) return false;
+            position += _remoteCarryCorrection * _remoteCarryPoseWeight;
+            rotation = Quaternion.AngleAxis(_remoteCarryYawCorrection * _remoteCarryPoseWeight, Vector3.up) * rotation;
+            return true;
+        }
+
+        /// <summary>A gripping hand's contact on the cargo as drawn this frame (the IK target).</summary>
+        public bool TryGetRenderedGripContact(bool left, out Vector3 contact)
+        {
+            contact = default;
+            if (_currentCarryable == null || !(left ? LeftHandGripping : RightHandGripping)) return false;
+            Vector3 local;
+            if (IsNetworked && !IsOwner)
+            {
+                CargoGripState state = _netGripState.Value;
+                if (!state.Attached || state.CargoId != _currentCarryable.NetworkObjectId) return false;
+                local = left ? state.LeftPoint : state.RightPoint;
+            }
+            else local = left ? _currentLocalContactLeft : _currentLocalContactRight;
+            contact = _currentCarryable.transform.TransformPoint(local);
+            return true;
+        }
+
+        private static float FlatYaw(Quaternion rotation)
+        {
+            Vector3 forward = rotation * Vector3.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < .0001f)
+            {
+                forward = rotation * Vector3.up;
+                forward.y = 0f;
+            }
+            return forward.sqrMagnitude < .0001f ? 0f : Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
         }
 
         private Vector3 GetPhysicalContact(bool left)

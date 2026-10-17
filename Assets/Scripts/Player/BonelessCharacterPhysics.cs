@@ -74,6 +74,7 @@ namespace CoopGame.Player
         private CharacterController _characterController;
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
         private Wallclimb _wallClimb;
+        private ProceduralPlayerArms _arms;
         private Transform _rootTransform;
         private NetworkObject _networkObject;
 
@@ -187,6 +188,9 @@ namespace CoopGame.Player
                 renderedRotation = Quaternion.Slerp(_previousPhysicsRotation, _currentPhysicsRotation, alpha);
             }
             RenderedRootPosition = renderedPosition;
+            // A remote carrier is drawn relative to the cargo as drawn here (see PlayerCarry).
+            if (!usesLocalPhysics && _playerCarry != null)
+                _playerCarry.ApplyRemoteCarryRenderPose(ref renderedPosition, ref renderedRotation);
 
             bool isGrounded = (_characterController != null) ? _characterController.isGrounded : true;
 
@@ -291,11 +295,66 @@ namespace CoopGame.Player
             _currentTilt = Vector2.Lerp(_currentTilt, _targetTilt, dt * _leanSmoothing);
 
             // Combine base rotation with inertial lean and waddle roll
-            Quaternion leanRot = Quaternion.Euler(_currentTilt.x, 0f, _currentTilt.y + rollWaddle);
             Quaternion renderRotationOffset = Quaternion.Inverse(_rootTransform.rotation) * renderedRotation;
-            transform.localRotation = renderRotationOffset * _baseLocalRotation * leanRot;
+            ApplyTorsoPitch(renderRotationOffset, _currentTilt.x, _currentTilt.y + rollWaddle);
+            if (_playerCarry != null && _playerCarry.IsCarrying)
+                _currentTilt.x = KeepGripsInReach(renderRotationOffset, _currentTilt.x, _currentTilt.y + rollWaddle);
 
             _wasGrounded = isGrounded;
+        }
+
+        private void ApplyTorsoPitch(Quaternion renderRotationOffset, float pitch, float roll) =>
+            transform.localRotation = renderRotationOffset * _baseLocalRotation * Quaternion.Euler(pitch, 0f, roll);
+
+        // Grip support and reach limits are planned from the upright shoulders. A torso drawn leaning back
+        // (the carry strain lean, or walking backwards) swings the shoulders away from the cargo, past the
+        // arms' reach, and the hands come off the contacts. Pitch the drawn torso only as far as the grips
+        // allow, leaning in a little when the body stands just beyond reach. Unchanged when the arms have slack.
+        private const float MaxGripLeanIn = 10f;
+        private const float GripReachMargin = .005f;
+        private const int GripLeanIterations = 7;
+
+        private float KeepGripsInReach(Quaternion renderRotationOffset, float pitch, float roll)
+        {
+            if (_arms == null) _arms = _rootTransform.GetComponent<ProceduralPlayerArms>();
+            if (_arms == null || (_wallClimb != null && _wallClimb.IsClimbing)) return pitch;
+            bool hasLeft = _playerCarry.TryGetRenderedGripContact(true, out Vector3 left);
+            bool hasRight = _playerCarry.TryGetRenderedGripContact(false, out Vector3 right);
+            if (!hasLeft && !hasRight) return pitch;
+
+            float desiredOverreach = GripOverreach(hasLeft, left, hasRight, right);
+            if (desiredOverreach <= 0f) return pitch;
+            float upright = Mathf.Max(pitch, 0f);
+            float leanedIn = upright + MaxGripLeanIn;
+            ApplyTorsoPitch(renderRotationOffset, leanedIn, roll);
+            float leanedInOverreach = GripOverreach(hasLeft, left, hasRight, right);
+            if (leanedInOverreach >= desiredOverreach)
+            {
+                // Pitch cannot help (e.g. a side grip): keep the requested pose.
+                ApplyTorsoPitch(renderRotationOffset, pitch, roll);
+                return pitch;
+            }
+            if (leanedInOverreach > 0f) return leanedIn;
+
+            // Smallest change from the requested pitch that brings every gripping hand within reach.
+            float low = pitch, high = leanedIn;
+            for (int i = 0; i < GripLeanIterations; i++)
+            {
+                float middle = (low + high) * .5f;
+                ApplyTorsoPitch(renderRotationOffset, middle, roll);
+                if (GripOverreach(hasLeft, left, hasRight, right) > 0f) low = middle;
+                else high = middle;
+            }
+            ApplyTorsoPitch(renderRotationOffset, high, roll);
+            return high;
+        }
+
+        private float GripOverreach(bool hasLeft, Vector3 left, bool hasRight, Vector3 right)
+        {
+            float overreach = float.NegativeInfinity;
+            if (hasLeft) overreach = Vector3.Distance(_arms.LeftShoulderPosition, left) - (_arms.LeftCarryReach - GripReachMargin);
+            if (hasRight) overreach = Mathf.Max(overreach, Vector3.Distance(_arms.RightShoulderPosition, right) - (_arms.RightCarryReach - GripReachMargin));
+            return overreach;
         }
 
         /// <summary>
