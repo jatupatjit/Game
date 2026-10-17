@@ -136,7 +136,7 @@ namespace CoopGame.Network
 
         private void Build()
         {
-            _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _font = UITheme.Font;
             var canvas = gameObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 450;
@@ -152,13 +152,15 @@ namespace CoopGame.Network
             launchRect.anchorMin = launchRect.anchorMax = new Vector2(0, 0);
             launchRect.pivot = new Vector2(0, 0);
             launchRect.anchoredPosition = new Vector2(24, 24);
-            _panel = Box(transform, "FaceCustomizationOverlay", Vector2.zero, Vector2.zero, new Color(0, 0, 0, .65f));
+            _panel = Box(transform, "FaceCustomizationOverlay", Vector2.zero, Vector2.zero, UITheme.Overlay);
             var overlayRect = (RectTransform)_panel.transform;
             overlayRect.anchorMin = Vector2.zero; overlayRect.anchorMax = Vector2.one;
             overlayRect.offsetMin = overlayRect.offsetMax = Vector2.zero;
-            var content = Box(_panel.transform, "FaceCustomization", new Vector2(660, 740), Vector2.zero, new Color(.07f, .1f, .16f, .99f));
-            Label(content.transform, "CUSTOMIZE YOUR FACE", 28, new Vector2(580, 48), new Vector2(0, 318));
-            var previewBox = Box(content.transform, "Preview", new Vector2(280, 256), new Vector2(0, 144), new Color(.2f, .6f, 1f));
+            var content = Box(_panel.transform, "FaceCustomization", new Vector2(660, 740), Vector2.zero, UITheme.PanelSolid);
+            UITheme.StyleShape(content.GetComponent<Image>(), UITheme.PanelSprite, UITheme.PanelSolid);
+            Label(content.transform, "CUSTOMIZE YOUR FACE", 28, new Vector2(580, 48), new Vector2(0, 318)).color = UITheme.Primary;
+            var previewBox = Box(content.transform, "Preview", new Vector2(280, 256), new Vector2(0, 144), UITheme.FacePreview);
+            UITheme.StyleShape(previewBox.GetComponent<Image>(), UITheme.SmallSprite, UITheme.FacePreview);
             var previewGO = new GameObject("Eyes", typeof(RectTransform), typeof(RawImage));
             previewGO.transform.SetParent(previewBox.transform, false);
             var rect = (RectTransform)previewGO.transform;
@@ -168,7 +170,7 @@ namespace CoopGame.Network
             _styleLabel = Label(content.transform, "", 22, new Vector2(340, 44), new Vector2(0, -24));
             Button(content.transform, "<", new Vector2(58, 44), new Vector2(-230, -24), () => ChangeStyle(-1));
             Button(content.transform, ">", new Vector2(58, 44), new Vector2(230, -24), () => ChangeStyle(1));
-            Label(content.transform, "CHOOSE A FACE", 16, new Vector2(300, 28), new Vector2(0, -76));
+            Label(content.transform, "CHOOSE A FACE", 16, new Vector2(300, 28), new Vector2(0, -76)).color = UITheme.TextSecondary;
             _faceOutlines = new Outline[PlayerAppearance.FaceCount];
             for (int i = 0; i < _faceOutlines.Length; i++)
             {
@@ -178,7 +180,9 @@ namespace CoopGame.Network
                     _draft = index;
                     Refresh();
                 });
-                button.GetComponent<Image>().color = new Color(.2f, .6f, 1f);
+                // Blue lives on the Image (not the tint) so the orange selection Outline is not multiplied by it.
+                UITheme.StyleShape(button.GetComponent<Image>(), UITheme.SmallSprite, UITheme.FacePreview);
+                var tint = button.colors; tint.normalColor = tint.selectedColor = Color.white; tint.highlightedColor = UITheme.TextSecondary; tint.pressedColor = UITheme.Pressed(Color.white); button.colors = tint;
                 var thumbnail = new GameObject("FaceThumbnail", typeof(RectTransform), typeof(RawImage));
                 thumbnail.transform.SetParent(button.transform, false);
                 var thumbnailRect = (RectTransform)thumbnail.transform;
@@ -188,12 +192,13 @@ namespace CoopGame.Network
                 thumbnailImage.texture = _faceTextures != null && i < _faceTextures.Length ? _faceTextures[i] : null;
                 thumbnailImage.raycastTarget = false;
                 var outline = button.gameObject.AddComponent<Outline>();
-                outline.effectColor = new Color(.3f, .9f, 1f); outline.effectDistance = new Vector2(3, 3);
+                outline.effectColor = UITheme.Primary; outline.effectDistance = new Vector2(4, -4);
                 _faceOutlines[i] = outline;
             }
             _status = Label(content.transform, "", 14, new Vector2(610, 34), new Vector2(0, -272));
+            _status.color = UITheme.TextSecondary;
             Button(content.transform, "CANCEL", new Vector2(230, 48), new Vector2(-128, -328), () => Close(true));
-            Button(content.transform, "SAVE FACE", new Vector2(230, 48), new Vector2(128, -328), Save);
+            UITheme.StyleButton(Button(content.transform, "SAVE FACE", new Vector2(230, 48), new Vector2(128, -328), Save), UIButtonStyle.Primary);
             _panel.SetActive(false);
         }
 
@@ -212,16 +217,17 @@ namespace CoopGame.Network
             go.transform.SetParent(parent, false);
             var rect = (RectTransform)go.transform; rect.sizeDelta = size; rect.anchoredPosition = position;
             var label = go.GetComponent<Text>(); label.font = _font; label.fontSize = fontSize;
-            label.text = text; label.color = Color.white; label.alignment = TextAnchor.MiddleCenter; label.raycastTarget = false;
+            label.text = text; label.color = UITheme.TextPrimary; label.verticalOverflow = VerticalWrapMode.Overflow; label.alignment = TextAnchor.MiddleCenter; label.raycastTarget = false;
             return label;
         }
 
         private Button Button(Transform parent, string text, Vector2 size, Vector2 position, UnityEngine.Events.UnityAction action)
         {
-            var go = Box(parent, text, size, position, new Color(.17f, .24f, .34f));
+            var go = Box(parent, text, size, position, Color.white);
             var button = go.AddComponent<Button>(); button.targetGraphic = go.GetComponent<Image>();
             button.onClick.AddListener(action);
             Label(go.transform, text, 18, size, Vector2.zero);
+            UITheme.StyleButton(button, UIButtonStyle.Secondary);
             return button;
         }
     }

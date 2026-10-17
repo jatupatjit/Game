@@ -33,6 +33,59 @@ namespace CoopGame.Network
                 _hudGroup.interactable = false;
                 _hudGroup.blocksRaycasts = false;
             }
+            ApplyTheme();
+        }
+
+        // Compact, readable session card (sizes in 1080p reference pixels).
+        private const float CardWidth = 300f;
+        private const int HeaderFontSize = 19, CountFontSize = UITheme.CardLabelFontSize, NamesFontSize = 17;
+
+        /// <summary>
+        /// Restyles the scene-serialized session card with <see cref="UITheme"/> and re-lays it out at
+        /// runtime: larger text, panel height fitted to its content, padding consistent with the other
+        /// panels. Done here (not in the scenes) so Level01/Level02 need no re-save.
+        /// </summary>
+        private void ApplyTheme()
+        {
+            RectTransform panel = null;
+            foreach (Image image in GetComponentsInChildren<Image>(true))
+            {
+                if (image.name.Contains("Divider"))
+                {
+                    image.color = UITheme.Track;
+                    UITheme.SetPreferredHeight(image.gameObject, 2f);
+                }
+                else
+                {
+                    UITheme.StylePanel(image);
+                    if (panel == null) panel = image.rectTransform;
+                }
+                image.raycastTarget = false;
+            }
+            foreach (Text text in GetComponentsInChildren<Text>(true))
+            {
+                bool names = text == _playerNamesText, count = text == _playerCountText;
+                UITextRole role = text == _modeLabel ? UITextRole.Positive :
+                    names ? UITextRole.Primary : count ? UITextRole.Secondary : UITextRole.Accent;
+                UITheme.StyleText(text, role);
+                text.verticalOverflow = VerticalWrapMode.Overflow;
+                text.horizontalOverflow = HorizontalWrapMode.Wrap;
+                text.fontSize = names ? NamesFontSize : count ? CountFontSize : HeaderFontSize;
+                text.fontStyle = names ? FontStyle.Normal : FontStyle.Bold;
+                text.lineSpacing = 1f;
+            }
+            if (panel != null) CompactLayout(panel);
+        }
+
+        private void CompactLayout(RectTransform panel)
+        {
+            UITheme.CompactCard(panel, CardWidth);
+            // Header row: title left, mode right, both sized by the row instead of fixed widths.
+            Transform header = _modeLabel != null ? _modeLabel.transform.parent : null;
+            if (header != null && header != panel.transform) UITheme.SpreadRow(header, 28f);
+            if (_playerCountText != null) UITheme.SetPreferredHeight(_playerCountText.gameObject, 24f);
+            if (_playerNamesText != null) UITheme.SetPreferredHeight(_playerNamesText.gameObject, -1f); // fit the list
+            LayoutRebuilder.ForceRebuildLayoutImmediate(panel);
         }
 
         private void OnEnable()

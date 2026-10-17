@@ -82,6 +82,106 @@ namespace CoopGame.Network
 
             if (_pauseRoot == null)
                 BuildRuntime();
+            ApplyTheme();
+        }
+
+        /// <summary>
+        /// Restyles whatever pause hierarchy exists (scene-built, Resources prefab or runtime-built) with
+        /// <see cref="UITheme"/> and fixes its layout: each card is fitted to its content, the Fullscreen
+        /// toggle keeps a normal box size, small labels get a readable minimum. Done at runtime so the
+        /// scenes and the Resources prefab need no re-save; references and behaviour are untouched.
+        /// </summary>
+        internal void ApplyTheme()
+        {
+            foreach (GameObject panel in new[] { _pausePanel, _settingsPanel, _confirmDialog })
+                FitCardToContent(panel);
+            FixToggleRow(_fullscreenToggle);
+
+            if (_backgroundOverlay != null)
+            {
+                _backgroundOverlay.sprite = null;
+                _backgroundOverlay.color = UITheme.Overlay;
+            }
+            foreach (GameObject panel in new[] { _pausePanel, _settingsPanel, _confirmDialog })
+                if (panel != null) UITheme.StylePanel(panel.GetComponent<Image>());
+
+            UITheme.StyleButton(_continueButton, UIButtonStyle.Primary);
+            UITheme.StyleButton(_settingsButton, UIButtonStyle.Secondary);
+            UITheme.StyleButton(_quitToMenuButton, UIButtonStyle.Secondary);
+            UITheme.StyleButton(_backFromSettingsButton, UIButtonStyle.Secondary);
+            UITheme.StyleButton(_cancelQuitButton, UIButtonStyle.Secondary);
+            UITheme.StyleButton(_confirmQuitButton, UIButtonStyle.Danger);
+
+            UITheme.StyleSlider(_masterVolumeSlider);
+            UITheme.StyleSlider(_sfxVolumeSlider);
+            UITheme.StyleSlider(_musicVolumeSlider);
+            UITheme.StyleToggle(_fullscreenToggle);
+
+            foreach (Image image in GetComponentsInChildren<Image>(true))
+                if (image.name == "Divider") image.color = UITheme.Primary;
+
+            foreach (Text text in GetComponentsInChildren<Text>(true))
+            {
+                text.verticalOverflow = VerticalWrapMode.Overflow;
+                if (text.GetComponentInParent<Button>(true) != null) // labels styled with their button
+                {
+                    text.fontSize = Mathf.Max(text.fontSize, MinButtonFontSize);
+                    continue;
+                }
+                string n = text.name;
+                UITextRole role = n == "SettingsTitle" ? UITextRole.Accent :
+                    n.Contains("Title") ? UITextRole.Primary : UITextRole.Secondary;
+                UITheme.StyleText(text, role);
+                if (text.fontSize < MinLabelFontSize)
+                {
+                    text.fontSize = MinLabelFontSize;
+                    if (text.TryGetComponent(out LayoutElement element) && element.preferredHeight > 0f)
+                        element.preferredHeight = Mathf.Max(element.preferredHeight, MinLabelFontSize + 6f);
+                    var rect = text.rectTransform;
+                    if (rect.sizeDelta.y > 0f && rect.sizeDelta.y < MinLabelFontSize + 6f)
+                        rect.sizeDelta = new Vector2(rect.sizeDelta.x, MinLabelFontSize + 6f);
+                    // A row stacking this label (e.g. MasterVolumeRow) follows its own layout's height.
+                    Transform row = rect.parent;
+                    if (row != null && row.GetComponent<VerticalLayoutGroup>() != null &&
+                        row.gameObject != _pausePanel && row.gameObject != _settingsPanel && row.gameObject != _confirmDialog &&
+                        row.TryGetComponent(out LayoutElement rowElement))
+                        rowElement.preferredHeight = -1f;
+                }
+            }
+        }
+
+        private const int MinLabelFontSize = 15, MinButtonFontSize = 17;
+
+        /// <summary>Card height follows its VerticalLayoutGroup content (no empty band at the bottom).</summary>
+        private static void FitCardToContent(GameObject card)
+        {
+            if (card == null) return;
+            var layout = card.GetComponent<VerticalLayoutGroup>();
+            if (layout == null) return;
+            layout.childControlHeight = true;
+            layout.childForceExpandHeight = false;
+            foreach (Transform child in card.transform)
+                if (child.TryGetComponent(out LayoutElement element)) element.flexibleHeight = 0f;
+            var fitter = card.GetComponent<ContentSizeFitter>();
+            if (fitter == null) fitter = card.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        }
+
+        /// <summary>The toggle row must not force-expand its children's height (the box stretched ~135 px).</summary>
+        private static void FixToggleRow(Toggle toggle)
+        {
+            if (toggle == null) return;
+            var row = toggle.GetComponent<HorizontalLayoutGroup>();
+            if (row == null && toggle.transform.parent != null) row = toggle.transform.parent.GetComponent<HorizontalLayoutGroup>();
+            if (row == null) return;
+            row.childControlHeight = false;
+            row.childForceExpandHeight = false;
+            row.childForceExpandWidth = false; // keep the label next to the box instead of spreading it out
+            row.childAlignment = TextAnchor.MiddleLeft;
+            if (toggle.targetGraphic != null) toggle.targetGraphic.rectTransform.sizeDelta = new Vector2(24f, 24f);
+            foreach (Text label in row.GetComponentsInChildren<Text>(true)) label.alignment = TextAnchor.MiddleLeft;
+            if (row.TryGetComponent(out LayoutElement element)) { element.preferredHeight = 32f; element.flexibleHeight = 0f; }
         }
 
         private void OnDestroy()
@@ -291,18 +391,18 @@ namespace CoopGame.Network
             if (_pauseRoot == null) _pauseRoot = gameObject.AddComponent<CanvasGroup>();
             _pauseRoot.alpha = 0f; _pauseRoot.interactable = false; _pauseRoot.blocksRaycasts = false;
 
-            // Colors
-            Color overlay    = H("#0A0E1ACC");
-            Color panel      = H("#111827EE");
-            Color accent     = H("#00D9FF");
-            Color btnCont    = H("#059669");
-            Color btnSet     = H("#1D4ED8");
-            Color btnQuit    = H("#991B1B");
-            Color btnBack    = H("#374151");
-            Color btnConfirm = H("#991B1B");
-            Color btnCancel  = H("#374151");
-            Color textPri    = H("#F9FAFB");
-            Color textSec    = H("#9CA3AF");
+            // Colors (final styling is applied by ApplyTheme after this build)
+            Color overlay    = UITheme.Overlay;
+            Color panel      = UITheme.Panel;
+            Color accent     = UITheme.Primary;
+            Color btnCont    = UITheme.ButtonColor(UIButtonStyle.Primary);
+            Color btnSet     = UITheme.ButtonColor(UIButtonStyle.Secondary);
+            Color btnQuit    = UITheme.ButtonColor(UIButtonStyle.Secondary);
+            Color btnBack    = UITheme.ButtonColor(UIButtonStyle.Secondary);
+            Color btnConfirm = UITheme.ButtonColor(UIButtonStyle.Danger);
+            Color btnCancel  = UITheme.ButtonColor(UIButtonStyle.Secondary);
+            Color textPri    = UITheme.TextPrimary;
+            Color textSec    = UITheme.TextSecondary;
 
             // Dark overlay background
             _backgroundOverlay = Img(gameObject, "BackgroundOverlay", overlay);
@@ -383,13 +483,7 @@ namespace CoopGame.Network
 
         // ─── Helpers ─────────────────────────────────────────────────────────
 
-        private static Color H(string hex) { ColorUtility.TryParseHtmlString(hex, out Color c); return c; }
-
-        private static Font BFont()
-        {
-            Font f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            return f != null ? f : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        }
+        private static Font BFont() => UITheme.Font;
 
         private static Image Img(GameObject p, string n, Color c)
         {
@@ -460,7 +554,7 @@ namespace CoopGame.Network
             var bgRT = bg.AddComponent<RectTransform>();
             bgRT.anchorMin = new Vector2(0,0.25f); bgRT.anchorMax = new Vector2(1,0.75f);
             bgRT.offsetMin = bgRT.offsetMax = Vector2.zero;
-            bg.AddComponent<Image>().color = H("#374151");
+            bg.AddComponent<Image>().color = UITheme.Track;
 
             var fillArea = new GameObject("FillArea"); fillArea.transform.SetParent(sliderGO.transform, false);
             var faRT = fillArea.AddComponent<RectTransform>();
@@ -495,7 +589,7 @@ namespace CoopGame.Network
 
             var bg = new GameObject("Background"); bg.transform.SetParent(row.transform, false);
             bg.AddComponent<RectTransform>().sizeDelta = new Vector2(22,22);
-            var bgImg = bg.AddComponent<Image>(); bgImg.color = H("#374151");
+            var bgImg = bg.AddComponent<Image>(); bgImg.color = UITheme.Track;
 
             var checkGO = new GameObject("Checkmark"); checkGO.transform.SetParent(bg.transform, false);
             var ckRT = checkGO.AddComponent<RectTransform>();

@@ -33,8 +33,7 @@ namespace CoopGame.Network
             _mission = FindAnyObjectByType<LevelMission>();
             _lever = FindAnyObjectByType<TeamLeverGate>();
             _climbGates = FindObjectsByType<ClimbSwitchGate>();
-            if (_font == null) _font = Resources.Load<Font>("Fonts/GameThai");
-            if (_font == null) _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (_font == null) _font = UITheme.Font;
             GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
             GetComponent<Canvas>().sortingOrder = 210;
             var scaler = GetComponent<CanvasScaler>();
@@ -162,61 +161,65 @@ namespace CoopGame.Network
 
         private void Dismiss() { _summaryDismissed = true; ShowModal(false); }
 
-        private GameObject Box(string name, Transform parent, Vector2 anchor, Vector2 position, Vector2 size, Color color)
+        private GameObject Box(string name, Transform parent, Vector2 anchor, Vector2 position, Vector2 size, Color color, Sprite shape = null)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image));
             go.transform.SetParent(parent, false);
             var rect = go.GetComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = anchor;
             rect.anchoredPosition = position; rect.sizeDelta = size;
-            go.GetComponent<Image>().color = color;
+            var image = go.GetComponent<Image>();
+            if (shape != null) UITheme.StyleShape(image, shape, color);
+            else image.color = color;
             return go;
         }
 
-        private Text Label(Transform parent, string name, string value, int fontSize, Vector2 pos, Vector2 size, TextAnchor alignment = TextAnchor.MiddleLeft)
+        private Text Label(Transform parent, string name, string value, int fontSize, Vector2 pos, Vector2 size,
+            TextAnchor alignment = TextAnchor.MiddleLeft, UITextRole role = UITextRole.Primary)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Text));
             go.transform.SetParent(parent, false);
             var rect = go.GetComponent<RectTransform>(); rect.anchoredPosition = pos; rect.sizeDelta = size;
             var text = go.GetComponent<Text>(); text.font = _font; text.fontSize = fontSize;
-            text.text = value; text.color = Color.white; text.alignment = alignment; text.raycastTarget = false;
+            text.text = value; text.color = UITheme.TextColor(role); text.alignment = alignment; text.raycastTarget = false;
             return text;
         }
 
-        private Button Button(Transform parent, string label, Vector2 position, Vector2 size, UnityEngine.Events.UnityAction action)
+        private Button Button(Transform parent, string label, Vector2 position, Vector2 size, UnityEngine.Events.UnityAction action,
+            UIButtonStyle style = UIButtonStyle.Secondary)
         {
-            var go = Box(label, parent, new Vector2(.5f, .5f), position, size, new Color(.2f, .32f, .28f));
+            var go = Box(label, parent, new Vector2(.5f, .5f), position, size, Color.white);
             var button = go.AddComponent<Button>();
+            button.targetGraphic = go.GetComponent<Image>();
             go.AddComponent<UIButtonHover>();
             button.onClick.AddListener(action);
             Label(go.transform, "Label", label, 23, Vector2.zero, size - new Vector2(20, 10), TextAnchor.MiddleCenter);
+            UITheme.StyleButton(button, style);
             return button;
         }
 
         private void Build()
         {
-            var objective = Box("Objective", transform, new Vector2(1f, 1f), new Vector2(-365, -95), new Vector2(680, 145), new Color(.035f, .075f, .065f, 1f));
+            var objective = Box("Objective", transform, new Vector2(1f, 1f), new Vector2(-365, -95), new Vector2(680, 145), UITheme.Panel, UITheme.PanelSprite);
             objective.GetComponent<Image>().raycastTarget = false;
-            _objective = Label(objective.transform, "Goal", "นำลังไม้ไปส่งที่ปราสาท", 28, new Vector2(0, 38), new Vector2(635, 44));
-            _objective.color = new Color(1f, .85f, .38f);
+            _objective = Label(objective.transform, "Goal", "นำลังไม้ไปส่งที่ปราสาท", 28, new Vector2(0, 38), new Vector2(635, 44), role: UITextRole.Accent);
             _detail = Label(objective.transform, "Status", "กำลังเตรียมภารกิจ...", 21, new Vector2(0, -24), new Vector2(635, 78));
-            var inventory = Box("Inventory Panel", transform, new Vector2(1f, 1f), new Vector2(-290, -275), new Vector2(540, 145), new Color(.035f, .075f, .065f, .94f));
+            var inventory = Box("Inventory Panel", transform, new Vector2(1f, 1f), new Vector2(-290, -275), new Vector2(540, 145), UITheme.Panel, UITheme.PanelSprite);
             inventory.GetComponent<Image>().raycastTarget = false;
-            _inventory = Label(inventory.transform, "Inventory", "", 21, Vector2.zero, new Vector2(500, 125));
-            _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1920, 1080), new Color(.015f, .035f, .03f, .8f));
-            var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1100, 560), new Color(.07f, .14f, .12f));
-            _title = Label(panel.transform, "Title", "", 40, new Vector2(0, 208), new Vector2(1020, 66), TextAnchor.MiddleCenter);
-            _title.color = new Color(1, .85f, .38f);
+            _inventory = Label(inventory.transform, "Inventory", "", 21, Vector2.zero, new Vector2(500, 125), role: UITextRole.Secondary);
+            _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1920, 1080), UITheme.Overlay);
+            var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1100, 560), UITheme.PanelSolid, UITheme.PanelSprite);
+            _title = Label(panel.transform, "Title", "", 40, new Vector2(0, 208), new Vector2(1020, 66), TextAnchor.MiddleCenter, UITextRole.Accent);
             _message = Label(panel.transform, "Message", "", 24, new Vector2(0, 124), new Vector2(1020, 100), TextAnchor.MiddleCenter);
             _cards = new GameObject("Cards", typeof(RectTransform)); _cards.transform.SetParent(panel.transform, false);
             Button(_cards.transform, "[1] ENDURANCE\nยกคนเดียวใช้ Stamina\nลดลง 40%", new Vector2(-340, -42), new Vector2(310, 190), () => _player?.SelectCardRpc(1));
             Button(_cards.transform, "[2] CARGO GUARD\nลังที่กำลังช่วยยก\nรับความเสียหายลด 50%", new Vector2(0, -42), new Vector2(310, 190), () => _player?.SelectCardRpc(2));
             Button(_cards.transform, "[3] TEAMWORK\nเมื่อยกด้วยกัน 2 คนขึ้นไป\nเดินขณะยกเร็วขึ้น 15%", new Vector2(340, -42), new Vector2(310, 190), () => _player?.SelectCardRpc(3));
             _shop = new GameObject("Shop", typeof(RectTransform)); _shop.transform.SetParent(panel.transform, false);
-            _shopWallet = Label(_shop.transform, "Wallet", "", 22, new Vector2(0, 35), new Vector2(1020, 50), TextAnchor.MiddleCenter);
+            _shopWallet = Label(_shop.transform, "Wallet", "", 22, new Vector2(0, 35), new Vector2(1020, 50), TextAnchor.MiddleCenter, UITextRole.Secondary);
             _buy[0] = Button(_shop.transform, "Stamina Elixir — 40 เหรียญ\nฟื้น Stamina เต็ม 1 ครั้ง", new Vector2(-250, -58), new Vector2(460, 120), () => _player?.BuyItemRpc(1));
             _buy[1] = Button(_shop.transform, "Cargo Padding — 60 เหรียญ\nลดความเสียหายครั้งถัดไป 50%\nใช้ขณะจับลัง", new Vector2(250, -58), new Vector2(460, 120), () => _player?.BuyItemRpc(2));
-            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(0, -204), new Vector2(340, 62), Dismiss);
+            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(0, -204), new Vector2(340, 62), Dismiss, UIButtonStyle.Primary);
             _modal.SetActive(false);
         }
     }

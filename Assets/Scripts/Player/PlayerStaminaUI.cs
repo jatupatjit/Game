@@ -6,36 +6,15 @@ using CoopGame.CarrySystem;
 namespace CoopGame.Player
 {
     /// <summary>
-    /// PlayerStaminaUI generates and manages a modern, responsive HUD overlay
-    /// displaying the player's physical Stamina bar and Throwing charge meter.
-    /// 
-    /// Enhancements:
-    /// 1. Procedural White Sprite Generation:
-    ///    Guarantees that Image.Type.Filled and RectTransform clipping work 100% without missing sprite references.
-    /// 2. Smooth Continuous Drain & Lerp (ลดลงเรื่อยๆ อย่างนุ่มนวล):
-    ///    The fill bar smoothly glides down continuously, coupled with a delayed ghost-trail bar.
-    /// 3. Rich Dynamic Colors (การไล่ระดับสีสวยงามตลอดการลด):
-    ///    - High (>60%): Vibrant Lime Green
-    ///    - Medium (30% - 60%): Warm Amber / Gold
-    ///    - Low (10% - 30%): Bright Orange
-    ///    - Critical (<10%): Deep Crimson Red
-    ///    - Exhausted: Rapid pulsing red alert
-    /// 4. Dual Clipping Engine:
-    ///    Updates both fillAmount AND RectTransform.anchorMax so the bar physically shrinks visibly in all Unity versions.
+    /// PlayerStaminaUI generates and manages the local player's Stamina bar and Throw charge meter.
+    /// Visuals come from <see cref="UITheme"/> (low-poly block): chamfered track, stamina green that
+    /// blends to the danger red-orange below <see cref="UITheme.LowRatio"/>, pulsing danger when exhausted,
+    /// orange throw charge. The fill glides smoothly and a ghost trail shows recent loss.
     /// </summary>
     [RequireComponent(typeof(PlayerStamina))]
     [DisallowMultipleComponent]
     public class PlayerStaminaUI : NetworkBehaviour
     {
-        [Header("Colors & Visuals")]
-        [SerializeField] private Color _colorHigh = new Color(0.15f, 0.92f, 0.38f, 0.95f);    // Lime Green
-        [SerializeField] private Color _colorMedium = new Color(1.00f, 0.76f, 0.05f, 0.95f);  // Amber Gold
-        [SerializeField] private Color _colorOrange = new Color(1.00f, 0.40f, 0.10f, 0.95f);  // Coral Orange
-        [SerializeField] private Color _colorLow = new Color(1.00f, 0.15f, 0.15f, 0.95f);     // Crimson Red
-        [SerializeField] private Color _colorGhost = new Color(1.0f, 1.0f, 1.0f, 0.35f);      // Soft Trail
-        [SerializeField] private Color _colorThrowCharge = new Color(0.0f, 0.90f, 1.0f, 0.95f); // Neon Cyan
-        [SerializeField] private Color _colorThrowFull = new Color(1.0f, 0.85f, 0.15f, 1.0f);   // Gold Flash
-
         [Header("Smooth Drain Animation Settings")]
         [Tooltip("Speed of the smooth stamina bar decreasing glide")]
         [SerializeField] private float _smoothDrainSpeed = 8.0f;
@@ -74,9 +53,6 @@ namespace CoopGame.Player
         private float _fullStaminaTimer = -2.5f; // Show for ~3.7s on spawn so player sees stamina bar
         private float _targetAlpha = 1.0f;
         private bool _isHudCreated = false;
-
-        // Cached procedural white sprite
-        private static Sprite _sharedWhiteSprite;
 
         private void Awake()
         {
@@ -118,7 +94,6 @@ namespace CoopGame.Player
             if (_isHudCreated && _canvas != null && _hudCanvasGroup != null) return;
             _isHudCreated = true;
 
-            EnsureWhiteSprite();
             CreateProceduralHUD();
         }
 
@@ -139,21 +114,6 @@ namespace CoopGame.Player
                 Destroy(_hudCanvasGroup.gameObject);
             }
             base.OnDestroy();
-        }
-
-        private void EnsureWhiteSprite()
-        {
-            if (_sharedWhiteSprite == null)
-            {
-                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-                {
-                    filterMode = FilterMode.Bilinear,
-                    name = "T_WhiteSquare_Procedural"
-                };
-                tex.SetPixels(new Color[] { Color.white, Color.white, Color.white, Color.white });
-                tex.Apply();
-                _sharedWhiteSprite = Sprite.Create(tex, new Rect(0, 0, 2, 2), new Vector2(0.5f, 0.5f), 100f);
-            }
         }
 
         private void Update()
@@ -186,32 +146,26 @@ namespace CoopGame.Player
             // 3. Update Stamina Fill Width and Percentage
             if (_staminaFillImage != null)
             {
-                _staminaFillImage.fillAmount = _displayedStamina;
-                if (_staminaFillRect != null)
-                {
-                    _staminaFillRect.anchorMax = new Vector2(_displayedStamina, 1.0f);
-                }
+                UITheme.SetBarFill(_staminaFillImage, _displayedStamina);
 
-                // Dynamic Multi-tier Color Palette
                 if (isExhausted)
                 {
-                    // Rapid red pulse during exhaustion
+                    // Rapid danger pulse during exhaustion
                     float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 14.0f);
-                    Color pulseColor = _colorLow;
+                    Color pulseColor = UITheme.Danger;
                     pulseColor.a = pulse;
                     _staminaFillImage.color = pulseColor;
                 }
                 else
                 {
-                    _staminaFillImage.color = EvaluateStaminaColor(_displayedStamina);
+                    _staminaFillImage.color = UITheme.Meter(_displayedStamina, UITheme.Stamina);
                 }
             }
 
             // 4. Update Ghost Trail Width
-            if (_staminaGhostImage != null && _staminaGhostRect != null)
+            if (_staminaGhostImage != null)
             {
-                _staminaGhostImage.fillAmount = _ghostStamina;
-                _staminaGhostRect.anchorMax = new Vector2(_ghostStamina, 1.0f);
+                UITheme.SetBarFill(_staminaGhostImage, _ghostStamina);
             }
 
             // 5. Update Throw Charge Bar
@@ -220,15 +174,11 @@ namespace CoopGame.Player
                 _throwBarContainer.SetActive(isChargingThrow);
                 if (isChargingThrow)
                 {
-                    _throwFillImage.fillAmount = throwCharge;
-                    if (_throwFillRect != null)
-                    {
-                        _throwFillRect.anchorMax = new Vector2(throwCharge, 1.0f);
-                    }
+                    UITheme.SetBarFill(_throwFillImage, throwCharge);
 
                     _throwFillImage.color = (throwCharge >= 0.98f)
-                        ? Color.Lerp(_colorThrowCharge, _colorThrowFull, Mathf.PingPong(Time.time * 8f, 1f))
-                        : _colorThrowCharge;
+                        ? Color.Lerp(UITheme.Primary, UITheme.TextPrimary, 0.6f * Mathf.PingPong(Time.time * 8f, 1f))
+                        : UITheme.Primary;
                 }
             }
 
@@ -254,31 +204,6 @@ namespace CoopGame.Player
             if (_hudCanvasGroup != null)
             {
                 _hudCanvasGroup.alpha = Mathf.MoveTowards(_hudCanvasGroup.alpha, _targetAlpha, Time.deltaTime * _fadeSpeed);
-            }
-        }
-
-        /// <summary>
-        /// Smoothly blends through 4 distinct color stages as stamina decreases continuously:
-        /// 1.0 to 0.6: Lime Green -> Amber Gold
-        /// 0.6 to 0.3: Amber Gold -> Coral Orange
-        /// 0.3 to 0.0: Coral Orange -> Crimson Red
-        /// </summary>
-        private Color EvaluateStaminaColor(float normalizedStamina)
-        {
-            if (normalizedStamina > 0.60f)
-            {
-                float t = (normalizedStamina - 0.60f) / 0.40f;
-                return Color.Lerp(_colorMedium, _colorHigh, t);
-            }
-            else if (normalizedStamina > 0.30f)
-            {
-                float t = (normalizedStamina - 0.30f) / 0.30f;
-                return Color.Lerp(_colorOrange, _colorMedium, t);
-            }
-            else
-            {
-                float t = normalizedStamina / 0.30f;
-                return Color.Lerp(_colorLow, _colorOrange, t);
             }
         }
 
@@ -331,8 +256,8 @@ namespace CoopGame.Player
             stamBgRect.sizeDelta = new Vector2(260f, 18f);
 
             Image stamBgImg = stamBgObj.AddComponent<Image>();
-            stamBgImg.sprite = GetOrCreateWhiteSprite();
-            stamBgImg.color = new Color(0.04f, 0.06f, 0.10f, 0.85f);
+            UITheme.StyleTrack(stamBgImg);
+            stamBgImg.raycastTarget = false;
 
             // 4. Ghost Trail Image (Lags behind to show recent stamina loss)
             GameObject stamGhostObj = new GameObject("StaminaBar_Ghost");
@@ -345,11 +270,8 @@ namespace CoopGame.Player
             _staminaGhostRect.offsetMax = new Vector2(-2f, -2f);
 
             _staminaGhostImage = stamGhostObj.AddComponent<Image>();
-            _staminaGhostImage.sprite = GetOrCreateWhiteSprite();
-            _staminaGhostImage.type = Image.Type.Filled;
-            _staminaGhostImage.fillMethod = Image.FillMethod.Horizontal;
-            _staminaGhostImage.fillOrigin = (int)Image.OriginHorizontal.Left;
-            _staminaGhostImage.color = _colorGhost;
+            UITheme.StyleFill(_staminaGhostImage, UITheme.Ghost);
+            _staminaGhostImage.raycastTarget = false;
 
             // 5. Stamina Fill Image (Main foreground bar)
             GameObject stamFillObj = new GameObject("StaminaBar_Fill");
@@ -362,11 +284,8 @@ namespace CoopGame.Player
             _staminaFillRect.offsetMax = new Vector2(-2f, -2f);
 
             _staminaFillImage = stamFillObj.AddComponent<Image>();
-            _staminaFillImage.sprite = GetOrCreateWhiteSprite();
-            _staminaFillImage.type = Image.Type.Filled;
-            _staminaFillImage.fillMethod = Image.FillMethod.Horizontal;
-            _staminaFillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
-            _staminaFillImage.color = _colorHigh;
+            UITheme.StyleFill(_staminaFillImage, UITheme.Stamina);
+            _staminaFillImage.raycastTarget = false;
 
             // 6. Throw Charge Bar Container & Background
             _throwBarContainer = new GameObject("ThrowBar_Container");
@@ -380,8 +299,8 @@ namespace CoopGame.Player
             throwBgRect.sizeDelta = new Vector2(260f, 12f);
 
             Image throwBgImg = _throwBarContainer.AddComponent<Image>();
-            throwBgImg.sprite = GetOrCreateWhiteSprite();
-            throwBgImg.color = new Color(0.04f, 0.06f, 0.09f, 0.85f);
+            UITheme.StyleTrack(throwBgImg);
+            throwBgImg.raycastTarget = false;
 
             // 7. Throw Charge Fill Image
             GameObject throwFillObj = new GameObject("ThrowBar_Fill");
@@ -394,19 +313,10 @@ namespace CoopGame.Player
             _throwFillRect.offsetMax = new Vector2(-2f, -2f);
 
             _throwFillImage = throwFillObj.AddComponent<Image>();
-            _throwFillImage.sprite = GetOrCreateWhiteSprite();
-            _throwFillImage.type = Image.Type.Filled;
-            _throwFillImage.fillMethod = Image.FillMethod.Horizontal;
-            _throwFillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
-            _throwFillImage.color = _colorThrowCharge;
+            UITheme.StyleFill(_throwFillImage, UITheme.Primary);
+            _throwFillImage.raycastTarget = false;
 
             _throwBarContainer.SetActive(false);
-        }
-
-        private Sprite GetOrCreateWhiteSprite()
-        {
-            EnsureWhiteSprite();
-            return _sharedWhiteSprite;
         }
     }
 }

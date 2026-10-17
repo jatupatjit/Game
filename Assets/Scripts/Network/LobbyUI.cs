@@ -83,6 +83,91 @@ namespace CoopGame.Network
 
             if (_lobbyRoot == null)
                 BuildRuntime();
+            ApplyTheme();
+        }
+
+        /// <summary>
+        /// Restyles the scene-built (or runtime-built) lobby with <see cref="UITheme"/>. Visual only:
+        /// layout, references and behaviour are untouched, so Lobby.unity needs no re-save.
+        /// </summary>
+        internal void ApplyTheme()
+        {
+            Transform background = transform.Find("Background");
+            if (background != null && background.TryGetComponent(out Image backdrop))
+            {
+                backdrop.sprite = null;
+                backdrop.color = UITheme.Backdrop;
+            }
+            Transform card = transform.Find("LobbyCard");
+            if (card != null) UITheme.StylePanel(card.GetComponent<Image>());
+
+            UITheme.StyleButton(_hostRoomMenuButton, UIButtonStyle.Primary);
+            UITheme.StyleButton(_hostButton, UIButtonStyle.Primary);
+            UITheme.StyleButton(_confirmJoinButton, UIButtonStyle.Primary);
+            foreach (Button button in new[] { _settingsMenuButton, _quitGameButton, _joinButton, _backFromHostRoomButton,
+                         _pasteCodeButton, _backFromJoinButton, _backFromSettingsButton, _cancelConnectingButton })
+                UITheme.StyleButton(button, UIButtonStyle.Secondary);
+            UITheme.StyleInputField(_roomCodeInput);
+
+            foreach (SpinnerAnimator spinner in GetComponentsInChildren<SpinnerAnimator>(true))
+                if (spinner.TryGetComponent(out Image ring)) ring.color = UITheme.Primary;
+
+            UITheme.ReplaceEmojiIn(transform);
+            foreach (Text text in GetComponentsInChildren<Text>(true))
+            {
+                text.verticalOverflow = VerticalWrapMode.Overflow;
+                if (text.GetComponentInParent<Button>(true) != null)
+                {
+                    text.fontSize = Mathf.Max(text.fontSize, MinButtonFontSize);
+                    continue;
+                }
+                if (text.GetComponentInParent<InputField>(true) != null) continue;
+                string n = text.name;
+                UITextRole role = text == _statusMessageLabel ? UITextRole.Danger :
+                    n == "TitleLabel" || n == "ConnectingTitle" ? UITextRole.Primary :
+                    n.Contains("Title") || n == "ConnectingLabel" ? UITextRole.Accent : UITextRole.Secondary;
+                UITheme.StyleText(text, role);
+                int size = n == "SubTitleLabel" ? SubtitleFontSize : Mathf.Max(text.fontSize, MinLabelFontSize);
+                if (size != text.fontSize)
+                {
+                    text.fontSize = size;
+                    if (text.TryGetComponent(out LayoutElement element) && element.preferredHeight > 0f)
+                        element.preferredHeight = Mathf.Max(element.preferredHeight, size + 8f);
+                }
+            }
+            if (card != null) CompactLayout((RectTransform)card);
+        }
+
+        private const int SubtitleFontSize = 16, MinLabelFontSize = 15, MinButtonFontSize = 16;
+
+        /// <summary>
+        /// Card fits its content: sub-panels drop their fixed 360 px reservation, the "breathing" spacer
+        /// slots (e.g. MainSpacer between SETTINGS and QUIT GAME) are collapsed, and the empty status line
+        /// only takes space when it has text. Runtime-only, so Lobby.unity needs no re-save.
+        /// </summary>
+        private void CompactLayout(RectTransform card)
+        {
+            var layout = card.GetComponent<VerticalLayoutGroup>();
+            if (layout != null)
+            {
+                layout.childControlHeight = true;
+                layout.childForceExpandHeight = false;
+            }
+            foreach (GameObject panel in new[] { _mainPanel, _hostRoomPanel, _joinPanel, _settingsPanel, _connectingPanel })
+            {
+                if (panel == null) continue;
+                UITheme.SetPreferredHeight(panel, -1f);
+                if (panel.TryGetComponent(out VerticalLayoutGroup panelLayout))
+                {
+                    panelLayout.childControlHeight = true;
+                    panelLayout.childForceExpandHeight = false;
+                }
+                foreach (Transform child in panel.transform)
+                    if (child.name.EndsWith("Spacer")) child.gameObject.SetActive(false);
+            }
+            if (_statusMessageLabel != null) UITheme.SetPreferredHeight(_statusMessageLabel.gameObject, -1f); // 0 when empty
+            UITheme.FitHeightToContent(card.gameObject);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(card);
         }
 
         private void Start()
@@ -296,7 +381,7 @@ namespace CoopGame.Network
         {
             if (_statusMessageLabel == null) return;
             _statusMessageLabel.text  = msg;
-            _statusMessageLabel.color = isError ? new Color(1f, 0.4f, 0.4f) : new Color(0.6f, 0.6f, 0.6f);
+            _statusMessageLabel.color = isError ? UITheme.Danger : UITheme.TextSecondary;
         }
 
         // ─────────────────────────────────────────── Visibility ───────────────
@@ -389,24 +474,25 @@ namespace CoopGame.Network
             _lobbyRoot = GetComponent<CanvasGroup>();
             if (_lobbyRoot == null) _lobbyRoot = gameObject.AddComponent<CanvasGroup>();
 
-            // Palette
-            Color bgDeep        = ProceduralUIUtility.BgDeep;
-            Color panelColor    = ProceduralUIUtility.PanelDark;
-            Color accentCyan    = ProceduralUIUtility.AccentCyan;
-            Color btnPlay       = ProceduralUIUtility.ButtonPlay;
-            Color btnJoin       = ProceduralUIUtility.ButtonJoin;
-            Color btnSettings   = ProceduralUIUtility.ButtonSlate;
-            Color btnQuit       = ProceduralUIUtility.ButtonQuit;
-            Color btnBack       = ProceduralUIUtility.ButtonSlate;
-            Color textPrimary   = ProceduralUIUtility.TextPrimary;
-            Color textSecondary = ProceduralUIUtility.TextSecondary;
+            // Palette (UITheme roles; ApplyTheme in Awake finalises the styling)
+
+
+            const UITextRole accentCyan     = UITextRole.Accent;
+            const UIButtonStyle btnPlay     = UIButtonStyle.Primary;
+            const UIButtonStyle btnJoin     = UIButtonStyle.Secondary;
+            const UIButtonStyle btnConfirm  = UIButtonStyle.Primary;
+            const UIButtonStyle btnSettings = UIButtonStyle.Secondary;
+            const UIButtonStyle btnQuit     = UIButtonStyle.Secondary;
+            const UIButtonStyle btnBack     = UIButtonStyle.Secondary;
+            const UITextRole textPrimary    = UITextRole.Primary;
+            const UITextRole textSecondary  = UITextRole.Secondary;
 
             // Background
-            var bg = ProceduralUIUtility.MakeImage(gameObject, "Background", bgDeep);
+            var bg = ProceduralUIUtility.MakeImage(gameObject, "Background", UITheme.Backdrop);
             ProceduralUIUtility.StretchFull(bg.GetComponent<RectTransform>());
 
             // Center Card (460 x 520)
-            var card   = ProceduralUIUtility.MakePanel(gameObject, "LobbyCard", new Vector2(460, 520), Vector2.zero, panelColor);
+            var card   = ProceduralUIUtility.MakePanel(gameObject, "LobbyCard", new Vector2(460, 520), Vector2.zero);
             var cardRT = card.GetComponent<RectTransform>();
             cardRT.anchorMin = cardRT.anchorMax = new Vector2(0.5f, 0.5f);
             cardRT.pivot     = new Vector2(0.5f, 0.5f);
@@ -424,7 +510,7 @@ namespace CoopGame.Network
             LE(ProceduralUIUtility.MakeText(card, "SubTitleLabel", "CO-OP PHYSICS ADVENTURE", 11, FontStyle.Bold, accentCyan, TextAnchor.MiddleCenter).gameObject, 16f);
 
             _steamStatusLabel   = null;
-            _statusMessageLabel = ProceduralUIUtility.MakeText(card, "StatusMessageLabel", "", 12, FontStyle.Italic, ProceduralUIUtility.HexColor("#FCA5A5"), TextAnchor.MiddleCenter);
+            _statusMessageLabel = ProceduralUIUtility.MakeText(card, "StatusMessageLabel", "", 12, FontStyle.Italic, UITextRole.Danger, TextAnchor.MiddleCenter);
             LE(_statusMessageLabel.gameObject, 18f);
 
             // Main panel
@@ -474,9 +560,9 @@ namespace CoopGame.Network
             subT1LE.preferredHeight = 26;
             subT1LE.flexibleHeight = 0;
 
-            var (_, hBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "HostButton", "👑   HOST ROOM", btnPlay, 58, 16);
+            var (_, hBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "HostButton", "★   HOST ROOM", btnPlay, 58, 16);
             _hostButton = hBtn;
-            var (_, jBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "JoinButton", "🔑   JOIN WITH CODE", btnJoin, 54, 15);
+            var (_, jBtn) = ProceduralUIUtility.MakeButton(_hostRoomPanel, "JoinButton", "→   JOIN WITH CODE", btnJoin, 54, 15);
             _joinButton = jBtn;
 
             // Controlled breathing spacer before Back button
@@ -522,14 +608,14 @@ namespace CoopGame.Network
             var inLE = inGO.AddComponent<LayoutElement>();
             inLE.preferredWidth = 270; inLE.preferredHeight = 54;
 
-            var (pstGO, pstBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "📋 Paste", btnSettings, 54, 13);
+            var (pstGO, pstBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "Paste", btnSettings, 54, 13);
             _pasteCodeButton = pstBtn;
             var pstRT = pstGO.GetComponent<RectTransform>();
             pstRT.sizeDelta = new Vector2(110, 54);
             var pstLE = pstGO.GetComponent<LayoutElement>();
             if (pstLE != null) { pstLE.preferredWidth = 110; pstLE.preferredHeight = 54; }
 
-            var (_, cnfBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", btnJoin, 54, 15);
+            var (_, cnfBtn) = ProceduralUIUtility.MakeButton(_joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", btnConfirm, 54, 15);
             _confirmJoinButton = cnfBtn;
             var cnfLE = cnfBtn.GetComponent<LayoutElement>();
             if (cnfLE != null) { cnfLE.preferredHeight = 54; cnfLE.flexibleHeight = 0; }
@@ -605,7 +691,7 @@ namespace CoopGame.Network
             scLE.minHeight = 76;
             scLE.flexibleHeight = 0;
 
-            var sp = ProceduralUIUtility.MakeImage(spinnerContainer, "SpinnerRing", accentCyan, ProceduralUIUtility.GetSpinnerRingSprite());
+            var sp = ProceduralUIUtility.MakeImage(spinnerContainer, "SpinnerRing", UITheme.Primary, ProceduralUIUtility.GetSpinnerRingSprite());
             var spRT = sp.GetComponent<RectTransform>();
             spRT.anchorMin = new Vector2(0.5f, 0.5f);
             spRT.anchorMax = new Vector2(0.5f, 0.5f);
@@ -650,94 +736,6 @@ namespace CoopGame.Network
         }
 
         // ─── Helpers ─────────────────────────────────────────────────────────
-
-        private static Color H(string hex) { ColorUtility.TryParseHtmlString(hex, out Color c); return c; }
-
-        private static Font BFont()
-        {
-            Font f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            return f != null ? f : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        }
-
-        private static Image Img(GameObject p, string n, Color c)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p.transform, false);
-            go.AddComponent<RectTransform>();
-            var img = go.AddComponent<Image>(); img.color = c; return img;
-        }
-
-        private static GameObject Empty(GameObject p, string n)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p.transform, false);
-            go.AddComponent<RectTransform>(); return go;
-        }
-
-        private static GameObject Panel(GameObject p, string n, Vector2 sz, Color c)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p.transform, false);
-            go.AddComponent<RectTransform>().sizeDelta = sz;
-            go.AddComponent<Image>().color = c; return go;
-        }
-
-        private static Text Txt(GameObject p, string n, string t, int sz, FontStyle fs, Color c, TextAnchor al)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p.transform, false);
-            go.AddComponent<RectTransform>().sizeDelta = new Vector2(400, 30);
-            var tx = go.AddComponent<Text>();
-            tx.font = BFont(); tx.text = t; tx.fontSize = sz; tx.fontStyle = fs;
-            tx.color = c; tx.alignment = al;
-            tx.horizontalOverflow = HorizontalWrapMode.Wrap;
-            tx.verticalOverflow   = VerticalWrapMode.Overflow;
-            return tx;
-        }
-
-        private static Button Btn(GameObject p, string n, string lbl, Color bg, float h)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p.transform, false);
-            go.AddComponent<RectTransform>().sizeDelta = new Vector2(0, h);
-            go.AddComponent<LayoutElement>().preferredHeight = h;
-            var img = go.AddComponent<Image>(); img.color = bg;
-            var btn = go.AddComponent<Button>();
-            var col = btn.colors;
-            col.normalColor = bg; col.highlightedColor = bg * 1.3f;
-            col.pressedColor = bg * 0.75f; col.selectedColor = bg; col.fadeDuration = 0.08f;
-            btn.colors = col; btn.targetGraphic = img;
-            Stretch(Txt(go,"Label",lbl,15,FontStyle.Bold,Color.white,TextAnchor.MiddleCenter).GetComponent<RectTransform>());
-            return btn;
-        }
-
-        private static InputField InputF(GameObject p, string n, string ph, float h)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p.transform, false);
-            go.AddComponent<RectTransform>().sizeDelta = new Vector2(0, h);
-            go.AddComponent<LayoutElement>().preferredHeight = h;
-            var bgImg = go.AddComponent<Image>(); bgImg.color = H("#1F2937");
-            var inf = go.AddComponent<InputField>(); inf.caretWidth = 2; inf.characterLimit = 8;
-
-            var tgo = Txt(go,"Text","",18,FontStyle.Bold,Color.white,TextAnchor.MiddleCenter);
-            var trt = tgo.GetComponent<RectTransform>();
-            Stretch(trt); trt.offsetMin = new Vector2(10,0); trt.offsetMax = new Vector2(-10,0);
-
-            var pgo = Txt(go,"Placeholder",ph,14,FontStyle.Italic,H("#9CA3AF"),TextAnchor.MiddleCenter);
-            var prt = pgo.GetComponent<RectTransform>();
-            Stretch(prt); prt.offsetMin = new Vector2(10,0); prt.offsetMax = new Vector2(-10,0);
-
-            inf.textComponent = tgo; inf.placeholder = pgo; inf.targetGraphic = bgImg;
-            return inf;
-        }
-
-        private static void Stretch(RectTransform rt)
-        {
-            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-            rt.offsetMin = rt.offsetMax = Vector2.zero;
-        }
-
-        private static void VL(GameObject go, float spacing)
-        {
-            var vl = go.AddComponent<VerticalLayoutGroup>();
-            vl.spacing = spacing; vl.childControlWidth = true; vl.childControlHeight = false;
-            vl.childForceExpandWidth = true; vl.childAlignment = TextAnchor.UpperCenter;
-        }
 
         private static void LE(GameObject go, float height)
         {

@@ -102,15 +102,15 @@ namespace CoopGame.CarrySystem
             if (hp < _lastHP)
             {
                 _damageText.text = $"-{_lastHP - hp}";
-                _damageText.color = new Color(1f, 0.25f, 0.18f, 1f);
+                _damageText.color = UITheme.Danger;
                 _damageText.enabled = true;
                 _damageRect.anchoredPosition = new Vector2(0f, 36f);
                 _damageTimeLeft = _damageTextDuration;
             }
             _lastHP = hp;
             float ratio = maxHP > 0 ? Mathf.Clamp01((float)hp / maxHP) : 0f;
-            _fill.fillAmount = ratio;
-            _fill.color = Color.Lerp(new Color(0.9f, 0.15f, 0.12f), new Color(0.2f, 0.9f, 0.35f), ratio);
+            UITheme.SetBarFill(_fill, ratio);
+            _fill.color = UITheme.Meter(ratio, UITheme.Primary);
             _label.text = $"ITEM  {hp}/{maxHP}";
         }
 
@@ -133,18 +133,30 @@ namespace CoopGame.CarrySystem
             backRect.anchorMax = Vector2.one;
             backRect.offsetMin = Vector2.zero;
             backRect.offsetMax = Vector2.zero;
-            back.GetComponent<Image>().color = new Color(0.06f, 0.1f, 0.15f, 0.85f);
+            UITheme.StylePanel(back.GetComponent<Image>(), small: true);
+            back.GetComponent<Image>().raycastTarget = false;
+
+            // Chamfered track in the same rect the old fill used; the sliced fill shrinks by anchor.
+            GameObject trackObject = new GameObject("Track", typeof(RectTransform), typeof(Image));
+            trackObject.transform.SetParent(back.transform, false);
+            RectTransform trackRect = trackObject.GetComponent<RectTransform>();
+            trackRect.anchorMin = new Vector2(0.05f, 0.1f);
+            trackRect.anchorMax = new Vector2(0.95f, 0.43f);
+            trackRect.offsetMin = Vector2.zero;
+            trackRect.offsetMax = Vector2.zero;
+            UITheme.StyleTrack(trackObject.GetComponent<Image>());
+            trackObject.GetComponent<Image>().raycastTarget = false;
 
             GameObject fillObject = new GameObject("Fill", typeof(RectTransform), typeof(Image));
-            fillObject.transform.SetParent(back.transform, false);
+            fillObject.transform.SetParent(trackObject.transform, false);
             RectTransform fillRect = fillObject.GetComponent<RectTransform>();
-            fillRect.anchorMin = new Vector2(0.05f, 0.1f);
-            fillRect.anchorMax = new Vector2(0.95f, 0.43f);
-            fillRect.offsetMin = Vector2.zero;
-            fillRect.offsetMax = Vector2.zero;
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = new Vector2(2f, 2f);
+            fillRect.offsetMax = new Vector2(-2f, -2f);
             _fill = fillObject.GetComponent<Image>();
-            _fill.type = Image.Type.Filled;
-            _fill.fillMethod = Image.FillMethod.Horizontal;
+            UITheme.StyleFill(_fill, UITheme.Primary);
+            _fill.raycastTarget = false;
 
             GameObject textObject = new GameObject("HP Label", typeof(RectTransform), typeof(Text));
             textObject.transform.SetParent(back.transform, false);
@@ -154,10 +166,11 @@ namespace CoopGame.CarrySystem
             textRect.offsetMin = Vector2.zero;
             textRect.offsetMax = Vector2.zero;
             _label = textObject.GetComponent<Text>();
-            _label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UITheme.StyleText(_label, UITextRole.Primary);
             _label.fontSize = 18;
             _label.alignment = TextAnchor.MiddleCenter;
-            _label.color = Color.white;
+            _label.verticalOverflow = VerticalWrapMode.Overflow; // Sarabun's taller line must not truncate
+            _label.raycastTarget = false;
 
             GameObject damageObject = new GameObject("Damage Amount", typeof(RectTransform), typeof(Text));
             damageObject.transform.SetParent(root.transform, false);
@@ -171,10 +184,12 @@ namespace CoopGame.CarrySystem
             _damageText.fontSize = 32;
             _damageText.fontStyle = FontStyle.Bold;
             _damageText.alignment = TextAnchor.MiddleCenter;
+            _damageText.verticalOverflow = VerticalWrapMode.Overflow;
             _damageText.raycastTarget = false;
             _damageText.enabled = false;
             Outline outline = damageObject.AddComponent<Outline>();
-            outline.effectColor = new Color(0.1f, 0.02f, 0.02f, 0.9f);
+            outline.effectColor = UITheme.Outline;
+            outline.effectDistance = new Vector2(2f, -2f);
         }
     }
 }

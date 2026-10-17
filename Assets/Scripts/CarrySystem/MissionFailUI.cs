@@ -103,7 +103,7 @@ namespace CoopGame.CarrySystem
 
         private void BuildUI()
         {
-            Font font = Resources.Load<Font>("Fonts/GameThai") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = UITheme.Font;
             _overlay = new GameObject("Failure Overlay", typeof(RectTransform), typeof(Image));
             _overlay.transform.SetParent(transform, false);
             RectTransform full = _overlay.GetComponent<RectTransform>();
@@ -111,30 +111,32 @@ namespace CoopGame.CarrySystem
             full.anchorMax = Vector2.one;
             full.offsetMin = Vector2.zero;
             full.offsetMax = Vector2.zero;
-            _overlay.GetComponent<Image>().color = new Color(0.02f, 0.04f, 0.07f, 0.86f);
+            _overlay.GetComponent<Image>().color = UITheme.Overlay;
 
             GameObject panel = new GameObject("Failure Panel", typeof(RectTransform), typeof(Image));
             panel.transform.SetParent(_overlay.transform, false);
             RectTransform panelRect = panel.GetComponent<RectTransform>();
             panelRect.sizeDelta = new Vector2(650f, 350f);
-            panel.GetComponent<Image>().color = new Color(0.09f, 0.13f, 0.2f, 0.97f);
+            UITheme.StylePanel(panel.GetComponent<Image>());
 
             CreateText("Title", panel.transform, font, "ภารกิจล้มเหลว", 52,
-                new Vector2(0f, 94f), new Vector2(580f, 76f), new Color(1f, 0.35f, 0.3f));
+                new Vector2(0f, 94f), new Vector2(580f, 76f), UITheme.Danger);
             _status = CreateText("Status", panel.transform, font, "The item was destroyed.", 26,
-                new Vector2(0f, 15f), new Vector2(580f, 95f), Color.white);
+                new Vector2(0f, 15f), new Vector2(580f, 95f), UITheme.TextPrimary);
 
             GameObject buttonObject = new GameObject("Restart Level", typeof(RectTransform), typeof(Image), typeof(Button));
             buttonObject.transform.SetParent(panel.transform, false);
             RectTransform buttonRect = buttonObject.GetComponent<RectTransform>();
             buttonRect.anchoredPosition = new Vector2(0f, -92f);
             buttonRect.sizeDelta = new Vector2(310f, 68f);
-            buttonObject.GetComponent<Image>().color = new Color(0.95f, 0.55f, 0.16f);
+            
             _restartButton = buttonObject.GetComponent<Button>();
             buttonObject.AddComponent<UIButtonHover>();
             _restartButton.onClick.AddListener(OnRestartClicked);
             CreateText("Button Label", buttonObject.transform, font, "เริ่มด่านใหม่", 27,
-                Vector2.zero, buttonRect.sizeDelta, new Color(0.08f, 0.08f, 0.1f));
+                Vector2.zero, buttonRect.sizeDelta, UITheme.OnPrimary);
+            _restartButton.targetGraphic = buttonObject.GetComponent<Image>();
+            UITheme.StyleButton(_restartButton, UIButtonStyle.Primary);
             _overlay.SetActive(false);
         }
 
@@ -152,6 +154,7 @@ namespace CoopGame.CarrySystem
             label.alignment = TextAnchor.MiddleCenter;
             label.color = color;
             label.raycastTarget = false;
+            label.verticalOverflow = VerticalWrapMode.Overflow;
             label.text = value;
             return label;
         }

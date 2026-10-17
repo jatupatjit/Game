@@ -47,6 +47,81 @@ namespace CoopGame.Network
 
             if (_hudGroup == null)
                 BuildRuntime();
+            ApplyTheme();
+        }
+
+        // Compact, readable card matching LevelSessionHUD (1080p reference pixels; labels ≈11 px at 720p).
+        private const float CardWidth = 300f, CopyButtonWidth = 150f, CopyRowHeight = 38f;
+        private const int CodeFontSize = 36, NamesFontSize = 17;
+
+        /// <summary>
+        /// Restyles the scene-built (or runtime-built) card with <see cref="UITheme"/> and compacts it at
+        /// runtime (readable sizes, height fitted to content, standard card padding) so Lobby.unity needs
+        /// no re-save. References and behaviour are untouched.
+        /// </summary>
+        internal void ApplyTheme()
+        {
+            RectTransform card = null;
+            foreach (Image image in GetComponentsInChildren<Image>(true))
+            {
+                if (image.GetComponent<Button>() != null) continue;
+                if (image.name == "Divider")
+                {
+                    image.color = UITheme.Track;
+                    UITheme.SetPreferredHeight(image.gameObject, 2f);
+                }
+                else
+                {
+                    UITheme.StylePanel(image);
+                    if (card == null) card = image.rectTransform;
+                }
+            }
+            UITheme.ReplaceEmojiIn(transform);
+            UITheme.StyleButton(_copyButton, UIButtonStyle.Secondary);
+            foreach (Text text in GetComponentsInChildren<Text>(true))
+            {
+                text.verticalOverflow = VerticalWrapMode.Overflow;
+                text.lineSpacing = 1f;
+                if (text.GetComponentInParent<Button>(true) != null)
+                {
+                    text.fontSize = UITheme.CardLabelFontSize;
+                    continue;
+                }
+                UITextRole role = text == _modeLabel || text == _copyFeedbackText ? UITextRole.Positive :
+                    text == _roomCodeText || text == _playerNamesText ? UITextRole.Primary : UITextRole.Accent;
+                UITheme.StyleText(text, role);
+                text.fontSize = text == _roomCodeText ? CodeFontSize : text == _playerNamesText ? NamesFontSize : UITheme.CardLabelFontSize;
+                text.fontStyle = text == _playerNamesText ? FontStyle.Normal : FontStyle.Bold;
+            }
+            if (card != null) CompactLayout(card);
+        }
+
+        private void CompactLayout(RectTransform card)
+        {
+            UITheme.CompactCard(card, CardWidth);
+            Transform header = _modeLabel != null ? _modeLabel.transform.parent : null;
+            if (header != null && header != card.transform) UITheme.SpreadRow(header, 26f);
+            if (_roomCodeText != null) UITheme.SetPreferredHeight(_roomCodeText.gameObject, CodeFontSize + 10f);
+            if (_playerCountText != null) UITheme.SetPreferredHeight(_playerCountText.gameObject, 24f);
+            if (_playerNamesText != null) UITheme.SetPreferredHeight(_playerNamesText.gameObject, -1f); // fit the list
+
+            Transform copyRow = _copyButton != null ? _copyButton.transform.parent : null;
+            if (copyRow != null && copyRow != card.transform)
+            {
+                UITheme.SetPreferredHeight(copyRow.gameObject, CopyRowHeight);
+                SizeInRow((RectTransform)_copyButton.transform, CopyButtonWidth);
+                if (_copyFeedbackText != null) SizeInRow(_copyFeedbackText.rectTransform, 120f);
+            }
+            LayoutRebuilder.ForceRebuildLayoutImmediate(card);
+        }
+
+        private static void SizeInRow(RectTransform rect, float width)
+        {
+            rect.sizeDelta = new Vector2(width, CopyRowHeight);
+            var element = rect.GetComponent<LayoutElement>();
+            if (element == null) element = rect.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = width;
+            element.preferredHeight = CopyRowHeight;
         }
 
         private void Start()
@@ -115,7 +190,14 @@ namespace CoopGame.Network
                 _modeLabel.text = local ? "● SOLO" : nm.IsHost ? "● HOST" : (nm.IsServer ? "● SERVER" : "● CLIENT");
 
             if (_copyButton != null)
+            {
                 _copyButton.gameObject.SetActive(!local);
+                // Collapse the whole copy row (no reserved empty band) when there is nothing to copy.
+                Transform copyRow = _copyButton.transform.parent;
+                if (copyRow != null && copyRow != transform && copyRow.GetComponent<Image>() == null &&
+                    copyRow.gameObject.activeSelf == local)
+                    copyRow.gameObject.SetActive(!local);
+            }
 
             var names = mgr != null ? mgr.GetCurrentPlayerNames() : new List<string>();
             int count = names.Count;
@@ -158,7 +240,7 @@ namespace CoopGame.Network
         private IEnumerator ShowCopyFeedback()
         {
             Text btnLabel = _copyButton != null ? _copyButton.GetComponentInChildren<Text>() : null;
-            string originalText = btnLabel != null ? btnLabel.text : "📋 Copy Code";
+            string originalText = btnLabel != null ? btnLabel.text : "Copy Code";
 
             if (_copyFeedbackText != null)
             {
@@ -225,7 +307,7 @@ namespace CoopGame.Network
             _hudGroup.alpha = 0f;
 
             // Top-left HUD Card (250 x 190)
-            var card = ProceduralUIUtility.MakePanel(gameObject, "RoomCodePanel", new Vector2(250, 190), Vector2.zero, ProceduralUIUtility.PanelDark);
+            var card = ProceduralUIUtility.MakePanel(gameObject, "RoomCodePanel", new Vector2(250, 190), Vector2.zero);
             var cardRT = card.GetComponent<RectTransform>();
             cardRT.anchorMin = cardRT.anchorMax = new Vector2(0f, 1f);
             cardRT.pivot     = new Vector2(0f, 1f);
@@ -250,35 +332,35 @@ namespace CoopGame.Network
             headerHL.childForceExpandWidth = false;
             headerHL.spacing = 8;
 
-            var headerTitle = ProceduralUIUtility.MakeText(headerRow, "HeaderTitle", "ROOM CODE", 10, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleLeft);
+            var headerTitle = ProceduralUIUtility.MakeText(headerRow, "HeaderTitle", "ROOM CODE", 10, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleLeft);
             var htRT = headerTitle.GetComponent<RectTransform>();
             htRT.sizeDelta = new Vector2(90, 18);
             var htLE = headerTitle.gameObject.AddComponent<LayoutElement>();
             htLE.preferredWidth = 90;
 
-            _modeLabel = ProceduralUIUtility.MakeText(headerRow, "ModeLabel", "● HOST", 10, FontStyle.Bold, ProceduralUIUtility.AccentEmerald, TextAnchor.MiddleRight);
+            _modeLabel = ProceduralUIUtility.MakeText(headerRow, "ModeLabel", "● HOST", 10, FontStyle.Bold, UITextRole.Positive, TextAnchor.MiddleRight);
             var mtRT = _modeLabel.GetComponent<RectTransform>();
             mtRT.sizeDelta = new Vector2(110, 18);
             var mtLE = _modeLabel.gameObject.AddComponent<LayoutElement>();
             mtLE.preferredWidth = 110;
 
             // 2. Room code text
-            _roomCodeText = ProceduralUIUtility.MakeText(card, "RoomCodeText", "------", 24, FontStyle.Bold, ProceduralUIUtility.TextPrimary, TextAnchor.MiddleLeft);
+            _roomCodeText = ProceduralUIUtility.MakeText(card, "RoomCodeText", "------", 24, FontStyle.Bold, UITextRole.Primary, TextAnchor.MiddleLeft);
             var codeLE = _roomCodeText.gameObject.AddComponent<LayoutElement>();
             codeLE.preferredHeight = 30;
 
             // 3. Divider line
-            var div = ProceduralUIUtility.MakeImage(card, "Divider", ProceduralUIUtility.HexColor("#334155"));
+            var div = ProceduralUIUtility.MakeImage(card, "Divider", UITheme.Track);
             var divLE = div.gameObject.AddComponent<LayoutElement>();
             divLE.preferredHeight = 1;
 
             // 4. Players section title
-            _playerCountText = ProceduralUIUtility.MakeText(card, "PlayerCountText", "PLAYERS (1/4)", 10, FontStyle.Bold, ProceduralUIUtility.AccentCyan, TextAnchor.MiddleLeft);
+            _playerCountText = ProceduralUIUtility.MakeText(card, "PlayerCountText", "PLAYERS (1/4)", 10, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleLeft);
             var countLE = _playerCountText.gameObject.AddComponent<LayoutElement>();
             countLE.preferredHeight = 16;
 
             // 5. Player names list
-            _playerNamesText = ProceduralUIUtility.MakeText(card, "PlayerNamesText", "• Player (Host)", 11, FontStyle.Normal, ProceduralUIUtility.TextPrimary, TextAnchor.UpperLeft);
+            _playerNamesText = ProceduralUIUtility.MakeText(card, "PlayerNamesText", "• Player (Host)", 11, FontStyle.Normal, UITextRole.Primary, TextAnchor.UpperLeft);
             var namesLE = _playerNamesText.gameObject.AddComponent<LayoutElement>();
             namesLE.preferredHeight = 44;
 
@@ -291,14 +373,14 @@ namespace CoopGame.Network
             copyHL.childControlWidth = false;
             copyHL.childControlHeight = true;
 
-            var (copyBtnGO, copyBtn) = ProceduralUIUtility.MakeButton(copyRow, "CopyButton", "📋 Copy Code", ProceduralUIUtility.ButtonSlate, 28, 11);
+            var (copyBtnGO, copyBtn) = ProceduralUIUtility.MakeButton(copyRow, "CopyButton", "Copy Code", UIButtonStyle.Secondary, 28, 11);
             var copyBtnRT = copyBtnGO.GetComponent<RectTransform>();
             copyBtnRT.sizeDelta = new Vector2(105, 28);
             var copyBtnLE = copyBtnGO.GetComponent<LayoutElement>();
             if (copyBtnLE != null) copyBtnLE.preferredWidth = 105;
             _copyButton = copyBtn;
 
-            _copyFeedbackText = ProceduralUIUtility.MakeText(copyRow, "CopyFeedbackText", "✓ Copied!", 11, FontStyle.Bold, ProceduralUIUtility.AccentEmerald, TextAnchor.MiddleLeft);
+            _copyFeedbackText = ProceduralUIUtility.MakeText(copyRow, "CopyFeedbackText", "✓ Copied!", 11, FontStyle.Bold, UITextRole.Positive, TextAnchor.MiddleLeft);
             var fbRT = _copyFeedbackText.GetComponent<RectTransform>();
             fbRT.sizeDelta = new Vector2(80, 28);
             var fbLE = _copyFeedbackText.gameObject.AddComponent<LayoutElement>();

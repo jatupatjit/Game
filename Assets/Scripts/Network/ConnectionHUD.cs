@@ -137,8 +137,8 @@ namespace CoopGame.Network
 
             if (networkManager == null)
             {
-                GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, 320f, 70f), GUI.skin.box);
-                GUILayout.Label("NetworkManager not found in scene!");
+                GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, 320f, 70f), UITheme.ImguiBox);
+                GUILayout.Label("NetworkManager not found in scene!", UITheme.ImguiLabel);
                 GUILayout.EndArea();
                 return;
             }
@@ -177,22 +177,22 @@ namespace CoopGame.Network
             float posX = (Screen.width - panelWidth) * 0.5f;
             float posY = (Screen.height - panelHeight) * 0.5f;
 
-            GUILayout.BeginArea(new Rect(posX, posY, panelWidth, panelHeight), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(posX, posY, panelWidth, panelHeight), UITheme.ImguiBox);
 
             // Title
             GUILayout.Space(8);
-            GUILayout.Label("<size=18><b><color=#00d9ff>DONT DROP IT</color></b></size>", GetCenteredLabelStyle());
+            GUILayout.Label($"<size=18><b><color={Accent}>DONT DROP IT</color></b></size>", GetCenteredLabelStyle());
             GUILayout.Space(2);
 
             // Steam status
             bool steamReady = steamManager != null && steamManager.IsSteamMultiplayerAvailable;
             if (steamReady)
             {
-                GUILayout.Label($"<color=#70d6ff>● {steamManager.SteamPlayerName}</color>", GetCenteredLabelStyle());
+                GUILayout.Label($"<color={Positive}>● {steamManager.SteamPlayerName}</color>", GetCenteredLabelStyle());
             }
             else
             {
-                GUILayout.Label("<color=#ffb703>● Offline play available</color>", GetCenteredLabelStyle());
+                GUILayout.Label($"<color={Accent}>● Offline play available</color>", GetCenteredLabelStyle());
             }
 
             GUILayout.Space(12);
@@ -236,7 +236,7 @@ namespace CoopGame.Network
             GUILayout.Space(10);
 
             // 1. Host Room
-            if (GUILayout.Button("<b>🎮  Host Room</b>", GUILayout.Height(44)))
+            if (GUILayout.Button("<b>▶  Host Room</b>", UITheme.ImguiButton(UIButtonStyle.Primary), GUILayout.Height(44)))
             {
                 _lobbyState = LobbyMenuState.HostRoom;
             }
@@ -244,7 +244,7 @@ namespace CoopGame.Network
             GUILayout.Space(8);
 
             // 2. Setting
-            if (GUILayout.Button("<b>⚙  Setting</b>", GUILayout.Height(44)))
+            if (GUILayout.Button("<b>⚙  Setting</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(44)))
             {
                 _lobbyState = LobbyMenuState.Settings;
             }
@@ -252,12 +252,10 @@ namespace CoopGame.Network
             GUILayout.Space(8);
 
             // 3. Quit
-            GUI.backgroundColor = new Color(0.9f, 0.3f, 0.3f);
-            if (GUILayout.Button("<b>✕  Quit Game</b>", GUILayout.Height(44)))
+            if (GUILayout.Button("<b>✕  Quit Game</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(44)))
             {
                 QuitGame();
             }
-            GUI.backgroundColor = Color.white;
         }
 
         private void DrawHostRoomMenu(SteamLobbyManager steamManager)
@@ -266,29 +264,25 @@ namespace CoopGame.Network
             GUILayout.Space(10);
 
             // Button 1: Host (Enters game lobby with room code above left corner)
-            GUI.backgroundColor = new Color(0.2f, 0.6f, 1.0f);
-            if (GUILayout.Button("<b>▶  Host</b>", GUILayout.Height(44)))
+            if (GUILayout.Button("<b>▶  Host</b>", UITheme.ImguiButton(UIButtonStyle.Primary), GUILayout.Height(44)))
             {
                 steamManager?.HostLobby(4);
             }
-            GUI.backgroundColor = Color.white;
 
             GUILayout.Space(8);
 
             // Button 2: Join (Opens input for code game)
             GUI.enabled = steamManager != null && steamManager.IsSteamMultiplayerAvailable;
-            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
-            if (GUILayout.Button("<b>🔑  Join</b>", GUILayout.Height(44)))
+            if (GUILayout.Button("<b>→  Join</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(44)))
             {
                 _lobbyState = LobbyMenuState.Join;
             }
-            GUI.backgroundColor = Color.white;
             GUI.enabled = true;
 
             GUILayout.Space(8);
 
             // Back button
-            if (GUILayout.Button("<b>← Back</b>", GUILayout.Height(36)))
+            if (GUILayout.Button("<b>← Back</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(36)))
             {
                 _lobbyState = LobbyMenuState.Main;
             }
@@ -302,7 +296,7 @@ namespace CoopGame.Network
             GUILayout.Label("Code Game:", GetCenteredLabelStyle());
             GUILayout.Space(2);
 
-            string typed = GUILayout.TextField(_inputRoomCode, 8, GUILayout.Height(32));
+            string typed = GUILayout.TextField(_inputRoomCode, 8, UITheme.ImguiTextField, GUILayout.Height(32));
             if (typed != _inputRoomCode)
             {
                 _inputRoomCode = typed.ToUpperInvariant().Trim();
@@ -313,18 +307,16 @@ namespace CoopGame.Network
             GUILayout.BeginHorizontal();
 
             // Enter Room button
-            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
-            if (GUILayout.Button("<b>Enter Room</b>", GUILayout.Height(36)))
+            if (GUILayout.Button("<b>Enter Room</b>", UITheme.ImguiButton(UIButtonStyle.Primary), GUILayout.Height(36)))
             {
                 if (!string.IsNullOrEmpty(_inputRoomCode))
                 {
                     steamManager?.JoinLobbyByCode(_inputRoomCode);
                 }
             }
-            GUI.backgroundColor = Color.white;
 
             // Paste button
-            if (GUILayout.Button("Paste Code", GUILayout.Width(90), GUILayout.Height(36)))
+            if (GUILayout.Button("Paste Code", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Width(90), GUILayout.Height(36)))
             {
                 string clipboard = GUIUtility.systemCopyBuffer;
                 if (!string.IsNullOrEmpty(clipboard))
@@ -338,7 +330,7 @@ namespace CoopGame.Network
             GUILayout.Space(8);
 
             // Back button
-            if (GUILayout.Button("<b>← Back</b>", GUILayout.Height(34)))
+            if (GUILayout.Button("<b>← Back</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(34)))
             {
                 _lobbyState = LobbyMenuState.HostRoom;
             }
@@ -350,15 +342,15 @@ namespace CoopGame.Network
             GUILayout.Space(14);
 
             // Blank screen as requested by user ("Setting is basic so.. we dont have much thing there yet just press and enter to blank screen first")
-            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.BeginVertical(UITheme.ImguiBox);
             GUILayout.Space(24);
-            GUILayout.Label("<color=#888888><i>(Settings screen - blank for now)</i></color>", GetCenteredLabelStyle());
+            GUILayout.Label($"<color={Muted}><i>(Settings screen - blank for now)</i></color>", GetCenteredLabelStyle());
             GUILayout.Space(24);
             GUILayout.EndVertical();
 
             GUILayout.Space(14);
 
-            if (GUILayout.Button("<b>← Back</b>", GUILayout.Height(38)))
+            if (GUILayout.Button("<b>← Back</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(38)))
             {
                 if (isPause)
                 {
@@ -385,14 +377,14 @@ namespace CoopGame.Network
 
             float hudWidth = 240f;
             float hudHeight = 110f;
-            GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, hudWidth, hudHeight), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(_guiOffset.x, _guiOffset.y, hudWidth, hudHeight), UITheme.ImguiBox);
 
-            GUILayout.Label($"<color=#70d6ff><b>MODE: {mode}</b></color>");
-            GUILayout.Label($"<b>ROOM CODE:</b> <size=18><b><color=#00d9ff>{roomCode}</color></b></size>");
+            GUILayout.Label($"<color={Accent}><b>MODE: {mode}</b></color>", UITheme.ImguiLabel);
+            GUILayout.Label($"<b>ROOM CODE:</b> <size=18><b><color={Accent}>{roomCode}</color></b></size>", UITheme.ImguiLabel);
 
             if (nm.IsHost || nm.IsServer)
             {
-                GUILayout.Label($"Players: {nm.ConnectedClientsIds.Count}");
+                GUILayout.Label($"Players: {nm.ConnectedClientsIds.Count}", UITheme.ImguiLabel);
             }
 
             if (local)
@@ -401,11 +393,11 @@ namespace CoopGame.Network
                 return;
             }
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("📋 Copy", GUILayout.Height(22)))
+            if (GUILayout.Button("Copy", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(22)))
             {
                 steamManager?.CopyRoomCodeToClipboard();
             }
-            if (GUILayout.Button("Invite", GUILayout.Height(22)))
+            if (GUILayout.Button("Invite", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(22)))
             {
                 steamManager?.OpenSteamInviteOverlay();
             }
@@ -426,9 +418,12 @@ namespace CoopGame.Network
             float posY = (Screen.height - pauseHeight) * 0.5f;
 
             // Semi-transparent overlay feel using modal box
-            GUI.Box(new Rect(0, 0, Screen.width, Screen.height), "");
+            Color previousColor = GUI.color;
+            GUI.color = UITheme.Overlay;
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = previousColor;
 
-            GUILayout.BeginArea(new Rect(posX, posY, pauseWidth, pauseHeight), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(posX, posY, pauseWidth, pauseHeight), UITheme.ImguiBox);
 
             if (_pauseInSettings)
             {
@@ -437,24 +432,22 @@ namespace CoopGame.Network
             else
             {
                 GUILayout.Space(10);
-                GUILayout.Label("<size=18><b><color=#00d9ff>PAUSED</color></b></size>", GetCenteredLabelStyle());
+                GUILayout.Label($"<size=18><b><color={Accent}>PAUSED</color></b></size>", GetCenteredLabelStyle());
                 GUILayout.Space(16);
 
                 // 1. Continue
-                GUI.backgroundColor = new Color(0.2f, 0.8f, 0.5f);
-                if (GUILayout.Button("<b>▶  Continue</b>", GUILayout.Height(44)))
+                if (GUILayout.Button("<b>▶  Continue</b>", UITheme.ImguiButton(UIButtonStyle.Primary), GUILayout.Height(44)))
                 {
                     _isPauseMenuOpen = false;
                     Cursor.lockState = CursorLockMode.Locked;
                     Cursor.visible = false;
                     Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);
                 }
-                GUI.backgroundColor = Color.white;
 
                 GUILayout.Space(8);
 
                 // 2. Setting
-                if (GUILayout.Button("<b>⚙  Setting</b>", GUILayout.Height(44)))
+                if (GUILayout.Button("<b>⚙  Setting</b>", UITheme.ImguiButton(UIButtonStyle.Secondary), GUILayout.Height(44)))
                 {
                     _pauseInSettings = true;
                 }
@@ -462,13 +455,11 @@ namespace CoopGame.Network
                 GUILayout.Space(8);
 
                 // 3. Quit
-                GUI.backgroundColor = new Color(0.9f, 0.3f, 0.3f);
-                if (GUILayout.Button("<b>✕  Quit</b>", GUILayout.Height(44)))
+                if (GUILayout.Button("<b>✕  Quit</b>", UITheme.ImguiButton(UIButtonStyle.Danger), GUILayout.Height(44)))
                 {
                     _isPauseMenuOpen = false;
                     steamManager?.DisconnectAndReturnToLobby();
                 }
-                GUI.backgroundColor = Color.white;
             }
 
             GUILayout.EndArea();
@@ -483,9 +474,14 @@ namespace CoopGame.Network
 #endif
         }
 
+        // Rich-text colours from the theme (no per-screen hex).
+        private static string Accent => UITheme.RichHex(UITheme.Primary);
+        private static string Positive => UITheme.RichHex(UITheme.Stamina);
+        private static string Muted => UITheme.RichHex(UITheme.TextSecondary);
+
         private GUIStyle GetCenteredLabelStyle()
         {
-            var style = new GUIStyle(GUI.skin.label);
+            var style = new GUIStyle(UITheme.ImguiLabel);
             style.alignment = TextAnchor.MiddleCenter;
             return style;
         }
