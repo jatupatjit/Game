@@ -33,6 +33,7 @@ namespace CoopGame.Network
         private Image _ownCardIcon;
         private UITooltip _ownCardTip;
         private readonly Image[] _cardFrames = new Image[3];
+        private readonly UIButtonHover[] _cardHover = new UIButtonHover[3];
         private Button _confirmCard;
         private byte _pendingCard;
         private Text _carriersText, _coinText;
@@ -174,7 +175,11 @@ namespace CoopGame.Network
 
             if (!selecting) _pendingCard = 0;
             for (int i = 0; i < _cardFrames.Length; i++)
-                if (_cardFrames[i] != null) _cardFrames[i].enabled = selecting && _pendingCard == i + 1;
+            {
+                bool selected = selecting && _pendingCard == i + 1;
+                if (_cardFrames[i] != null) _cardFrames[i].enabled = selected;
+                _cardHover[i]?.SetBaseScale(selected ? 1.07f : 1f);
+            }
             if (_confirmCard != null) _confirmCard.interactable = selecting && _pendingCard != 0;
             if (selecting)
             {
@@ -379,12 +384,23 @@ namespace CoopGame.Network
             element.minWidth = text.preferredWidth + 10f;
         }
 
-        /// <summary>Tall card: illustration slot (plain card face in the card-back colour with the card
-        /// icon, placeholder until real card art exists), beige strip with name + ability, neon
-        /// selection frame. Click = choose it, the pink button confirms (keys 1-3 still select directly).</summary>
+        private static Sprite CardArt(byte card)
+        {
+            string asset = card switch
+            {
+                1 => "CardEndurance",
+                2 => "CardCargoGuard",
+                3 => "CardTeamwork",
+                _ => null
+            };
+            return string.IsNullOrEmpty(asset) ? null : Resources.Load<Sprite>("Cards/" + asset);
+        }
+
+        /// <summary>Tall illustrated card with current gameplay name/effect over the supplied art,
+        /// neon selection frame and a small lift when selected. Click previews; confirm applies it.</summary>
         private void CardButton(Transform parent, byte card, Vector2 position)
         {
-            var root = Box($"Card{card}", parent, new Vector2(.5f, .5f), position, new Vector2(290, 390), UITheme.PrimaryLight, UITheme.SmallSprite);
+            var root = Box($"Card{card}", parent, new Vector2(.5f, .5f), position, new Vector2(290, 410), UITheme.PrimaryLight, UITheme.SmallSprite);
             var button = root.AddComponent<Button>();
             button.targetGraphic = root.GetComponent<Image>();
             ColorBlock colors = button.colors;
@@ -392,22 +408,24 @@ namespace CoopGame.Network
             colors.highlightedColor = UITheme.Hover(Color.white);
             colors.pressedColor = UITheme.Pressed(Color.white);
             button.colors = colors;
-            root.AddComponent<UIButtonHover>();
+            _cardHover[card - 1] = root.AddComponent<UIButtonHover>();
             button.onClick.AddListener(() => { _pendingCard = card; _refreshAt = 0f; });
 
-            // Illustration slot: swap this Image's sprite for real card art later.
-            var art = Box("Illustration", root.transform, new Vector2(.5f, .5f), new Vector2(0, 70), new Vector2(250, 220), UITheme.CardColor(card), UITheme.SmallSprite);
-            art.GetComponent<Image>().raycastTarget = false;
-            var icon = Box("Icon", art.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(170, 150), Color.white);
-            UITheme.StyleIcon(icon.GetComponent<Image>(), UITheme.CardIcon(card));
+            var art = Box("Illustration", root.transform, new Vector2(.5f, .5f), new Vector2(0, 10), new Vector2(270, 382), Color.white);
+            var artImage = art.GetComponent<Image>();
+            artImage.sprite = CardArt(card);
+            artImage.preserveAspect = true;
+            artImage.raycastTarget = false;
 
-            var strip = Box("Strip", root.transform, new Vector2(.5f, .5f), new Vector2(0, -120), new Vector2(266, 130), Color.white, UITheme.BeigeSprite);
+            var stripBlocker = Box("StripBlocker", root.transform, new Vector2(.5f, .5f), new Vector2(0, -118), new Vector2(264, 154), UITheme.Beige);
+            stripBlocker.GetComponent<Image>().raycastTarget = false;
+            var strip = Box("Strip", root.transform, new Vector2(.5f, .5f), new Vector2(0, -118), new Vector2(270, 160), Color.white, UITheme.BeigeSprite);
             strip.GetComponent<Image>().raycastTarget = false;
-            UITheme.SetWeight(Label(strip.transform, "Name", $"[{card}] {PlayerExpeditionState.CardName(card)}", 22, new Vector2(0, 40), new Vector2(250, 34), TextAnchor.MiddleCenter, UITextRole.OnLight), UITheme.FontSemiBold);
-            Label(strip.transform, "Ability", PlayerExpeditionState.CardDescription(card), 18, new Vector2(0, -16), new Vector2(244, 74), TextAnchor.MiddleCenter, UITextRole.OnLight)
+            UITheme.SetWeight(Label(strip.transform, "Name", $"[{card}] {PlayerExpeditionState.CardName(card)}", 21, new Vector2(0, 46), new Vector2(252, 32), TextAnchor.MiddleCenter, UITextRole.OnLight), UITheme.FontSemiBold);
+            Label(strip.transform, "Ability", PlayerExpeditionState.CardDescription(card), 17, new Vector2(0, -16), new Vector2(248, 82), TextAnchor.MiddleCenter, UITextRole.OnLight)
                 .horizontalOverflow = HorizontalWrapMode.Wrap;
 
-            var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(318, 426), Color.white);
+            var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(324, 444), Color.white);
             _cardFrames[card - 1] = frame.GetComponent<Image>();
             UITheme.StyleIcon(_cardFrames[card - 1], UITheme.CardFrameSprite);
             _cardFrames[card - 1].preserveAspect = false;

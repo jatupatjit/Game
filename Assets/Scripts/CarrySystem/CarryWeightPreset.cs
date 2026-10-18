@@ -37,7 +37,7 @@ namespace CoopGame.CarrySystem
                 if (keyboard != null && keyboard.f6Key.wasPressedThisFrame)
                 {
                     Cycle();
-                    _flashUntil = Time.unscaledTime + 3f;
+                    _flashUntil = Time.unscaledTime + 1.25f;
                 }
             }
 
@@ -45,9 +45,8 @@ namespace CoopGame.CarrySystem
 
             private void OnGUI()
             {
-                // Always faintly visible when non-default, bright for a few seconds after switching.
-                if (Index == 0 && Time.unscaledTime > _flashUntil) return;
-                bool flashing = Time.unscaledTime < _flashUntil;
+                // This is a playtest-only confirmation, so it disappears quickly for every preset.
+                if (Time.unscaledTime > _flashUntil) return;
                 if (_chip == null)
                 {
                     // Small themed chip: soil panel, chamfered, GameThai, left-aligned single line.
@@ -60,8 +59,8 @@ namespace CoopGame.CarrySystem
                     _chip.normal.background = UITheme.ImguiPanelTexture;
                 }
                 Color previous = GUI.color;
-                GUI.color = new Color(1f, 1f, 1f, flashing ? 1f : .7f);
-                string value = UITheme.RichHex(flashing ? UITheme.Primary : UITheme.TextSecondary);
+                GUI.color = Color.white;
+                string value = UITheme.RichHex(UITheme.Primary);
                 GUI.Label(new Rect(Screen.width * 0.5f - 165f, 8f, 330f, 48f), $"Carry weight [F6]: <color={value}>{Name}</color>", _chip);
                 GUI.color = previous;
             }

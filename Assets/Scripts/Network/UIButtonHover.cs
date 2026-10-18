@@ -11,6 +11,8 @@ public class UIButtonHover : MonoBehaviour, UnityEngine.EventSystems.IPointerEnt
     private Vector3 _originalScale = Vector3.one;
     private Vector3 _targetScale = Vector3.one;
     private Button _button;
+    private bool _hovered;
+    private bool _pressed;
 
     private void Awake()
     {
@@ -29,8 +31,10 @@ public class UIButtonHover : MonoBehaviour, UnityEngine.EventSystems.IPointerEnt
 
     private void OnEnable()
     {
+        _hovered = false;
+        _pressed = false;
         transform.localScale = _originalScale;
-        _targetScale = _originalScale;
+        RefreshTarget();
     }
 
     private void Update()
@@ -41,23 +45,43 @@ public class UIButtonHover : MonoBehaviour, UnityEngine.EventSystems.IPointerEnt
     public void OnPointerEnter(UnityEngine.EventSystems.PointerEventData eventData)
     {
         if (_button != null && !_button.interactable) return;
-        _targetScale = _originalScale * _hoverScale;
+        _hovered = true;
+        RefreshTarget();
     }
 
     public void OnPointerExit(UnityEngine.EventSystems.PointerEventData eventData)
     {
-        _targetScale = _originalScale;
+        _hovered = false;
+        _pressed = false;
+        RefreshTarget();
     }
 
     public void OnPointerDown(UnityEngine.EventSystems.PointerEventData eventData)
     {
         if (_button != null && !_button.interactable) return;
-        _targetScale = _originalScale * _downScale;
+        _pressed = true;
+        RefreshTarget();
     }
 
     public void OnPointerUp(UnityEngine.EventSystems.PointerEventData eventData)
     {
         if (_button != null && !_button.interactable) return;
-        _targetScale = _originalScale * _hoverScale;
+        _pressed = false;
+        _hovered = true;
+        RefreshTarget();
+    }
+
+    public void SetBaseScale(float uniformScale)
+    {
+        Vector3 next = Vector3.one * uniformScale;
+        if ((_originalScale - next).sqrMagnitude < .000001f) return;
+        _originalScale = next;
+        RefreshTarget();
+    }
+
+    private void RefreshTarget()
+    {
+        float multiplier = _pressed ? _downScale : _hovered ? _hoverScale : 1f;
+        _targetScale = _originalScale * multiplier;
     }
 }
