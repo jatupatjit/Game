@@ -64,6 +64,9 @@ namespace CoopGame.CarrySystem
         private void LateUpdate()
         {
             if (_billboard == null) return;
+            // World-space label would show through the pause panel; hide it while paused.
+            bool show = !CoopGame.Network.PauseMenu.IsPaused;
+            if (_canvas != null && _canvas.enabled != show) _canvas.enabled = show;
 
             float top = transform.position.y;
             bool foundRenderer = false;

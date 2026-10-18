@@ -95,8 +95,7 @@ namespace CoopGame.Network
             Transform background = transform.Find("Background");
             if (background != null && background.TryGetComponent(out Image backdrop))
             {
-                backdrop.sprite = null;
-                backdrop.color = UITheme.Backdrop;
+                UITheme.StyleBackdrop(backdrop); // blurred level art from the kit
             }
             Transform card = transform.Find("LobbyCard");
             if (card != null) UITheme.StylePanel(card.GetComponent<Image>());

@@ -118,7 +118,7 @@ namespace CoopGame.Network
 
             Transform section = _roomSection.transform;
             Text heading = UITheme.MakeText(section, "RoomCodeLabel", "ROOM CODE", UITheme.CardLabelFontSize, UITextRole.Accent);
-            heading.fontStyle = FontStyle.Bold;
+            UITheme.SetWeight(heading, UITheme.FontSemiBold);
             UITheme.SetPreferredHeight(heading.gameObject, 22f);
 
             var codeRow = new GameObject("CodeRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
@@ -132,7 +132,7 @@ namespace CoopGame.Network
             UITheme.SetPreferredHeight(codeRow, 48f);
 
             _roomCodeValue = UITheme.MakeText(codeRow.transform, "RoomCodeValue", "------", 36, UITextRole.Primary);
-            _roomCodeValue.fontStyle = FontStyle.Bold;
+            UITheme.SetWeight(_roomCodeValue, UITheme.FontBold);
             _roomCodeValue.horizontalOverflow = HorizontalWrapMode.Overflow;
             var codeElement = _roomCodeValue.gameObject.AddComponent<LayoutElement>();
             codeElement.flexibleWidth = 1f;
@@ -146,7 +146,7 @@ namespace CoopGame.Network
             _copyCodeButton.onClick.AddListener(OnCopyCodeClicked);
 
             _roomPlayersTitle = UITheme.MakeText(section, "PlayersTitle", "PLAYERS", UITheme.CardLabelFontSize, UITextRole.Accent);
-            _roomPlayersTitle.fontStyle = FontStyle.Bold;
+            UITheme.SetWeight(_roomPlayersTitle, UITheme.FontSemiBold);
             UITheme.SetPreferredHeight(_roomPlayersTitle.gameObject, 24f);
 
             _roomPlayersList = UITheme.MakeText(section, "PlayersList", "", 17, UITextRole.Primary, TextAnchor.UpperLeft);
@@ -249,7 +249,8 @@ namespace CoopGame.Network
                     continue;
                 }
                 string n = text.name;
-                UITextRole role = n == "SettingsTitle" ? UITextRole.Accent :
+                bool onBeige = _settingsPanel != null && text.transform.IsChildOf(_settingsPanel.transform);
+                UITextRole role = onBeige ? UITextRole.OnLight :
                     n.Contains("Title") ? UITextRole.Primary : UITextRole.Secondary;
                 UITheme.StyleText(text, role);
                 if (text.fontSize < MinLabelFontSize)
@@ -268,6 +269,38 @@ namespace CoopGame.Network
                         rowElement.preferredHeight = -1f;
                 }
             }
+            ApplyKitLabels();
+        }
+
+        /// <summary>UI kit pause mockup: white "PAUSE" title, Thai button labels, beige settings panel.</summary>
+        private void ApplyKitLabels()
+        {
+            if (_pausePanel != null)
+            {
+                Transform title = _pausePanel.transform.Find("PauseTitle");
+                if (title != null && title.TryGetComponent(out Text titleText))
+                {
+                    titleText.text = "PAUSE";
+                    titleText.fontSize = Mathf.Max(titleText.fontSize, 40);
+                    UITheme.SetWeight(titleText, UITheme.FontBold);
+                    if (titleText.TryGetComponent(out LayoutElement element)) element.preferredHeight = Mathf.Max(element.preferredHeight, 54f);
+                }
+            }
+            SetButtonLabel(_continueButton, "เล่นต่อ");
+            SetButtonLabel(_settingsButton, "ตั้งค่า");
+            SetButtonLabel(_quitToMenuButton, "ออกเกม");
+            if (_settingsPanel != null) UITheme.StyleBeigePanel(_settingsPanel.GetComponent<Image>());
+            if (_settingsPanel != null && _settingsPanel.TryGetComponent(out VerticalLayoutGroup settingsLayout))
+                settingsLayout.padding = new RectOffset(36, 36, 6, 30); // title sits in the beige top band
+        }
+
+        private static void SetButtonLabel(Button button, string label)
+        {
+            if (button == null) return;
+            Text text = button.GetComponentInChildren<Text>(true);
+            if (text == null) return;
+            text.text = label;
+            text.fontSize = Mathf.Max(text.fontSize, 26); // regular weight: size carries legibility
         }
 
         private const int MinLabelFontSize = 15, MinButtonFontSize = 17;

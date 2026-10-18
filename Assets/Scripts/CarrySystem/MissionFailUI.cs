@@ -117,10 +117,11 @@ namespace CoopGame.CarrySystem
             panel.transform.SetParent(_overlay.transform, false);
             RectTransform panelRect = panel.GetComponent<RectTransform>();
             panelRect.sizeDelta = new Vector2(650f, 350f);
-            UITheme.StylePanel(panel.GetComponent<Image>());
+            UITheme.StyleSolidPanel(panel.GetComponent<Image>());
 
-            CreateText("Title", panel.transform, font, "ภารกิจล้มเหลว", 52,
+            Text title = CreateText("Title", panel.transform, font, "ภารกิจล้มเหลว", 52,
                 new Vector2(0f, 94f), new Vector2(580f, 76f), UITheme.Danger);
+            UITheme.SetWeight(title, UITheme.FontBold);
             _status = CreateText("Status", panel.transform, font, "The item was destroyed.", 26,
                 new Vector2(0f, 15f), new Vector2(580f, 95f), UITheme.TextPrimary);
 

@@ -54,6 +54,9 @@ namespace CoopGame.Player
         private float _targetAlpha = 1.0f;
         private bool _isHudCreated = false;
 
+        // Kit stamina bar size at 1080p reference (art drawn at 1.25x its imported size).
+        private const float BarScale = 1.25f, BarWidth = 460f, BarHeight = 34f * BarScale;
+
         private void Awake()
         {
             _stamina = GetComponent<PlayerStamina>();
@@ -238,54 +241,81 @@ namespace CoopGame.Player
             hudRect.anchorMin = new Vector2(0.5f, 0.0f);
             hudRect.anchorMax = new Vector2(0.5f, 0.0f);
             hudRect.pivot = new Vector2(0.5f, 0.0f);
-            hudRect.anchoredPosition = new Vector2(0f, 45f);
-            hudRect.sizeDelta = new Vector2(280f, 60f);
+            hudRect.anchoredPosition = new Vector2(0f, 36f);
+            hudRect.sizeDelta = new Vector2(BarWidth, 90f);
 
             _hudCanvasGroup = hudRoot.AddComponent<CanvasGroup>();
             _hudCanvasGroup.alpha = 0.0f; // Start hidden, fades in on exertion
+            _hudCanvasGroup.blocksRaycasts = false;
 
-            // 3. Stamina Bar Background
+            // 3. Kit stamina bar (mockup 3): dark inner, fill window, frame on top, carrier icon on the left cap.
+            //    Sprites are drawn at 1.25x (pixelsPerUnitMultiplier 0.8) so the caps scale with the height.
             GameObject stamBgObj = new GameObject("StaminaBar_BG");
             stamBgObj.transform.SetParent(hudRoot.transform, false);
-
             RectTransform stamBgRect = stamBgObj.AddComponent<RectTransform>();
             stamBgRect.anchorMin = new Vector2(0.5f, 0.0f);
             stamBgRect.anchorMax = new Vector2(0.5f, 0.0f);
             stamBgRect.pivot = new Vector2(0.5f, 0.0f);
-            stamBgRect.anchoredPosition = new Vector2(0f, 0f);
-            stamBgRect.sizeDelta = new Vector2(260f, 18f);
-
+            stamBgRect.anchoredPosition = Vector2.zero;
+            stamBgRect.sizeDelta = new Vector2(BarWidth, BarHeight);
             Image stamBgImg = stamBgObj.AddComponent<Image>();
-            UITheme.StyleTrack(stamBgImg);
+            UITheme.StyleShape(stamBgImg, UITheme.StaminaInnerSprite, Color.white);
+            stamBgImg.pixelsPerUnitMultiplier = 1f / BarScale;
             stamBgImg.raycastTarget = false;
+
+            // Fill window = the frame's transparent opening (UITheme.StaminaWindow, scaled).
+            GameObject window = new GameObject("StaminaBar_Window", typeof(RectTransform));
+            window.transform.SetParent(stamBgObj.transform, false);
+            var windowRect = (RectTransform)window.transform;
+            windowRect.anchorMin = Vector2.zero;
+            windowRect.anchorMax = Vector2.one;
+            RectOffset w = UITheme.StaminaWindow;
+            windowRect.offsetMin = new Vector2(w.left * BarScale, w.bottom * BarScale);
+            windowRect.offsetMax = new Vector2(-w.right * BarScale, -w.top * BarScale);
 
             // 4. Ghost Trail Image (Lags behind to show recent stamina loss)
             GameObject stamGhostObj = new GameObject("StaminaBar_Ghost");
-            stamGhostObj.transform.SetParent(stamBgObj.transform, false);
-
+            stamGhostObj.transform.SetParent(window.transform, false);
             _staminaGhostRect = stamGhostObj.AddComponent<RectTransform>();
             _staminaGhostRect.anchorMin = Vector2.zero;
             _staminaGhostRect.anchorMax = Vector2.one;
-            _staminaGhostRect.offsetMin = new Vector2(2f, 2f);
-            _staminaGhostRect.offsetMax = new Vector2(-2f, -2f);
-
+            _staminaGhostRect.offsetMin = Vector2.zero;
+            _staminaGhostRect.offsetMax = Vector2.zero;
             _staminaGhostImage = stamGhostObj.AddComponent<Image>();
             UITheme.StyleFill(_staminaGhostImage, UITheme.Ghost);
             _staminaGhostImage.raycastTarget = false;
 
-            // 5. Stamina Fill Image (Main foreground bar)
+            // 5. Stamina Fill Image (yellow)
             GameObject stamFillObj = new GameObject("StaminaBar_Fill");
-            stamFillObj.transform.SetParent(stamBgObj.transform, false);
-
+            stamFillObj.transform.SetParent(window.transform, false);
             _staminaFillRect = stamFillObj.AddComponent<RectTransform>();
             _staminaFillRect.anchorMin = Vector2.zero;
             _staminaFillRect.anchorMax = Vector2.one;
-            _staminaFillRect.offsetMin = new Vector2(2f, 2f);
-            _staminaFillRect.offsetMax = new Vector2(-2f, -2f);
-
+            _staminaFillRect.offsetMin = Vector2.zero;
+            _staminaFillRect.offsetMax = Vector2.zero;
             _staminaFillImage = stamFillObj.AddComponent<Image>();
             UITheme.StyleFill(_staminaFillImage, UITheme.Stamina);
             _staminaFillImage.raycastTarget = false;
+
+            // Frame drawn over the fill, then the carrier icon over the left cap.
+            GameObject frameObj = new GameObject("StaminaBar_Frame", typeof(RectTransform), typeof(Image));
+            frameObj.transform.SetParent(stamBgObj.transform, false);
+            var frameRect = (RectTransform)frameObj.transform;
+            frameRect.anchorMin = Vector2.zero;
+            frameRect.anchorMax = Vector2.one;
+            frameRect.offsetMin = frameRect.offsetMax = Vector2.zero;
+            Image frameImg = frameObj.GetComponent<Image>();
+            UITheme.StyleShape(frameImg, UITheme.StaminaFrameSprite, Color.white);
+            frameImg.pixelsPerUnitMultiplier = 1f / BarScale;
+            frameImg.raycastTarget = false;
+
+            GameObject iconObj = new GameObject("CarrierIcon", typeof(RectTransform), typeof(Image));
+            iconObj.transform.SetParent(stamBgObj.transform, false);
+            var iconRect = (RectTransform)iconObj.transform;
+            iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, 0.5f);
+            iconRect.anchoredPosition = new Vector2(w.left * BarScale * 0.5f, 6f);
+            iconRect.sizeDelta = new Vector2(76f, 72f);
+            UITheme.StyleIcon(iconObj.GetComponent<Image>(), UITheme.IconCarrier);
 
             // 6. Throw Charge Bar Container & Background
             _throwBarContainer = new GameObject("ThrowBar_Container");
@@ -295,8 +325,8 @@ namespace CoopGame.Player
             throwBgRect.anchorMin = new Vector2(0.5f, 0.0f);
             throwBgRect.anchorMax = new Vector2(0.5f, 0.0f);
             throwBgRect.pivot = new Vector2(0.5f, 0.0f);
-            throwBgRect.anchoredPosition = new Vector2(0f, 24f);
-            throwBgRect.sizeDelta = new Vector2(260f, 12f);
+            throwBgRect.anchoredPosition = new Vector2(16f, BarHeight + 10f);
+            throwBgRect.sizeDelta = new Vector2(BarWidth - 120f, 14f);
 
             Image throwBgImg = _throwBarContainer.AddComponent<Image>();
             UITheme.StyleTrack(throwBgImg);

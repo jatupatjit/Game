@@ -157,7 +157,7 @@ namespace CoopGame.Network
             overlayRect.anchorMin = Vector2.zero; overlayRect.anchorMax = Vector2.one;
             overlayRect.offsetMin = overlayRect.offsetMax = Vector2.zero;
             var content = Box(_panel.transform, "FaceCustomization", new Vector2(660, 740), Vector2.zero, UITheme.PanelSolid);
-            UITheme.StyleShape(content.GetComponent<Image>(), UITheme.PanelSprite, UITheme.PanelSolid);
+            UITheme.StyleSolidPanel(content.GetComponent<Image>());
             Label(content.transform, "CUSTOMIZE YOUR FACE", 28, new Vector2(580, 48), new Vector2(0, 318)).color = UITheme.Primary;
             var previewBox = Box(content.transform, "Preview", new Vector2(280, 256), new Vector2(0, 144), UITheme.FacePreview);
             UITheme.StyleShape(previewBox.GetComponent<Image>(), UITheme.SmallSprite, UITheme.FacePreview);
@@ -192,7 +192,7 @@ namespace CoopGame.Network
                 thumbnailImage.texture = _faceTextures != null && i < _faceTextures.Length ? _faceTextures[i] : null;
                 thumbnailImage.raycastTarget = false;
                 var outline = button.gameObject.AddComponent<Outline>();
-                outline.effectColor = UITheme.Primary; outline.effectDistance = new Vector2(4, -4);
+                outline.effectColor = UITheme.Neon; outline.effectDistance = new Vector2(4, -4);
                 _faceOutlines[i] = outline;
             }
             _status = Label(content.transform, "", 14, new Vector2(610, 34), new Vector2(0, -272));

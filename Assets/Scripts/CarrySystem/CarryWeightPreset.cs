@@ -54,15 +54,15 @@ namespace CoopGame.CarrySystem
                     _chip = new GUIStyle(UITheme.ImguiLabel)
                     {
                         alignment = TextAnchor.MiddleLeft, wordWrap = false, fontSize = 14,
-                        padding = new RectOffset(10, 10, 2, 2),
-                        border = new RectOffset(11, 11, 11, 11)
+                        padding = new RectOffset(16, 16, 4, 4),
+                        border = UITheme.ImguiPanelBorder
                     };
-                    _chip.normal.background = UITheme.ImguiTexture(UITheme.Panel, true);
+                    _chip.normal.background = UITheme.ImguiPanelTexture;
                 }
                 Color previous = GUI.color;
                 GUI.color = new Color(1f, 1f, 1f, flashing ? 1f : .7f);
                 string value = UITheme.RichHex(flashing ? UITheme.Primary : UITheme.TextSecondary);
-                GUI.Label(new Rect(8f, Screen.height - 32f, 300f, 26f), $"Carry weight [F6]: <color={value}>{Name}</color>", _chip);
+                GUI.Label(new Rect(Screen.width * 0.5f - 165f, 8f, 330f, 48f), $"Carry weight [F6]: <color={value}>{Name}</color>", _chip);
                 GUI.color = previous;
             }
         }

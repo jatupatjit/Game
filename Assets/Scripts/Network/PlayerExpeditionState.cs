@@ -1,5 +1,6 @@
 using CoopGame.CarrySystem;
 using CoopGame.Player;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -15,6 +16,10 @@ namespace CoopGame.Network
         public readonly NetworkVariable<byte> Slot1 = new(0);
         public readonly NetworkVariable<byte> Slot2 = new(0);
         public readonly NetworkVariable<byte> Slot3 = new(0);
+        /// <summary>Display name for HUD player lists (owner-written: the Steam name, or "Player N").
+        /// Presentation only; no gameplay reads it.</summary>
+        public readonly NetworkVariable<Unity.Collections.FixedString64Bytes> DisplayName =
+            new(default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         private int _stageStartCoins;
         private byte _start1, _start2, _start3;
         private string _stageScene;
@@ -33,6 +38,14 @@ namespace CoopGame.Network
             1 => "Stamina Elixir", 2 => "Cargo Padding", _ => "Empty"
         };
         public static int ItemPrice(byte id) => id == 1 ? 40 : id == 2 ? 60 : int.MaxValue;
+        /// <summary>Ability text per card (same wording as the card-select buttons).</summary>
+        public static string CardDescription(byte id) => id switch
+        {
+            1 => "ยกคนเดียวใช้ Stamina ลดลง 40%",
+            2 => "ลังที่กำลังช่วยยก รับความเสียหายลด 50%",
+            3 => "เมื่อยกด้วยกัน 2 คนขึ้นไป เดินขณะยกเร็วขึ้น 15%",
+            _ => "ยังไม่ได้เลือกการ์ด"
+        };
         public byte GetSlot(int index) => index == 0 ? Slot1.Value : index == 1 ? Slot2.Value : Slot3.Value;
         private NetworkVariable<byte> Slot(int index) => index == 0 ? Slot1 : index == 1 ? Slot2 : Slot3;
 
@@ -41,6 +54,16 @@ namespace CoopGame.Network
             _stamina = GetComponent<PlayerStamina>();
             _carry = GetComponent<PlayerCarry>();
             SceneManager.sceneLoaded += OnSceneLoaded;
+            if (IsOwner)
+            {
+                var lobby = SteamLobbyManager.Instance;
+                string name = lobby != null && !lobby.IsLocalSession && lobby.IsSteamMultiplayerAvailable
+                    ? lobby.SteamPlayerName : $"Player {OwnerClientId + 1}";
+                while (name.Length > 0 && System.Text.Encoding.UTF8.GetByteCount(name) > FixedString64Bytes.UTF8MaxLengthInBytes)
+                    name = name.Substring(0, name.Length - 1); // UTF-8 byte-safe (Thai is 3 bytes/char)
+                var fixedName = new FixedString64Bytes(name);
+                DisplayName.Value = fixedName;
+            }
             if (IsServer)
             {
                 DeliveryPoint.OnDeliverySuccessGlobal += AwardDelivery;

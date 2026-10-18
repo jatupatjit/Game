@@ -1,76 +1,156 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>Button roles of the low-poly block theme.</summary>
+/// <summary>Button roles of the UI kit theme.</summary>
 public enum UIButtonStyle { Primary, Secondary, Danger }
 
-/// <summary>Text roles of the low-poly block theme.</summary>
-public enum UITextRole { Primary, Secondary, Accent, OnPrimary, Positive, Danger }
+/// <summary>Text roles of the UI kit theme. OnLight is dark text for beige panels.</summary>
+public enum UITextRole { Primary, Secondary, Accent, OnPrimary, Positive, Danger, OnLight }
 
 /// <summary>
-/// Single source of the "Low-poly block" UI theme (approved concept 3): soil-dark chamfered panels,
-/// orange route-marker accent, green stamina, warm muted text, Sarabun (GameThai) font. Flat colours,
-/// no gradients or glow. Screens read colours, sprites and the font only from here.
+/// Single source of the UI look: the user's own design kit (Assets/Art/UI, sprites built by
+/// Tools/UI Kit/Rebuild Sprites into Assets/Art/UI/Resources/UIKit). Pink primary / light-pink
+/// secondary buttons with dark outline, dark translucent rounded panels, beige panels with a darker
+/// top band, red mission/danger, yellow stamina, round player faces, card backs and icons.
+/// Screens read colours, sprites and the font only from here.
 /// </summary>
 public static class UITheme
 {
-    // ── Palette ──────────────────────────────────────────────────────────────
-    // Soil dark at 0.97: the project blends UI in Linear colour space, where 0.92 let the bright sky
-    // wash the panels to blue-grey; 0.97 keeps the soil hue while staying faintly see-through.
-    public static readonly Color Panel         = Hex("#2A211BF7");
-    public static readonly Color PanelSolid    = Hex("#2A211B");
-    public static readonly Color Track         = Hex("#4A3B30");     // secondary / bar track
-    public static readonly Color Primary       = Hex("#F27A4A");     // primary action + cargo HP (route-marker orange)
-    public static readonly Color OnPrimary     = Hex("#2A1408");     // text on orange
-    public static readonly Color Stamina       = Hex("#7FD27F");     // stamina / positive state
-    public static readonly Color Danger        = Hex("#E2553A");     // low cargo HP, exhaustion, destructive confirm
+    // ── Palette (sampled from the kit art) ───────────────────────────────────
+    public static readonly Color Panel         = Color.white;           // kit panels carry their own colour/alpha
+    public static readonly Color PanelSolid    = Color.white;
+    public static readonly Color Track         = Hex("#313336");        // stamina-bar frame grey: dividers, tracks
+    public static readonly Color Primary       = Hex("#FC6788");        // pink primary (Selected Button)
+    public static readonly Color PrimaryLight  = Hex("#F2D5D9");        // light pink secondary (Button Long)
+    public static readonly Color OnPrimary     = Hex("#1A0E12");        // dark text on pink buttons
+    public static readonly Color Stamina       = Hex("#F3B600");        // yellow stamina fill (card yellow)
+    public static readonly Color Positive      = Hex("#7EDC95");        // online / copied status
+    public static readonly Color Danger        = Hex("#FF4854");        // red: mission panel, low HP, exhaustion
+    public static readonly Color MissionRed    = Hex("#E8434E");        // mission panel fill
+    public static readonly Color Beige         = Hex("#E5C8A3");        // Settings panel body
+    public static readonly Color OnLight       = Hex("#3B2618");        // dark brown text on beige
+    public static readonly Color Neon          = Hex("#FF00E4");        // selected-card glow
     public static readonly Color TextPrimary   = Hex("#FFFFFF");
-    public static readonly Color TextSecondary = Hex("#CDBFB2");
-    public static readonly Color Outline       = Hex("#1A1410E6");   // text/shape outline
-    public static readonly Color Overlay       = Hex("#1A1410B8");   // full-screen dim behind modals
-    public static readonly Color Ghost         = Hex("#CDBFB273");   // trailing "recent loss" bar
-    public static readonly Color Backdrop      = Hex("#1A1410F2");   // full-screen menu backdrop (lobby)
-    public static readonly Color InputWell     = Hex("#1A1410");     // text-entry well
-    public static readonly Color Placeholder   = Hex("#CDBFB280");   // input placeholder text
+    public static readonly Color TextSecondary = Hex("#E9DCDF");
+    public static readonly Color Outline       = Hex("#1A1214E6");      // text outline (dark)
+    public static readonly Color Overlay       = Hex("#00000073");      // dim behind modals (game shows through)
+    public static readonly Color Ghost         = Hex("#FFFFFF59");      // trailing "recent loss" bar
+    public static readonly Color Backdrop      = Color.white;           // lobby backdrop uses the BackdropBlur art
+    public static readonly Color InputWell     = Hex("#1E1A1CE0");
+    public static readonly Color Placeholder   = Hex("#E9DCDF80");
     /// <summary>Not a UI accent: matches the player's blue body so face previews read as on the character.</summary>
-    public static readonly Color FacePreview   = Hex("#3399FF");
+    public static readonly Color FacePreview   = Hex("#2D7DF5");
 
-    /// <summary>Meters at or below this ratio blend toward <see cref="Danger"/>.</summary>
+    /// <summary>Meters below this ratio switch to <see cref="Danger"/>.</summary>
     public const float LowRatio = 0.3f;
 
-    // ── Derived interaction colours ──────────────────────────────────────────
-    public static Color Hover(Color c) => Color.Lerp(c, Color.white, 0.16f);
-    public static Color Pressed(Color c) => Color.Lerp(c, Color.black, 0.22f);
-    public static Color Disabled(Color c) { Color d = Color.Lerp(c, Track, 0.65f); d.a = 0.75f; return d; }
+    // ── Derived interaction colours (kit sprites are full colour, so tints only darken) ──
+    public static Color Hover(Color c) => new Color(c.r * 0.93f, c.g * 0.93f, c.b * 0.93f, c.a);
+    public static Color Pressed(Color c) => new Color(c.r * 0.8f, c.g * 0.8f, c.b * 0.8f, c.a);
+    public static Color Disabled(Color c) => new Color(c.r * 0.6f, c.g * 0.6f, c.b * 0.6f, c.a * 0.6f);
 
-    // ── Shapes ───────────────────────────────────────────────────────────────
-    /// <summary>Large panel: 14 px chamfer, 2 px darker rim.</summary>
-    public static Sprite PanelSprite => ProceduralUIUtility.GetChamferSprite(14, 2);
-    /// <summary>Buttons, tracks, small cards: 7 px chamfer, 2 px darker rim.</summary>
-    public static Sprite SmallSprite => ProceduralUIUtility.GetChamferSprite(7, 2);
-    /// <summary>Bar fills: 4 px chamfer, no rim.</summary>
-    public static Sprite FillSprite => ProceduralUIUtility.GetChamferSprite(4, 0);
+    // ── Kit sprites ──────────────────────────────────────────────────────────
+    private static readonly Dictionary<string, Sprite> _kit = new Dictionary<string, Sprite>();
+
+    /// <summary>Loads a kit sprite from Resources/UIKit (cached). Null if missing.</summary>
+    public static Sprite Kit(string name)
+    {
+        if (_kit.TryGetValue(name, out Sprite cached) && cached != null) return cached;
+        Sprite sprite = Resources.Load<Sprite>("UIKit/" + name);
+        if (sprite == null) Debug.LogWarning("[UITheme] Missing kit sprite UIKit/" + name + " (run Tools/UI Kit/Rebuild Sprites)");
+        _kit[name] = sprite;
+        return sprite;
+    }
+
+    /// <summary>Dark translucent rounded panel (UI.png).</summary>
+    public static Sprite PanelSprite => Kit("PanelDark");
+    /// <summary>Beige panel with darker top band (Settings.png).</summary>
+    public static Sprite BeigeSprite => Kit("PanelBeige");
+    public static Sprite ButtonPrimarySprite => Kit("ButtonPrimary");
+    public static Sprite ButtonSecondarySprite => Kit("ButtonSecondary");
+    public static Sprite CardFrameSprite => Kit("CardSelectedFrame");
+    public static Sprite StaminaFrameSprite => Kit("StaminaFrame");
+    public static Sprite StaminaInnerSprite => Kit("StaminaInner");
+    public static Sprite KeyCapSprite => Kit("KeyCap");
+    public static Sprite BackdropSprite => Kit("BackdropBlur");
+    public static Sprite IconCarrier => Kit("IconCarrier");
+    public static Sprite IconStrength => Kit("IconStrength");
+    public static Sprite IconCube => Kit("IconCube");
+    /// <summary>Tintable rounded shape with a darker rim (chips, tracks, banners, tooltips).</summary>
+    public static Sprite SmallSprite => ProceduralUIUtility.GetRoundedSprite(10, 2, 0.55f);
+    /// <summary>Tintable rounded fill without rim (bar fills).</summary>
+    public static Sprite FillSprite => ProceduralUIUtility.GetRoundedSprite(6, 0);
+
+    /// <summary>Stamina frame window in sprite pixels: fill area inside the frame (left cap holds the icon).</summary>
+    public static readonly RectOffset StaminaWindow = new RectOffset(52, 13, 9, 9);
+
+    // Face per player colour. NetworkPlayer tints players by OwnerClientId % 4:
+    // 0 sky blue, 1 coral red, 2 emerald green, 3 amber -> matching kit faces (no yellow face in the kit;
+    // brown is the closest to amber).
+    private static readonly string[] PlayerFaces = { "FaceBlue", "FaceCrimson", "FaceGreen", "FaceBrown" };
+    /// <summary>All kit faces (grey, purple, blue, teal, green, lime, brown, crimson).</summary>
+    public static readonly string[] AllFaces = { "FaceGrey", "FacePurple", "FaceBlue", "FaceTeal", "FaceGreen", "FaceLime", "FaceBrown", "FaceCrimson" };
+
+    /// <summary>Round face icon matching the player's body colour (same rule as NetworkPlayer, so all peers agree).</summary>
+    public static Sprite FaceForClient(ulong ownerClientId) => Kit(PlayerFaces[(int)(ownerClientId % (ulong)PlayerFaces.Length)]);
+
+    /// <summary>Card icon: 1 ENDURANCE = strength, 2 CARGO GUARD = cube, 3 TEAMWORK = carrier; 0 = unknown card back.</summary>
+    public static Sprite CardIcon(byte card) =>
+        card == 1 ? IconStrength : card == 2 ? IconCube : card == 3 ? IconCarrier : Kit("CardBackYellow");
+
+    /// <summary>Card-back colour per card (red / blue / yellow), used for plain card faces.</summary>
+    public static Color CardColor(byte card) => card == 1 ? Hex("#FF4854") : card == 2 ? Hex("#1AB8FF") : Hex("#F3B600");
+
+    /// <summary>Card back art per card (placeholder illustration until real card art exists).</summary>
+    public static Sprite CardBack(byte card) =>
+        card == 1 ? Kit("CardBackRed") : card == 2 ? Kit("CardBackBlue") : Kit("CardBackYellow");
 
     // ── Font ─────────────────────────────────────────────────────────────────
-    private static Font _font;
-    /// <summary>GameThai (Sarabun) so Thai renders; builtin LegacyRuntime/Arial if missing.</summary>
-    public static Font Font
+    // Mitr (rounded Thai, SIL OFL, Assets/Art/Fonts/Mitr) in real weights via Resources/UIFontSet;
+    // GameThai (Sarabun) then the builtin font are fallbacks. Never use FontStyle.Bold (fake bold).
+    private static UIFontSet _fontSet;
+    private static bool _fontSetLoaded;
+    private static Font _fallback;
+
+    private static Font Weight(System.Func<UIFontSet, Font> pick)
     {
-        get
+        if (!_fontSetLoaded)
         {
-            if (_font != null) return _font;
-            _font = Resources.Load<Font>("Fonts/GameThai");
-            if (_font == null) _font = ProceduralUIUtility.GetDefaultFont();
-            return _font;
+            _fontSetLoaded = true;
+            _fontSet = Resources.Load<UIFontSet>("UIFontSet");
+            if (_fontSet == null) Debug.LogWarning("[UITheme] Resources/UIFontSet missing; falling back to GameThai.");
         }
+        Font font = _fontSet != null ? pick(_fontSet) : null;
+        if (font == null && _fontSet != null) font = _fontSet.Regular;
+        if (font != null) return font;
+        if (_fallback == null) _fallback = Resources.Load<Font>("Fonts/GameThai");
+        if (_fallback == null) _fallback = ProceduralUIUtility.GetDefaultFont();
+        return _fallback;
+    }
+
+    /// <summary>Body text / labels (Mitr Regular).</summary>
+    public static Font Font => Weight(s => s.Regular);
+    /// <summary>Buttons (Mitr Medium).</summary>
+    public static Font FontMedium => Weight(s => s.Medium);
+    /// <summary>Panel titles, names (Mitr SemiBold).</summary>
+    public static Font FontSemiBold => Weight(s => s.SemiBold);
+    /// <summary>Big headers: PAUSE, banners, HP number (Mitr Bold).</summary>
+    public static Font FontBold => Weight(s => s.Bold);
+
+    /// <summary>Applies a real font weight (no synthesized bold).</summary>
+    public static void SetWeight(Text text, Font weight)
+    {
+        if (text == null) return;
+        text.font = weight;
+        text.fontStyle = FontStyle.Normal;
     }
 
     // ── Colour lookups ───────────────────────────────────────────────────────
-    public static Color ButtonColor(UIButtonStyle style) =>
-        style == UIButtonStyle.Primary ? Primary : style == UIButtonStyle.Danger ? Danger : Track;
+    /// <summary>Tint applied to the button sprite (kit sprites are already coloured, so mostly white).</summary>
+    public static Color ButtonColor(UIButtonStyle style) => style == UIButtonStyle.Danger ? Danger : Color.white;
 
-    public static Color ButtonTextColor(UIButtonStyle style) =>
-        style == UIButtonStyle.Secondary ? TextPrimary : OnPrimary;
+    public static Color ButtonTextColor(UIButtonStyle style) => style == UIButtonStyle.Danger ? TextPrimary : OnPrimary;
 
     public static Color TextColor(UITextRole role)
     {
@@ -79,30 +159,63 @@ public static class UITheme
             case UITextRole.Secondary: return TextSecondary;
             case UITextRole.Accent:    return Primary;
             case UITextRole.OnPrimary: return OnPrimary;
-            case UITextRole.Positive:  return Stamina;
+            case UITextRole.Positive:  return Positive;
             case UITextRole.Danger:    return Danger;
+            case UITextRole.OnLight:   return OnLight;
             default:                   return TextPrimary;
         }
     }
 
-    /// <summary>Meter colour: <paramref name="normal"/> at or above <see cref="LowRatio"/>, Danger below.
-    /// A hard step (no blend) so green never muddies through brown on the way to red-orange.</summary>
+    /// <summary>Meter colour: <paramref name="normal"/> at or above <see cref="LowRatio"/>, Danger below.</summary>
     public static Color Meter(float ratio, Color normal) => ratio >= LowRatio ? normal : Danger;
 
-    // ── Stylers (restyle existing Graphics; layout untouched) ────────────────
-    public static void StylePanel(Image image, bool small = false) => StyleShape(image, small ? SmallSprite : PanelSprite, Panel);
+    // ── Stylers (restyle existing Graphics) ──────────────────────────────────
+    /// <summary>Dark translucent kit panel; <paramref name="small"/> = compact rounded dark chip.</summary>
+    public static void StylePanel(Image image, bool small = false)
+    {
+        if (small) StyleShape(image, SmallSprite, Hex("#1E1A1CD9"));
+        else StyleShape(image, PanelSprite, Color.white);
+    }
+
+    /// <summary>Near-opaque dark rounded panel for content-dense dialogs (the kit panel is ~65% see-through).</summary>
+    public static void StyleSolidPanel(Image image) => StyleShape(image, SmallSprite, SolidPanel);
+    public static readonly Color SolidPanel = Hex("#262124F2");
+
+    /// <summary>Beige kit panel (darker top band); use <see cref="UITextRole.OnLight"/> text on it.</summary>
+    public static void StyleBeigePanel(Image image) => StyleShape(image, BeigeSprite, Color.white);
+
+    /// <summary>Full-screen blurred level art used behind the lobby menu.</summary>
+    public static void StyleBackdrop(Image image)
+    {
+        if (image == null) return;
+        image.sprite = BackdropSprite;
+        image.type = Image.Type.Simple;
+        image.preserveAspect = false;
+        image.color = Color.white;
+    }
 
     public static void StyleShape(Image image, Sprite sprite, Color color)
     {
         if (image == null) return;
         image.sprite = sprite;
-        image.type = Image.Type.Sliced;
+        image.type = sprite != null && sprite.border != Vector4.zero ? Image.Type.Sliced : Image.Type.Simple;
         image.fillCenter = true;
         image.pixelsPerUnitMultiplier = 1f;
         image.color = color;
     }
 
-    public static void StyleTrack(Image image) => StyleShape(image, SmallSprite, Track);
+    /// <summary>Icon art (faces, card icons): simple, aspect preserved.</summary>
+    public static void StyleIcon(Image image, Sprite sprite)
+    {
+        if (image == null) return;
+        image.sprite = sprite;
+        image.type = Image.Type.Simple;
+        image.preserveAspect = true;
+        image.color = Color.white;
+        image.raycastTarget = false;
+    }
+
+    public static void StyleTrack(Image image) => StyleShape(image, FillSprite, Hex("#313336D9"));
 
     public static void StyleFill(Image image, Color color) => StyleShape(image, FillSprite, color);
 
@@ -110,16 +223,28 @@ public static class UITheme
     {
         if (text == null) return;
         text.font = Font;
+        text.fontStyle = FontStyle.Normal; // regular weight only (no Bold file in the project)
         text.color = TextColor(role);
     }
 
-    /// <summary>Chamfered shape + palette ColorBlock (hover/press/disabled derived from the role colour).
-    /// The Image is white so the ColorBlock tint is the exact theme colour.</summary>
+    /// <summary>Dark outline around text (kit titles: white text with dark outline).</summary>
+    public static void AddOutline(Text text, float distance = 1f)
+    {
+        if (text == null) return;
+        var outline = text.GetComponent<Outline>();
+        if (outline == null) outline = text.gameObject.AddComponent<Outline>();
+        outline.effectColor = Outline;
+        distance = Mathf.Min(distance, 1f); // at most 1 px: thicker outlines blur Thai glyphs
+        outline.effectDistance = new Vector2(distance, -distance);
+    }
+
+    /// <summary>Kit button sprite (pink / light pink, dark outline) + ColorBlock that darkens on hover/press.</summary>
     public static void StyleButton(Button button, UIButtonStyle style)
     {
         if (button == null) return;
         Color baseColor = ButtonColor(style);
-        if (button.targetGraphic is Image image) StyleShape(image, SmallSprite, Color.white);
+        Sprite sprite = style == UIButtonStyle.Primary ? ButtonPrimarySprite : ButtonSecondarySprite;
+        if (button.targetGraphic is Image image) StyleShape(image, sprite, Color.white);
         else if (button.targetGraphic != null) button.targetGraphic.color = Color.white;
 
         button.transition = Selectable.Transition.ColorTint;
@@ -136,8 +261,9 @@ public static class UITheme
         Color label = ButtonTextColor(style);
         foreach (Text text in button.GetComponentsInChildren<Text>(true))
         {
-            text.font = Font;
+            text.font = FontMedium;
             text.color = label;
+            text.fontStyle = FontStyle.Normal; // only regular Sarabun ships; synthesized bold smears
         }
     }
 
@@ -365,12 +491,12 @@ public static class UITheme
     private static GUIStyle _imguiBox, _imguiLabel, _imguiField;
     private static readonly GUIStyle[] _imguiButtons = new GUIStyle[3];
 
-    /// <summary>The chamfer sprite baked to a solid colour (IMGUI cannot tint per style).</summary>
+    /// <summary>The tintable rounded shape baked to a solid colour (IMGUI cannot tint per style).</summary>
     public static Texture2D ImguiTexture(Color color, bool small)
     {
         long key = ((long)ColorUtility.ToHtmlStringRGBA(color).GetHashCode() << 1) | (small ? 1L : 0L);
         if (_imguiTextures.TryGetValue(key, out Texture2D cached) && cached != null) return cached;
-        Texture2D source = (small ? SmallSprite : PanelSprite).texture;
+        Texture2D source = (small ? SmallSprite : FillSprite).texture; // procedural, always readable
         Color[] pixels = source.GetPixels();
         for (int i = 0; i < pixels.Length; i++) pixels[i] *= color;
         var texture = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false)
@@ -383,19 +509,24 @@ public static class UITheme
         return texture;
     }
 
-    private static RectOffset ImguiBorder(bool small)
+    private static RectOffset BorderOf(Sprite sprite)
     {
-        int b = Mathf.RoundToInt((small ? SmallSprite : PanelSprite).border.x);
-        return new RectOffset(b, b, b, b);
+        if (sprite == null) return new RectOffset(8, 8, 8, 8);
+        Vector4 b = sprite.border; // L, B, R, T
+        return new RectOffset(Mathf.RoundToInt(b.x), Mathf.RoundToInt(b.z), Mathf.RoundToInt(b.w), Mathf.RoundToInt(b.y));
     }
+
+    /// <summary>Kit dark panel texture for IMGUI boxes/chips.</summary>
+    public static Texture2D ImguiPanelTexture => PanelSprite != null ? PanelSprite.texture : ImguiTexture(InputWell, true);
+    public static RectOffset ImguiPanelBorder => BorderOf(PanelSprite);
 
     public static GUIStyle ImguiBox
     {
         get
         {
             if (_imguiBox != null) return _imguiBox;
-            _imguiBox = new GUIStyle(GUI.skin.box) { border = ImguiBorder(false), padding = new RectOffset(18, 18, 14, 14), font = Font, richText = true };
-            _imguiBox.normal.background = ImguiTexture(Panel, false);
+            _imguiBox = new GUIStyle(GUI.skin.box) { border = ImguiPanelBorder, padding = new RectOffset(22, 22, 18, 18), font = Font, richText = true };
+            _imguiBox.normal.background = ImguiPanelTexture;
             _imguiBox.normal.textColor = TextPrimary;
             return _imguiBox;
         }
@@ -417,23 +548,25 @@ public static class UITheme
         get
         {
             if (_imguiField != null) return _imguiField;
-            _imguiField = new GUIStyle(GUI.skin.textField) { border = ImguiBorder(true), font = Font, fontSize = 18, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(10, 10, 4, 4) };
+            _imguiField = new GUIStyle(GUI.skin.textField) { border = BorderOf(SmallSprite), font = Font, fontSize = 18, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(10, 10, 4, 4) };
             _imguiField.normal.background = _imguiField.hover.background = _imguiField.focused.background = ImguiTexture(InputWell, true);
             _imguiField.normal.textColor = _imguiField.hover.textColor = _imguiField.focused.textColor = TextPrimary;
             return _imguiField;
         }
     }
 
+    /// <summary>Kit button textures (pink / light pink). Danger uses the light-pink art with red text.</summary>
     public static GUIStyle ImguiButton(UIButtonStyle style)
     {
         int i = (int)style;
         if (_imguiButtons[i] != null) return _imguiButtons[i];
-        Color baseColor = ButtonColor(style);
-        var s = new GUIStyle(GUI.skin.button) { border = ImguiBorder(true), font = Font, fontSize = 16, richText = true, alignment = TextAnchor.MiddleCenter };
-        s.normal.background = s.focused.background = ImguiTexture(baseColor, true);
-        s.hover.background = ImguiTexture(Hover(baseColor), true);
-        s.active.background = ImguiTexture(Pressed(baseColor), true);
-        s.normal.textColor = s.hover.textColor = s.active.textColor = s.focused.textColor = ButtonTextColor(style);
+        Sprite sprite = style == UIButtonStyle.Primary ? ButtonPrimarySprite : ButtonSecondarySprite;
+        var s = new GUIStyle(GUI.skin.button) { border = BorderOf(sprite), font = FontMedium, fontSize = 16, richText = true, alignment = TextAnchor.MiddleCenter };
+        Texture2D texture = sprite != null ? sprite.texture : ImguiTexture(Primary, true);
+        s.normal.background = s.focused.background = s.hover.background = s.active.background = texture;
+        Color text = style == UIButtonStyle.Danger ? Danger : OnPrimary;
+        s.normal.textColor = s.focused.textColor = text;
+        s.hover.textColor = s.active.textColor = style == UIButtonStyle.Danger ? Pressed(Danger) : Hex("#5A2633");
         _imguiButtons[i] = s;
         return s;
     }

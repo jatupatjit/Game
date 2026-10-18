@@ -17,27 +17,26 @@ using UnityEditor;
 // Procedural UI Utility (Shared Runtime & Editor)
 // Provides 9-sliced rounded anti-aliased sprites, color palettes, and UI helpers
 // ─────────────────────────────────────────────────────────────────────────────
-// Colours, font and shapes come only from UITheme (Low-poly block). The old per-screen palette
-// constants (BgDeep, PanelDark, AccentCyan, ButtonPlay...) and the rounded sprite were removed so
-// no screen can drift from the theme.
+// Colours, font and shapes come only from UITheme (the user's pink UI kit). Old per-screen palette
+// constants were removed so no screen can drift from the theme.
 public static class ProceduralUIUtility
 {
     private static Sprite _sharedSpinnerRingSprite;
 
-    private static readonly System.Collections.Generic.Dictionary<int, Sprite> _chamferSprites =
+    private static readonly System.Collections.Generic.Dictionary<int, Sprite> _roundedSprites =
         new System.Collections.Generic.Dictionary<int, Sprite>();
 
     /// <summary>
-    /// 9-sliced low-poly block: diagonal (chamfered) corners cut <paramref name="cut"/> px deep and an
-    /// optional <paramref name="outline"/> px rim baked at <paramref name="rimShade"/> grey, so tinting
+    /// 9-sliced rounded rectangle (corner radius <paramref name="cut"/> px) with an optional
+    /// <paramref name="outline"/> px rim baked at <paramref name="rimShade"/> grey, so tinting
     /// the Image gives a flat fill with a darker rim of the same hue. Cached per parameter set.
     /// </summary>
-    public static Sprite GetChamferSprite(int cut = 14, int outline = 2, float rimShade = 0.62f)
+    public static Sprite GetRoundedSprite(int cut = 14, int outline = 2, float rimShade = 0.62f)
     {
         cut = Mathf.Clamp(cut, 1, 60);
         outline = Mathf.Clamp(outline, 0, 8);
         int key = (cut << 16) | (outline << 8) | Mathf.Clamp(Mathf.RoundToInt(rimShade * 255f), 0, 255);
-        if (_chamferSprites.TryGetValue(key, out Sprite cached) && cached != null) return cached;
+        if (_roundedSprites.TryGetValue(key, out Sprite cached) && cached != null) return cached;
 
         int border = cut + outline + 2;
         int size = border * 2 + 4;
@@ -45,10 +44,9 @@ public static class ProceduralUIUtility
         {
             filterMode = FilterMode.Bilinear,
             wrapMode = TextureWrapMode.Clamp,
-            name = $"T_Procedural_Chamfer_{cut}_{outline}"
+            name = $"T_Procedural_Rounded_{cut}_{outline}"
         };
 
-        const float InvSqrt2 = 0.70710678f;
         Color[] pixels = new Color[size * size];
         for (int y = 0; y < size; y++)
         {
@@ -56,8 +54,9 @@ public static class ProceduralUIUtility
             {
                 float dx = Mathf.Min(x + 0.5f, size - (x + 0.5f));
                 float dy = Mathf.Min(y + 0.5f, size - (y + 0.5f));
-                // Signed distance to the outer boundary (straight edges or the 45-degree corner cut).
-                float edge = Mathf.Min(Mathf.Min(dx, dy), (dx + dy - cut) * InvSqrt2);
+                // Signed distance to the outer boundary (straight edges or the circular corner).
+                float cx = Mathf.Max(0f, cut - dx), cy = Mathf.Max(0f, cut - dy);
+                float edge = (cx > 0f && cy > 0f) ? cut - Mathf.Sqrt(cx * cx + cy * cy) : Mathf.Min(dx, dy);
                 float alpha = Mathf.Clamp01(edge + 0.5f);
                 float shade = outline > 0 ? Mathf.Lerp(rimShade, 1f, Mathf.Clamp01(edge - outline + 0.5f)) : 1f;
                 pixels[y * size + x] = new Color(shade, shade, shade, alpha);
@@ -69,7 +68,7 @@ public static class ProceduralUIUtility
         Sprite sprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0,
             SpriteMeshType.FullRect, new Vector4(border, border, border, border));
         sprite.name = tex.name;
-        _chamferSprites[key] = sprite;
+        _roundedSprites[key] = sprite;
         return sprite;
     }
 
