@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 678abafbad82167468dbeef1f544c49a
+guid: 1c3303226ab4edb4cb4926f1897a26c9
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 4891116437037920256
-    second: CardTeamwork_0
+      213: 3794062278598978098
+    second: quick_recovery_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -48,14 +48,14 @@ TextureImporter:
   compressionQuality: 50
   spriteMode: 1
   spriteExtrude: 1
-  spriteMeshType: 1
+  spriteMeshType: 0
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: 100
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
-  alphaIsTransparency: 1
+  alphaIsTransparency: 0
   spriteTessellationMethod: 0
   spriteTessellationDetail: -1
   spriteGeometrySubdivision: -1
@@ -74,10 +74,10 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 1024
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 1
+    textureCompression: 2
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -102,13 +102,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: CardTeamwork_0
+      name: quick_recovery_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2480
-        height: 3508
+        width: 640
+        height: 904
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -117,8 +117,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 00038b83c7cb0e340800000000000000
-      internalID: 4891116437037920256
+      spriteID: 23ae9936a8737a430800000000000000
+      internalID: 3794062278598978098
       vertices: []
       indices: 
       edges: []

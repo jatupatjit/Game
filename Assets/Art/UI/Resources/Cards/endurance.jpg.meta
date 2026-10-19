@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: d80dbc3315dfdd5478d4c27a02e146ba
+guid: d4e6e58dff58b704f97d4612e5b079cd
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -5420364844288474202
-    second: CardCargoGuard_0
+      213: 3488301826464022791
+    second: endurance_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -48,14 +48,14 @@ TextureImporter:
   compressionQuality: 50
   spriteMode: 1
   spriteExtrude: 1
-  spriteMeshType: 1
+  spriteMeshType: 0
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: 100
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
-  alphaIsTransparency: 1
+  alphaIsTransparency: 0
   spriteTessellationMethod: 0
   spriteTessellationDetail: -1
   spriteGeometrySubdivision: -1
@@ -74,10 +74,10 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 1024
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 1
+    textureCompression: 2
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -102,13 +102,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: CardCargoGuard_0
+      name: endurance_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2480
-        height: 3508
+        width: 640
+        height: 904
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -117,8 +117,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 6a38b2774eef6c4b0800000000000000
-      internalID: -5420364844288474202
+      spriteID: 7010cb38700f86030800000000000000
+      internalID: 3488301826464022791
       vertices: []
       indices: 
       edges: []

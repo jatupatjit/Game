@@ -63,6 +63,13 @@ namespace CoopGame.Player
         private PlayerInputReader _inputReader;
         private Wallclimb _wallclimb;
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
+        private CoopGame.Network.PlayerExpeditionState _expedition;
+        private int _airJumpsUsed;
+
+        /// <summary>Air jumps used since last standing on the ground (DOUBLE JUMP card).</summary>
+        public int AirJumpsUsed => _airJumpsUsed;
+        /// <summary>Height of the last executed jump (m), for tuning/verification.</summary>
+        public float LastJumpHeight { get; private set; }
 
         // Current velocity vectors
         private Vector3 _horizontalVelocity;
@@ -139,6 +146,7 @@ namespace CoopGame.Player
             _wallclimb = GetComponent<Wallclimb>();
             _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
             _netObject = GetComponent<Unity.Netcode.NetworkObject>();
+            _expedition = GetComponent<CoopGame.Network.PlayerExpeditionState>();
         }
 
         private void Start()
@@ -187,6 +195,7 @@ namespace CoopGame.Player
             {
                 _horizontalVelocity = Vector3.zero;
                 _verticalVelocity = 0f;
+                _airJumpsUsed = 0; // gripping a wall counts as touching down
                 return;
             }
 
@@ -207,7 +216,7 @@ namespace CoopGame.Player
             bool canSprint = isSprinting && isMoving && (_stamina == null || !_stamina.IsExhausted);
             if (canSprint && _stamina != null)
             {
-                _stamina.ConsumeStamina(_sprintStaminaDrain * deltaTime);
+                _stamina.ConsumeActionStamina(_sprintStaminaDrain * deltaTime);
             }
 
             float baseTargetSpeed = (canSprint ? _sprintSpeed : _walkSpeed) * SpeedMultiplier;
@@ -279,6 +288,9 @@ namespace CoopGame.Player
             _characterController.Move(totalMovement);
         }
 
+        private int ExtraAirJumps =>
+            _expedition != null && _expedition.HasCard(CoopGame.Network.CardEffect.DoubleJump) ? CoopGame.Network.CardCatalog.DoubleJumpExtraJumps : 0;
+
         private void UpdateTimers(float deltaTime, bool jumpRequested)
         {
             // Coyote timer: counts down when airborne, resets when grounded
@@ -312,6 +324,7 @@ namespace CoopGame.Player
 
             if (_characterController.isGrounded)
             {
+                _airJumpsUsed = 0;
                 // While grounded, keep slight downward force to prevent bouncing on slopes
                 if (_verticalVelocity < 0f)
                 {
@@ -329,6 +342,12 @@ namespace CoopGame.Player
                 // While airborne: check coyote jump window
                 if (_jumpBufferTimer > 0f && _coyoteTimer > 0f)
                 {
+                    ExecuteJump();
+                }
+                else if (_jumpBufferTimer > 0f && _airJumpsUsed < ExtraAirJumps)
+                {
+                    // DOUBLE JUMP card: one extra jump in the air, same height rules, reset on landing.
+                    _airJumpsUsed++;
                     ExecuteJump();
                 }
 
@@ -351,6 +370,8 @@ namespace CoopGame.Player
         {
             float height = _playerCarry != null && _playerCarry.IsCarrying
                 ? Mathf.Min(_jumpHeight, _carryJumpHeight) : _jumpHeight;
+            if (_expedition != null) height *= _expedition.CardMagnitude(CoopGame.Network.CardEffect.HighJumper);
+            LastJumpHeight = height;
             _verticalVelocity = Mathf.Sqrt(2.0f * height * Mathf.Abs(_gravity));
             _jumpBufferTimer = 0f;
             _coyoteTimer = 0f;

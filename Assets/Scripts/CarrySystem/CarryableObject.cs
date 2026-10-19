@@ -85,6 +85,7 @@ namespace CoopGame.CarrySystem
             public PlayerMovement Movement;
             public PlayerCarry Carry;
             public Collider[] PlayerColliders;
+            public CoopGame.Network.PlayerExpeditionState State;
             public Vector3 PreviousPlayerPosition;
             public Vector3 PlayerVelocity;
             public float AttachedAtFixedTime;
@@ -256,13 +257,39 @@ namespace CoopGame.CarrySystem
 
         public bool HasCarrier(ulong clientId) => _activeCarriers.ContainsKey(clientId);
 
-        public bool HasGuardCard()
+        [Header("Cards")]
+        [Tooltip("LAST MILE: carriers holding the card feel this cargo lighter while it is within this distance (m) of an undelivered DeliveryZone.")]
+        [SerializeField, Min(0f)] private float _lastMileRadius = CoopGame.Network.CardCatalog.LastMileRadius;
+
+        [Tooltip("STEADY HANDS: extra pitch/roll damping (1/s) when every carrier holds the card, scaled by the share of carriers who do. 17.5 halves the peak tilt after a standard kick (measured 0.49x, 5 kg cargo, solo hold; RMS tilt 0.64x).")]
+        [SerializeField, Min(0f)] private float _steadyHandsExtraDamping = 17.5f;
+
+        /// <summary>Mean weight-load scale over the supporting carriers on the last physics step (1 = no card effect).</summary>
+        public float LastLoadScale { get; private set; } = 1f;
+        /// <summary>Hand load (share of cargo weight the hands bear) used on the last physics step.</summary>
+        public float LastHandLoad { get; private set; }
+        /// <summary>Fraction of carriers holding STEADY HANDS on the last physics step.</summary>
+        public float LastSteadyFraction { get; private set; }
+
+        /// <summary>True when this cargo is within the LAST MILE radius of an undelivered delivery zone.</summary>
+        public bool IsNearDelivery()
         {
-            foreach (var carrier in _activeCarriers.Values)
-                if (carrier.PlayerTransform != null &&
-                    carrier.PlayerTransform.TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) &&
-                    state.Card.Value == 2) return true;
+            Vector3 p = transform.position;
+            float r2 = _lastMileRadius * _lastMileRadius;
+            foreach (var zone in DeliveryZone.Active)
+                if (zone != null && !zone.IsDelivered && (zone.transform.position - p).sqrMagnitude <= r2) return true;
             return false;
+        }
+
+        /// <summary>This carrier's multiplier on its share of the weight load (STRONG ARMS, TEAMWORK with 2+ carriers,
+        /// LAST MILE near the delivery), multiplied together.</summary>
+        private float CarrierLoadScale(CarrierInfo carrier, int supportingCount, bool nearDelivery)
+        {
+            if (carrier.State == null) return 1f;
+            float scale = carrier.State.CardMagnitude(CoopGame.Network.CardEffect.StrongArms);
+            if (supportingCount >= 2) scale *= carrier.State.CardMagnitude(CoopGame.Network.CardEffect.Teamwork);
+            if (nearDelivery) scale *= carrier.State.CardMagnitude(CoopGame.Network.CardEffect.LastMile);
+            return scale;
         }
 
         protected virtual void FixedUpdate()
@@ -367,6 +394,23 @@ namespace CoopGame.CarrySystem
                 ? Mathf.Lerp(.06f, .12f, massLoad) / Mathf.Sqrt(supportingCarrierCount * .5f)
                 : Mathf.Lerp(.08f, .22f, massLoad);
             handLoad = Mathf.Min(handLoad * CarryWeightPreset.HandLoadScale(supportingCarrierCount > 1), .5f);
+
+            // Cards. Each supporting carrier bears an equal share of handLoad; that share is scaled by the carrier's
+            // load scale (STRONG ARMS x0.6, TEAMWORK x0.8 with 2+, LAST MILE x0.7 near delivery, multiplied), so the
+            // cargo hangs higher/lighter. The preset scale and the 0.5 cap above are applied first and the card scale
+            // multiplies the result. Spring/damping strengths (supportedMass) are untouched: position following is intact.
+            bool nearDelivery = IsNearDelivery();
+            float loadScaleSum = 0f, steadyCount = 0f;
+            foreach (var carrier in _activeCarriers.Values)
+                if (carrier.PlayerTransform != null && (carrier.LeftHandActive || carrier.RightHandActive))
+                {
+                    loadScaleSum += CarrierLoadScale(carrier, supportingCarrierCount, nearDelivery);
+                    if (carrier.State != null && carrier.State.HasCard(CoopGame.Network.CardEffect.SteadyHands)) steadyCount++;
+                }
+            LastLoadScale = loadScaleSum / supportingCarrierCount;
+            LastSteadyFraction = steadyCount / supportingCarrierCount;
+            handLoad *= LastLoadScale;
+            LastHandLoad = handLoad;
 
             // Big cargo held by one person: no weightless support and no levelling, so the far end
             // swings down and rests on the ground (drags) until a second carrier helps.
@@ -490,6 +534,10 @@ namespace CoopGame.CarrySystem
             // Apply damping once, so adding helpers does not multiply resistance.
             float dampFactor = Mathf.Max(2.5f, _rotationSpeed * 0.01f);
             _rigidbody.AddTorque(-_rigidbody.angularVelocity * dampFactor, ForceMode.Acceleration);
+            // STEADY HANDS: extra pitch/roll damping in proportion to the carriers holding the card; yaw (turning with
+            // the carrier) and all hand-spring terms are unchanged.
+            if (LastSteadyFraction > 0f && !soloDrag)
+                _rigidbody.AddTorque(-tiltAngularVelocity * (_steadyHandsExtraDamping * LastSteadyFraction), ForceMode.Acceleration);
 
             _rigidbody.linearVelocity = Vector3.ClampMagnitude(_rigidbody.linearVelocity, 12.0f);
         }
@@ -571,7 +619,7 @@ namespace CoopGame.CarrySystem
         }
 
         private const float InputStaleSeconds = .3f;
-        // Carry sprint is 8 m/s x 0.9 co-op x 1.15 Teamwork card = 8.3 m/s; reports above this are not plausible.
+        // Carry sprint is 8 m/s x 0.9 co-op x 1.15 Fast Carrier card = 8.3 m/s; reports above this are not plausible.
         private const float MaxReportedCarrierSpeed = 9f;
         private const float ReportedSpeedMargin = 1f;
         // PlayerMovement accelerates at 12 and decelerates at 16 m/s^2.
@@ -750,6 +798,7 @@ namespace CoopGame.CarrySystem
                 PlayerTransform = playerTransform,
                 Movement = playerMovement,
                 Carry = playerTransform.GetComponent<PlayerCarry>(),
+                State = playerTransform.GetComponent<CoopGame.Network.PlayerExpeditionState>(),
                 PlayerColliders = playerTransform.GetComponentsInChildren<Collider>(true),
                 PreviousPlayerPosition = playerTransform.position,
                 ReplicatedTransform = playerTransform.GetComponent<Unity.Netcode.Components.NetworkTransform>(),
@@ -872,16 +921,21 @@ namespace CoopGame.CarrySystem
         /// Detaches the carrier and applies launch velocity and angular tumbling impulse.
         /// Server-authoritative physics execution.
         /// </summary>
+        public const float BaseThrowLimit = 20f, LongThrowLimit = 25f;
         public virtual void ThrowObject(ulong clientId, Vector3 linearVelocity, Vector3 angularVelocity)
         {
             bool isNetworked = (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening);
             if (isNetworked && !IsServer) return;
 
+            // 20 m/s as before; a LONG THROW holder may launch up to 25 m/s (the RPC clamps at 25 as well).
+            float limit = BaseThrowLimit;
+            if (_activeCarriers.TryGetValue(clientId, out CarrierInfo thrower) && thrower.State != null &&
+                thrower.State.HasCard(CoopGame.Network.CardEffect.LongThrow)) limit = LongThrowLimit;
             DetachCarrier(clientId);
 
             if (IsSecured) return;
             _throwPending = true;
-            _throwVelocity = Vector3.ClampMagnitude(linearVelocity, 20f);
+            _throwVelocity = Vector3.ClampMagnitude(linearVelocity, limit);
             _throwAngularVelocity = Vector3.ClampMagnitude(angularVelocity, 12f);
         }
 

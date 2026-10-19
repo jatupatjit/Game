@@ -100,6 +100,9 @@ namespace CoopGame.CarrySystem
         private CapsuleCollider _bodyCapsule;
         private PlayerCameraController _cameraController;
         private PlayerStamina _stamina;
+        private CoopGame.Network.PlayerExpeditionState _expedition;
+        /// <summary>Launch speed (m/s, before body momentum) of the last throw; for tuning/verification.</summary>
+        public float LastThrowSpeed { get; private set; }
         private Collider[] _playerColliders;
         private Camera _cachedCamera;
         private Wallclimb _wallClimb;
@@ -343,6 +346,7 @@ namespace CoopGame.CarrySystem
             _bodyCapsule = GetComponent<CapsuleCollider>();
             _cameraController = GetComponent<PlayerCameraController>();
             _stamina = GetComponent<PlayerStamina>();
+            _expedition = GetComponent<CoopGame.Network.PlayerExpeditionState>();
             if (_stamina == null)
             {
                 _stamina = gameObject.AddComponent<PlayerStamina>();
@@ -561,7 +565,7 @@ namespace CoopGame.CarrySystem
             _throwReleaseCooldown = Mathf.Max(0f, _throwReleaseCooldown - Time.deltaTime);
             if (!_inputReader.IsGrabbing) _requireGrabRelease = false;
             _canAttemptGrab = !_requireGrabRelease && _throwReleaseCooldown <= 0f && !_grabPending && !_releasePending;
-            // Left click picks up with both hands; right click (or the place key) sets it down.
+            // Left click picks up with both hands; right click sets it down.
             if (!IsCarrying && !_grabPending && _inputReader.GrabLeftPressed) _pendingDualToggle = true;
             if (IsCarrying && _currentCarryable != null)
             {
@@ -570,10 +574,10 @@ namespace CoopGame.CarrySystem
                     float speed = _currentCarryable.GetSpeedMultiplier();
                     if (_isChargingThrow) speed *= .75f;
                     if (_stamina != null && _stamina.IsExhausted) speed *= .5f;
-                    if (_currentCarryable.CurrentCarrierCount >= 2 && TryGetComponent<CoopGame.Network.PlayerExpeditionState>(out var state) && state.Card.Value == 3) speed *= 1.15f;
+                    if (_expedition != null) speed *= _expedition.CardMagnitude(CoopGame.Network.CardEffect.FastCarrier);
                     _movement.SpeedMultiplier = speed;
                 }
-                if ((_inputReader.PlacePressed || _inputReader.GrabRightPressed) && !_releasePending)
+                if (_inputReader.GrabRightPressed && !_releasePending)
                 {
                     _placeIntent = true;
                     _isChargingThrow = false;
@@ -1888,7 +1892,9 @@ namespace CoopGame.CarrySystem
 
             // Ballistic trajectory: forward + upward arc
             Vector3 throwDir = (camForward + Vector3.up * _throwUpwardArc).normalized;
-            float throwSpeed = Mathf.Lerp(_minThrowSpeed, _maxThrowSpeed, charge);
+            float throwSpeed = Mathf.Lerp(_minThrowSpeed, _maxThrowSpeed, charge) *
+                (_expedition != null ? _expedition.CardMagnitude(CoopGame.Network.CardEffect.LongThrow) : 1f);
+            LastThrowSpeed = throwSpeed;
             Vector3 playerVel = (_movement != null) ? _movement.Velocity : Vector3.zero;
             Vector3 finalVelocity = throwDir * throwSpeed + playerVel * _momentumTransfer;
 

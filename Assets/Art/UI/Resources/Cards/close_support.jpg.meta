@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: ead2ce71682c7d949ab11f180fadb5d9
+guid: f22bd157dcbe40e4d9153e22ffe87733
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 7773694509206645277
-    second: CardEndurance_0
+      213: -6087885699572778635
+    second: close_support_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -48,14 +48,14 @@ TextureImporter:
   compressionQuality: 50
   spriteMode: 1
   spriteExtrude: 1
-  spriteMeshType: 1
+  spriteMeshType: 0
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: 100
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
-  alphaIsTransparency: 1
+  alphaIsTransparency: 0
   spriteTessellationMethod: 0
   spriteTessellationDetail: -1
   spriteGeometrySubdivision: -1
@@ -74,10 +74,10 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 1024
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 1
+    textureCompression: 2
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -102,13 +102,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: CardEndurance_0
+      name: close_support_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2480
-        height: 3508
+        width: 640
+        height: 904
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -117,8 +117,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: d1aaaa528f5b1eb60800000000000000
-      internalID: 7773694509206645277
+      spriteID: 579b8c3163c738ba0800000000000000
+      internalID: -6087885699572778635
       vertices: []
       indices: 
       edges: []

@@ -442,7 +442,6 @@ namespace CoopGame.CarrySystem
             if (Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
 
             if (HasPadding) { damageAmount = Mathf.CeilToInt(damageAmount * .5f); _padding.Value = false; }
-            if (HasGuardCard()) damageAmount = Mathf.CeilToInt(damageAmount * .5f);
             damageAmount = Mathf.Min(damageAmount, CurrentHP.Value);
             int previousHP = CurrentHP.Value;
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);

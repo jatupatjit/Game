@@ -33,7 +33,6 @@ namespace CoopGame.Player
         private InputAction _grabLeftAction;
         private InputAction _grabRightAction;
         private InputAction _throwAction;
-        private InputAction _placeAction;
 
         // Exposed properties for movement & camera controllers
         public Vector2 MoveInput { get; private set; }
@@ -50,7 +49,6 @@ namespace CoopGame.Player
 
         // Throwing controls (Hold-to-charge, release-to-throw)
         public bool ThrowHeld { get; private set; }
-        public bool PlacePressed { get; private set; }
 
         /// <summary>
         /// True if ANY grab input is currently pressed (Left Hand, Right Hand, or 'E').
@@ -89,7 +87,6 @@ namespace CoopGame.Player
 
         private void Update()
         {
-            PlacePressed = false;
             GrabLeftPressed = false;
             GrabRightPressed = false;
             InteractPressed = false;
@@ -155,7 +152,6 @@ namespace CoopGame.Player
                 ThrowHeld = !pointerOverUI && _throwAction.IsPressed();
             }
 
-            PlacePressed = !pointerOverUI && _placeAction != null && _placeAction.WasPressedThisFrame();
 
             // Detect transition between Grabbing and Released
             bool currentlyGrabbing = IsGrabbing;
@@ -261,7 +257,6 @@ namespace CoopGame.Player
                 _throwAction.AddBinding("<Gamepad>/rightShoulder");
             }
 
-            _placeAction = new InputAction("Place", InputActionType.Button, "<Keyboard>/f");
 
             _jumpAction.performed += OnJumpTriggered;
             _interactAction.performed += OnInteractTriggered;
@@ -307,7 +302,6 @@ namespace CoopGame.Player
             _grabLeftAction?.Enable();
             _grabRightAction?.Enable();
             _throwAction?.Enable();
-            _placeAction?.Enable();
         }
 
         public void DisableInput()
@@ -321,8 +315,6 @@ namespace CoopGame.Player
             _grabLeftAction?.Disable();
             _grabRightAction?.Disable();
             _throwAction?.Disable();
-            _placeAction?.Disable();
-            PlacePressed = false;
 
             MoveInput = Vector2.zero;
             LookInput = Vector2.zero;
@@ -341,7 +333,6 @@ namespace CoopGame.Player
 
         private void OnDestroy()
         {
-            _placeAction?.Dispose();
             if (_jumpAction != null) _jumpAction.performed -= OnJumpTriggered;
             if (_interactAction != null) _interactAction.performed -= OnInteractTriggered;
             if (_throwAction != null)

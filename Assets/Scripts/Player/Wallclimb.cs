@@ -99,6 +99,7 @@ public class Wallclimb : NetworkBehaviour
     private PlayerInputReader _inputReader;
     private PlayerCameraController _cameraController;
     private PlayerStamina _stamina;
+    private CoopGame.Network.PlayerExpeditionState _expedition;
     private PlayerCarry _playerCarry;
     private ProceduralPlayerArms _procArms;
     private Camera _cachedCamera;
@@ -193,6 +194,7 @@ public class Wallclimb : NetworkBehaviour
         _inputReader = GetComponent<PlayerInputReader>();
         _cameraController = GetComponent<PlayerCameraController>();
         _stamina = GetComponent<PlayerStamina>();
+        _expedition = GetComponent<CoopGame.Network.PlayerExpeditionState>();
         _playerCarry = GetComponent<PlayerCarry>();
         _procArms = GetComponent<ProceduralPlayerArms>();
 
@@ -695,8 +697,10 @@ public class Wallclimb : NetworkBehaviour
 
         // Smooth displacement towards target body position
         Vector3 toTarget = targetBodyPos - transform.position;
-        Vector3 moveStep = toTarget * (_bodyPullSpeed * deltaTime);
-        moveStep = Vector3.ClampMagnitude(moveStep, 6.0f * deltaTime);
+        // CLIMBER card scales both the pull gain and its speed clamp.
+        float climbScale = _expedition != null ? _expedition.CardMagnitude(CoopGame.Network.CardEffect.Climber) : 1f;
+        Vector3 moveStep = toTarget * (_bodyPullSpeed * climbScale * deltaTime);
+        moveStep = Vector3.ClampMagnitude(moveStep, 6.0f * climbScale * deltaTime);
 
         if (_characterController != null && _characterController.enabled)
         {
@@ -755,7 +759,7 @@ public class Wallclimb : NetworkBehaviour
 
         if (_stamina != null)
         {
-            _stamina.ConsumeStamina(_jumpBoostStaminaCost);
+            _stamina.ConsumeActionStamina(_jumpBoostStaminaCost);
         }
 
         OnWallJumpBoost?.Invoke();

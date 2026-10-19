@@ -95,14 +95,10 @@ public static class UITheme
     /// <summary>Round face icon matching the player's body colour (same rule as NetworkPlayer, so all peers agree).</summary>
     public static Sprite FaceForClient(ulong ownerClientId) => Kit(PlayerFaces[(int)(ownerClientId % (ulong)PlayerFaces.Length)]);
 
-    /// <summary>Card icon: 1 ENDURANCE = strength, 2 CARGO GUARD = cube, 3 TEAMWORK = carrier; 0 = unknown card back.</summary>
-    public static Sprite CardIcon(byte card) =>
-        card == 1 ? IconStrength : card == 2 ? IconCube : card == 3 ? IconCarrier : Kit("CardBackYellow");
+    /// <summary>Card icon: the illustration area of the card's art; 0 (no card yet) = a plain card back.</summary>
+    public static Sprite CardIcon(byte card) => CoopGame.Network.CardCatalog.Icon(card) ?? Kit("CardBackYellow");
 
-    /// <summary>Card-back colour per card (red / blue / yellow), used for plain card faces.</summary>
-    public static Color CardColor(byte card) => card == 1 ? Hex("#FF4854") : card == 2 ? Hex("#1AB8FF") : Hex("#F3B600");
-
-    /// <summary>Card back art per card (placeholder illustration until real card art exists).</summary>
+    /// <summary>Decorative card backs for the card-select banner (1 red, 2 blue, otherwise yellow).</summary>
     public static Sprite CardBack(byte card) =>
         card == 1 ? Kit("CardBackRed") : card == 2 ? Kit("CardBackBlue") : Kit("CardBackYellow");
 

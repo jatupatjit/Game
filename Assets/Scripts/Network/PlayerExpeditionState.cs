@@ -13,6 +13,9 @@ namespace CoopGame.Network
     {
         public readonly NetworkVariable<int> Coins = new(0);
         public readonly NetworkVariable<byte> Card = new(0);
+        /// <summary>The three card ids the server offered this player (CardCatalog packing). Only the owner (and the
+        /// server) can read it; SelectCardRpc accepts nothing else.</summary>
+        public readonly NetworkVariable<uint> Offer = new(0, NetworkVariableReadPermission.Owner, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<byte> Slot1 = new(0);
         public readonly NetworkVariable<byte> Slot2 = new(0);
         public readonly NetworkVariable<byte> Slot3 = new(0);
@@ -28,24 +31,37 @@ namespace CoopGame.Network
         private PlayerCarry _carry;
         private bool _restoreStamina;
         private float _nextRequestAt;
+        private System.Random _drawRng;
+        private uint _stageOffer;
+        [Tooltip("CLOSE SUPPORT: a holder within this distance (m) of a carrying player slows that player's stamina drain.")]
+        [SerializeField, Min(0f)] private float _closeSupportRadius = CardCatalog.CloseSupportRadius;
 
-        public static string CardName(byte id) => id switch
+        private static readonly System.Collections.Generic.List<PlayerExpeditionState> All = new();
+
+        /// <summary>Effect magnitude of this player's card for <paramref name="effect"/>, or 1 (neutral) without it.</summary>
+        public float CardMagnitude(CardEffect effect)
         {
-            1 => "ENDURANCE", 2 => "CARGO GUARD", 3 => "TEAMWORK", _ => "CHOOSE A CARD"
-        };
+            CardDef def = CardCatalog.Get(Card.Value);
+            return def.Effect == effect ? def.Magnitude : 1f;
+        }
+        public bool HasCard(CardEffect effect) => CardCatalog.Get(Card.Value).Effect == effect;
+
+        /// <summary>True when another player holding CLOSE SUPPORT is within the radius of this player.</summary>
+        public bool IsCloseSupportNear()
+        {
+            for (int i = 0; i < All.Count; i++)
+            {
+                var other = All[i];
+                if (other == null || other == this || !other.IsSpawned || !other.HasCard(CardEffect.CloseSupport)) continue;
+                if ((other.transform.position - transform.position).sqrMagnitude <= _closeSupportRadius * _closeSupportRadius) return true;
+            }
+            return false;
+        }
         public static string ItemName(byte id) => id switch
         {
             1 => "Stamina Elixir", 2 => "Cargo Padding", _ => "Empty"
         };
         public static int ItemPrice(byte id) => id == 1 ? 40 : id == 2 ? 60 : int.MaxValue;
-        /// <summary>Ability text per card (same wording as the card-select buttons).</summary>
-        public static string CardDescription(byte id) => id switch
-        {
-            1 => "ยกคนเดียวใช้ Stamina ลดลง 40%",
-            2 => "ลังที่กำลังช่วยยก รับความเสียหายลด 50%",
-            3 => "เมื่อยกด้วยกัน 2 คนขึ้นไป เดินขณะยกเร็วขึ้น 15%",
-            _ => "ยังไม่ได้เลือกการ์ด"
-        };
         public byte GetSlot(int index) => index == 0 ? Slot1.Value : index == 1 ? Slot2.Value : Slot3.Value;
         private NetworkVariable<byte> Slot(int index) => index == 0 ? Slot1 : index == 1 ? Slot2 : Slot3;
 
@@ -54,6 +70,7 @@ namespace CoopGame.Network
             _stamina = GetComponent<PlayerStamina>();
             _carry = GetComponent<PlayerCarry>();
             SceneManager.sceneLoaded += OnSceneLoaded;
+            if (!All.Contains(this)) All.Add(this);
             if (IsOwner)
             {
                 var lobby = SteamLobbyManager.Instance;
@@ -74,6 +91,7 @@ namespace CoopGame.Network
         public override void OnNetworkDespawn()
         {
             SceneManager.sceneLoaded -= OnSceneLoaded;
+            All.Remove(this);
             DeliveryPoint.OnDeliverySuccessGlobal -= AwardDelivery;
         }
 
@@ -89,15 +107,26 @@ namespace CoopGame.Network
                 // A retry restores the stage-entry wallet and inventory; rewards cannot be farmed.
                 Coins.Value = _stageStartCoins;
                 Slot1.Value = _start1; Slot2.Value = _start2; Slot3.Value = _start3;
+                Offer.Value = _stageOffer; // retry of the same stage keeps the same three cards
             }
             else
             {
                 _stageScene = sceneName;
                 _stageStartCoins = Coins.Value;
                 _start1 = Slot1.Value; _start2 = Slot2.Value; _start3 = Slot3.Value;
+                RerollOffer(); // only a new stage draws new cards
+                _stageOffer = Offer.Value;
             }
             Card.Value = 0;
             _rewarded = false;
+        }
+
+        /// <summary>Server only: draws a fresh set of three distinct cards for this player. Called for a new stage only (a retry reuses the stored offer).</summary>
+        public void RerollOffer()
+        {
+            if (!IsServer) return;
+            _drawRng ??= new System.Random(unchecked(System.Environment.TickCount * 31 + (int)OwnerClientId * 7919));
+            Offer.Value = CardCatalog.Draw(_drawRng);
         }
 
         private void AwardDelivery(DeliveryPoint.DeliveryResult result)
@@ -110,7 +139,7 @@ namespace CoopGame.Network
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         public void SelectCardRpc(byte id)
         {
-            if (Card.Value != 0 || id < 1 || id > 3 || _rewarded || MissionFailUI.IsVisible) return;
+            if (Card.Value != 0 || !CardCatalog.IsOffered(Offer.Value, id) || _rewarded || MissionFailUI.IsVisible) return;
             Card.Value = id;
         }
 
@@ -160,7 +189,15 @@ namespace CoopGame.Network
                 _restoreStamina = false;
                 _stamina?.ResetStamina();
             }
-            if (_stamina != null) _stamina.CarryDrainMultiplier = Card.Value == 1 ? .6f : 1f;
+            if (_stamina != null)
+            {
+                // Card effects on stamina (owner-simulated, like the stamina itself); PlayerStamina clamps the drain to 0.1..1.
+                float drain = CardMagnitude(CardEffect.StrongArms) * CardMagnitude(CardEffect.Endurance);
+                if (_carry != null && _carry.IsCarrying && IsCloseSupportNear()) drain *= CardCatalog.CloseSupportDrain;
+                _stamina.CarryDrainMultiplier = drain;
+                _stamina.RestRegenMultiplier = CardMagnitude(CardEffect.QuickRecovery);
+                _stamina.ActionCostMultiplier = CardMagnitude(CardEffect.LightStep);
+            }
         }
     }
 }

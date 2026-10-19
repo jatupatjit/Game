@@ -164,8 +164,12 @@ namespace CoopGame.CarrySystem
             }
         }
 
+        /// <summary>Enabled zones (LAST MILE distance checks).</summary>
+        public static readonly List<DeliveryZone> Active = new List<DeliveryZone>();
+
         private void OnEnable()
         {
+            if (!Active.Contains(this)) Active.Add(this);
             EnsureTriggerCollider();
             EnsureVisuals();
             UpdateColliderAndVisualScale();
@@ -174,6 +178,7 @@ namespace CoopGame.CarrySystem
 
         private void OnDisable()
         {
+            Active.Remove(this);
             _activeCollidersInZone.Clear();
             _isTargetInside = false;
             _pendingFreeze = null;

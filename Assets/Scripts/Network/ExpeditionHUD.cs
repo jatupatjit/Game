@@ -35,7 +35,9 @@ namespace CoopGame.Network
         private readonly Image[] _cardFrames = new Image[3];
         private readonly UIButtonHover[] _cardHover = new UIButtonHover[3];
         private Button _confirmCard;
-        private byte _pendingCard;
+        private int _pendingSlot = -1;
+        private readonly Image[] _cardArt = new Image[3];
+        private uint _shownOffer;
         private Text _carriersText, _coinText;
         private readonly Text[] _slotNames = new Text[3];
         private GameObject _detailChip, _inventoryRoot, _hintBar;
@@ -73,7 +75,8 @@ namespace CoopGame.Network
                 MissionFailUI.EnsureInstance().Show();
                 return;
             }
-            bool selecting = _player.Card.Value == 0 && _mission.Phase.Value < 2;
+            uint offer = _player.Offer.Value;
+            bool selecting = _player.Card.Value == 0 && _mission.Phase.Value < 2 && CardCatalog.HasOffer(offer);
             bool summary = _mission.Phase.Value == 2 && !_summaryDismissed;
             bool modal = (selecting || summary) && !PauseMenu.IsPaused;
             ShowModal(modal);
@@ -90,7 +93,7 @@ namespace CoopGame.Network
                     keyboard.digit2Key.wasPressedThisFrame ? 1 : keyboard.digit3Key.wasPressedThisFrame ? 2 : -1;
                 if (slot >= 0)
                 {
-                    if (selecting) _player.SelectCardRpc((byte)(slot + 1));
+                    if (selecting) _player.SelectCardRpc(CardCatalog.OfferAt(offer, slot));
                     else if (!summary) _player.UseItemRpc(slot);
                 }
                 if (summary && keyboard.enterKey.wasPressedThisFrame) Dismiss();
@@ -171,20 +174,28 @@ namespace CoopGame.Network
             byte ownCard = _player.Card.Value;
             Sprite icon = UITheme.CardIcon(ownCard);
             if (_ownCardIcon.sprite != icon) _ownCardIcon.sprite = icon;
-            _ownCardTip.Text = PlayerExpeditionState.CardName(ownCard) + "\n" + PlayerExpeditionState.CardDescription(ownCard);
+            _ownCardTip.Text = CardCatalog.Tooltip(ownCard);
 
-            if (!selecting) _pendingCard = 0;
+            uint offer = _player.Offer.Value;
+            if (offer != _shownOffer)
+            {
+                // A new draw: show the three full card images and clear any previous preview.
+                _shownOffer = offer;
+                _pendingSlot = -1;
+                for (int i = 0; i < _cardArt.Length; i++) _cardArt[i].sprite = CardCatalog.Art(CardCatalog.OfferAt(offer, i));
+            }
+            if (!selecting) _pendingSlot = -1;
             for (int i = 0; i < _cardFrames.Length; i++)
             {
-                bool selected = selecting && _pendingCard == i + 1;
+                bool selected = selecting && _pendingSlot == i;
                 if (_cardFrames[i] != null) _cardFrames[i].enabled = selected;
-                _cardHover[i]?.SetBaseScale(selected ? 1.07f : 1f);
+                _cardHover[i]?.SetBaseScale(selected ? 1.05f : 1f);
             }
-            if (_confirmCard != null) _confirmCard.interactable = selecting && _pendingCard != 0;
+            if (_confirmCard != null) _confirmCard.interactable = selecting && _pendingSlot >= 0;
             if (selecting)
             {
                 _title.text = "เลือกการ์ดสำหรับด่านนี้";
-                _message.text = "เลือก 1 ใบด้วยปุ่ม 1–3 หรือคลิก • มีผลเฉพาะการขนลัง";
+                _message.text = "สุ่มมา 3 ใบ เลือก 1 ใบด้วยปุ่ม 1–3 หรือคลิกแล้วกดยืนยัน";
             }
             if (summary)
             {
@@ -245,9 +256,9 @@ namespace CoopGame.Network
 
         private void Build()
         {
-            // Mission panel (mockup 3, top-right): compact red panel, mission title, cube + large HP,
+            // Mission panel (mockup 3, top-right): dark panel matching the other HUD panels, mission title, cube + large HP,
             // small carrier count on the right.
-            var objective = Box("Objective", transform, new Vector2(1f, 1f), new Vector2(-300, -78), new Vector2(560, 116), UITheme.MissionRed, UITheme.SmallSprite);
+            var objective = Box("Objective", transform, new Vector2(1f, 1f), new Vector2(-300, -78), new Vector2(560, 116), UITheme.SolidPanel, UITheme.SmallSprite);
             objective.GetComponent<Image>().raycastTarget = false;
             _objective = Label(objective.transform, "Goal", "นำลังไม้ไปส่งที่ปราสาท", 26, new Vector2(0, 26), new Vector2(516, 40));
             UITheme.SetWeight(_objective, UITheme.FontSemiBold);
@@ -312,9 +323,8 @@ namespace CoopGame.Network
             var hintFit = _hintBar.AddComponent<ContentSizeFitter>();
             hintFit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             _hintBar.AddComponent<CanvasGroup>().alpha = 0.9f;
-            Hint("คลิก", "จับ/ปล่อย", true);
-            Hint("E", "จับสองมือ");
-            Hint("F", "วาง");
+            Hint("คลิกซ้าย", "จับ", true);
+            Hint("คลิกขวา", "วาง");
             Hint("Q", "โยน");
 
             // Own card icon (mockup 3, bottom-right) with the ability tooltip.
@@ -330,25 +340,26 @@ namespace CoopGame.Network
             _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1920, 1080), UITheme.Overlay);
             var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1100, 700), Color.clear);
             panel.GetComponent<Image>().raycastTarget = false;
-            var banner = Box("Banner", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 290), new Vector2(620, 92), UITheme.MissionRed, UITheme.SmallSprite);
-            var leftBack = Box("BannerCardLeft", panel.transform, new Vector2(.5f, .5f), new Vector2(-370, 290), new Vector2(58, 88), Color.white);
+            var banner = Box("Banner", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 330), new Vector2(620, 92), UITheme.MissionRed, UITheme.SmallSprite);
+            var leftBack = Box("BannerCardLeft", panel.transform, new Vector2(.5f, .5f), new Vector2(-340, 330), new Vector2(58, 88), Color.white);
             UITheme.StyleIcon(leftBack.GetComponent<Image>(), UITheme.CardBack(1));
             leftBack.transform.localRotation = Quaternion.Euler(0, 0, 10f);
-            var rightBack = Box("BannerCardRight", panel.transform, new Vector2(.5f, .5f), new Vector2(370, 290), new Vector2(58, 88), Color.white);
+            var rightBack = Box("BannerCardRight", panel.transform, new Vector2(.5f, .5f), new Vector2(340, 330), new Vector2(58, 88), Color.white);
             UITheme.StyleIcon(rightBack.GetComponent<Image>(), UITheme.CardBack(2));
             rightBack.transform.localRotation = Quaternion.Euler(0, 0, -10f);
             _title = Label(banner.transform, "Title", "", 40, Vector2.zero, new Vector2(600, 80), TextAnchor.MiddleCenter);
             UITheme.SetWeight(_title, UITheme.FontBold);
-            var strip = Box("MessageStrip", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 206), new Vector2(860, 56), UITheme.SolidPanel, UITheme.SmallSprite);
+            var strip = Box("MessageStrip", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 255), new Vector2(760, 56), UITheme.SolidPanel, UITheme.SmallSprite);
             strip.GetComponent<Image>().raycastTarget = false;
-            _message = Label(strip.transform, "Message", "", 22, Vector2.zero, new Vector2(840, 52), TextAnchor.MiddleCenter);
+            _message = Label(strip.transform, "Message", "", 22, Vector2.zero, new Vector2(740, 52), TextAnchor.MiddleCenter);
 
             _cards = new GameObject("Cards", typeof(RectTransform)); _cards.transform.SetParent(panel.transform, false);
-            for (byte card = 1; card <= 3; card++)
-                CardButton(_cards.transform, card, new Vector2((card - 2) * 330, -30));
-            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -302), new Vector2(320, 70), ConfirmCard, UIButtonStyle.Primary);
+            for (int slot = 0; slot < 3; slot++)
+                CardButton(_cards.transform, slot, new Vector2((slot - 1) * CardSpacing, -86));
+            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -430), new Vector2(320, 70), ConfirmCard, UIButtonStyle.Primary);
 
             _shop = new GameObject("Shop", typeof(RectTransform)); _shop.transform.SetParent(panel.transform, false);
+            ((RectTransform)_shop.transform).anchoredPosition = new Vector2(0, 50); // shop sits under the raised banner
             var shopPanel = Box("ShopPanel", _shop.transform, new Vector2(.5f, .5f), new Vector2(0, -40), new Vector2(1060, 420), UITheme.Panel, UITheme.PanelSprite);
             shopPanel.GetComponent<Image>().raycastTarget = false;
             _shopWallet = Label(_shop.transform, "Wallet", "", 22, new Vector2(0, 110), new Vector2(1020, 50), TextAnchor.MiddleCenter, UITextRole.Secondary);
@@ -384,57 +395,35 @@ namespace CoopGame.Network
             element.minWidth = text.preferredWidth + 10f;
         }
 
-        private static Sprite CardArt(byte card)
-        {
-            string asset = card switch
-            {
-                1 => "CardEndurance",
-                2 => "CardCargoGuard",
-                3 => "CardTeamwork",
-                _ => null
-            };
-            return string.IsNullOrEmpty(asset) ? null : Resources.Load<Sprite>("Cards/" + asset);
-        }
+        // Card art is 640:904. 340x480 reference px is 480 px tall at 1080p; the canvas scaler shrinks it to ~320 px at 720p.
+        private const float CardWidth = 340f, CardHeight = 480f, CardSpacing = 390f;
 
-        /// <summary>Tall illustrated card with current gameplay name/effect over the supplied art,
-        /// neon selection frame and a small lift when selected. Click previews; confirm applies it.</summary>
-        private void CardButton(Transform parent, byte card, Vector2 position)
+        /// <summary>One offered card slot: the full card image (name and effect are baked into the art) with a neon
+        /// selection frame and a small lift when selected. Click previews; confirm (or keys 1-3) applies it.</summary>
+        private void CardButton(Transform parent, int slot, Vector2 position)
         {
-            var root = Box($"Card{card}", parent, new Vector2(.5f, .5f), position, new Vector2(290, 410), UITheme.PrimaryLight, UITheme.SmallSprite);
+            var root = Box($"Card{slot + 1}", parent, new Vector2(.5f, .5f), position, new Vector2(CardWidth, CardHeight), Color.clear);
             var button = root.AddComponent<Button>();
             button.targetGraphic = root.GetComponent<Image>();
-            ColorBlock colors = button.colors;
-            colors.normalColor = colors.selectedColor = Color.white;
-            colors.highlightedColor = UITheme.Hover(Color.white);
-            colors.pressedColor = UITheme.Pressed(Color.white);
-            button.colors = colors;
-            _cardHover[card - 1] = root.AddComponent<UIButtonHover>();
-            button.onClick.AddListener(() => { _pendingCard = card; _refreshAt = 0f; });
+            button.transition = Selectable.Transition.None;
+            _cardHover[slot] = root.AddComponent<UIButtonHover>();
+            button.onClick.AddListener(() => { _pendingSlot = slot; _refreshAt = 0f; });
 
-            var art = Box("Illustration", root.transform, new Vector2(.5f, .5f), new Vector2(0, 10), new Vector2(270, 382), Color.white);
-            var artImage = art.GetComponent<Image>();
-            artImage.sprite = CardArt(card);
-            artImage.preserveAspect = true;
-            artImage.raycastTarget = false;
+            var art = Box("Illustration", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(CardWidth, CardHeight), Color.white);
+            _cardArt[slot] = art.GetComponent<Image>();
+            _cardArt[slot].preserveAspect = true;
+            _cardArt[slot].raycastTarget = false;
 
-            var stripBlocker = Box("StripBlocker", root.transform, new Vector2(.5f, .5f), new Vector2(0, -118), new Vector2(264, 154), UITheme.Beige);
-            stripBlocker.GetComponent<Image>().raycastTarget = false;
-            var strip = Box("Strip", root.transform, new Vector2(.5f, .5f), new Vector2(0, -118), new Vector2(270, 160), Color.white, UITheme.BeigeSprite);
-            strip.GetComponent<Image>().raycastTarget = false;
-            UITheme.SetWeight(Label(strip.transform, "Name", $"[{card}] {PlayerExpeditionState.CardName(card)}", 21, new Vector2(0, 46), new Vector2(252, 32), TextAnchor.MiddleCenter, UITextRole.OnLight), UITheme.FontSemiBold);
-            Label(strip.transform, "Ability", PlayerExpeditionState.CardDescription(card), 17, new Vector2(0, -16), new Vector2(248, 82), TextAnchor.MiddleCenter, UITextRole.OnLight)
-                .horizontalOverflow = HorizontalWrapMode.Wrap;
-
-            var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(324, 444), Color.white);
-            _cardFrames[card - 1] = frame.GetComponent<Image>();
-            UITheme.StyleIcon(_cardFrames[card - 1], UITheme.CardFrameSprite);
-            _cardFrames[card - 1].preserveAspect = false;
-            _cardFrames[card - 1].enabled = false;
+            var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(CardWidth * 1.2f, CardHeight * 1.22f), Color.white);
+            _cardFrames[slot] = frame.GetComponent<Image>();
+            UITheme.StyleIcon(_cardFrames[slot], UITheme.CardFrameSprite);
+            _cardFrames[slot].preserveAspect = false;
+            _cardFrames[slot].enabled = false;
         }
 
         private void ConfirmCard()
         {
-            if (_pendingCard != 0) _player?.SelectCardRpc(_pendingCard);
+            if (_pendingSlot >= 0) _player?.SelectCardRpc(CardCatalog.OfferAt(_player.Offer.Value, _pendingSlot));
         }
     }
 }

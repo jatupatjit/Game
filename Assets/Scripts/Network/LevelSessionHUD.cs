@@ -156,8 +156,7 @@ namespace CoopGame.Network
                 row.Name.text = name;
                 UITheme.StyleIcon(row.Card, UITheme.CardIcon(card));
                 row.Card.raycastTarget = true;
-                row.Tooltip.Text = card == 0 ? PlayerExpeditionState.CardDescription(0) :
-                    PlayerExpeditionState.CardName(card) + "\n" + PlayerExpeditionState.CardDescription(card);
+                row.Tooltip.Text = CardCatalog.Tooltip(card);
             }
             for (int i = players.Count; i < _rowPool.Count; i++)
                 if (_rowPool[i].Root.activeSelf) _rowPool[i].Root.SetActive(false);

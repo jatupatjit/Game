@@ -62,6 +62,10 @@ namespace CoopGame.Player
         // Public properties
         public float MaxStamina => _maxStamina;
         public float CarryDrainMultiplier { get; set; } = 1f;
+        /// <summary>Regen multiplier for the idle (not carrying) recovery path only; set by the QUICK RECOVERY card.</summary>
+        public float RestRegenMultiplier { get; set; } = 1f;
+        /// <summary>Cost multiplier for sprint and wall-jump stamina (ConsumeActionStamina); set by the LIGHT STEP card.</summary>
+        public float ActionCostMultiplier { get; set; } = 1f;
         public float CurrentStamina => _currentStamina;
         public float NormalizedStamina => Mathf.Clamp01(_currentStamina / _maxStamina);
         public bool IsExhausted => _isExhausted;
@@ -80,7 +84,7 @@ namespace CoopGame.Player
                 if (Time.time >= _lastExertionTime + _recoveryDelay && _currentStamina < _maxStamina)
                 {
                     float prev = _currentStamina;
-                    _currentStamina = Mathf.Min(_maxStamina, _currentStamina + _recoveryRate * Time.deltaTime);
+                    _currentStamina = Mathf.Min(_maxStamina, _currentStamina + _recoveryRate * Mathf.Max(0f, RestRegenMultiplier) * Time.deltaTime);
 
                     if (!Mathf.Approximately(prev, _currentStamina))
                     {
@@ -162,6 +166,9 @@ namespace CoopGame.Player
             ApplyDrain(amount);
             return !_isExhausted;
         }
+
+        /// <summary>Sprint / wall-jump cost, scaled by ActionCostMultiplier (throw and climb-hang costs are not).</summary>
+        public bool ConsumeActionStamina(float amount) => ConsumeStamina(amount * Mathf.Max(0f, ActionCostMultiplier));
 
         private void ApplyDrain(float amount)
         {
