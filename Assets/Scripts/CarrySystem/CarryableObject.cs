@@ -851,9 +851,39 @@ namespace CoopGame.CarrySystem
         // cause an immediate depenetration shove. Restore after they separate.
         internal static bool CanRestoreCarryCollision(Collider player, Collider cargo)
         {
-            return player == null || cargo == null || !player.enabled || !cargo.enabled ||
+            if (player == null || cargo == null || !player.enabled || !cargo.enabled ||
                 !player.gameObject.activeInHierarchy || !cargo.gameObject.activeInHierarchy ||
-                !player.bounds.Intersects(cargo.bounds);
+                !player.bounds.Intersects(cargo.bounds)) return true;
+            // Axis-aligned bounds of a rotated crate overlap the body long before the shapes do. Deferring on
+            // bounds alone leaves the pair ignored while the player stands or pushes against the placed crate,
+            // so they walk through it. Only defer while the shapes really overlap.
+            return !BodyOverlapsCargo(player, cargo);
+        }
+
+        private static readonly Collider[] _overlapBuffer = new Collider[64];
+
+        private static bool BodyOverlapsCargo(Collider player, Collider cargo)
+        {
+            if (player is CharacterController controller)
+            {
+                Transform t = controller.transform;
+                Vector3 scale = t.lossyScale;
+                float radius = Mathf.Max(.01f, controller.radius * Mathf.Max(scale.x, scale.z) - .02f);
+                float halfSegment = Mathf.Max(0f, controller.height * .5f * scale.y - radius);
+                Vector3 centre = t.TransformPoint(controller.center);
+                int hits = Physics.OverlapCapsuleNonAlloc(centre + Vector3.up * halfSegment, centre - Vector3.up * halfSegment,
+                    radius, _overlapBuffer, ~0, QueryTriggerInteraction.Ignore);
+                if (hits >= _overlapBuffer.Length) return true; // crowded: stay on the safe side
+                for (int i = 0; i < hits; i++) if (_overlapBuffer[i] == cargo) return true;
+                return false;
+            }
+            bool convexShape = player is BoxCollider || player is SphereCollider || player is CapsuleCollider ||
+                               (player is MeshCollider playerMesh && playerMesh.convex);
+            bool cargoShape = cargo is BoxCollider || cargo is SphereCollider || cargo is CapsuleCollider ||
+                              (cargo is MeshCollider cargoMesh && cargoMesh.convex);
+            if (!convexShape || !cargoShape) return true; // cannot test the shapes, keep the old safe behaviour
+            return Physics.ComputePenetration(player, player.transform.position, player.transform.rotation,
+                cargo, cargo.transform.position, cargo.transform.rotation, out _, out _);
         }
 
         /// <summary>
