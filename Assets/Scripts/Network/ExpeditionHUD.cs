@@ -41,10 +41,20 @@ namespace CoopGame.Network
         private Text _carriersText, _coinText;
         private readonly Text[] _slotNames = new Text[3];
         private GameObject _detailChip, _inventoryRoot, _hintBar;
+        // Run timer (counts up), side mission line, nearest checkpoint line. Only present in levels with a LevelRunState.
+        private LevelRunState _run;
+        private CheckpointManager _checkpoints;
+        private GameObject _timerChip;
+        private Text _timerText, _sideText, _padText;
+        private int _shownSecond = -1, _shownSide = -1, _shownPadDistance = -1, _shownPad = -2, _noticeSeq;
+        private float _noticeUntil;
+        private LevelNotice _notice;
 
         private void Awake()
         {
             _mission = FindAnyObjectByType<LevelMission>();
+            _run = FindAnyObjectByType<LevelRunState>();
+            _checkpoints = FindAnyObjectByType<CheckpointManager>();
             _lever = FindAnyObjectByType<TeamLeverGate>();
             _climbGates = FindObjectsByType<ClimbSwitchGate>();
             _font = UITheme.Font; // theme font (Mitr); ignores any scene-serialized font
@@ -155,6 +165,7 @@ namespace CoopGame.Network
                     }
             if (string.IsNullOrEmpty(detail) && _mission.Cargo != null && _mission.Cargo.SoloAssistActive && _mission.Phase.Value < 2)
                 detail = "เล่นคนเดียว: ลังเบาลง 50%";
+            RefreshRunInfo(ref detail);
             SetChanged(_objective, objective, ref _lastObjective);
             SetChanged(_detail, detail, ref _lastDetail);
             bool showDetail = !string.IsNullOrEmpty(detail);
@@ -206,6 +217,77 @@ namespace CoopGame.Network
                 bool full = _player.Slot1.Value != 0 && _player.Slot2.Value != 0 && _player.Slot3.Value != 0;
                 for (int i = 0; i < 2; i++) _buy[i].interactable = !full && _player.Coins.Value >= PlayerExpeditionState.ItemPrice((byte)(i + 1));
             }
+        }
+
+        private static string NoticeText(LevelNotice notice, LevelRunState run) => notice switch
+        {
+            LevelNotice.CheckpointSaved => "เซฟเช็คพอยต์แล้ว",
+            LevelNotice.CargoFell => "ลังตกเหว! กลับมาที่เช็คพอยต์ (เลือดไม่ฟื้น)",
+            LevelNotice.CargoRestart => "ลังพัง! เริ่มใหม่จากเช็คพอยต์",
+            LevelNotice.RepairKit => "ใช้ชุดซ่อมแล้ว +20 เลือดลัง",
+            LevelNotice.KitFull => "เลือดลังเต็มอยู่แล้ว เก็บชุดซ่อมไว้ก่อน",
+            LevelNotice.SideSuccess => "ภารกิจเสริมสำเร็จ! +" + (run != null ? run.BonusCoins : 0) + " เหรียญ และดาว",
+            LevelNotice.SideMissed => "ภารกิจเสริมหมดเวลาแล้ว (ไม่มีผลต่อคะแนน)",
+            _ => ""
+        };
+
+        private static void SetMmSs(ref string cache, ref int shown, int seconds, string prefix)
+        {
+            if (shown == seconds) return;
+            shown = seconds;
+            cache = prefix + (seconds / 60).ToString("00") + ":" + (seconds % 60).ToString("00");
+        }
+
+        private string _timerString = "", _sideString = "", _padString = "";
+
+        /// <summary>Timer, side mission and checkpoint lines plus one-shot notices. Strings are rebuilt only when the shown value changes.</summary>
+        private void RefreshRunInfo(ref string detail)
+        {
+            if (_run == null || _timerChip == null) return;
+            bool show = _run.IsSpawned && _mission.Phase.Value < 3;
+            if (_timerChip.activeSelf != show) _timerChip.SetActive(show);
+            if (!show) return;
+            int seconds = Mathf.FloorToInt(_run.ElapsedSeconds);
+            if (seconds != _shownSecond)
+            {
+                SetMmSs(ref _timerString, ref _shownSecond, seconds, "เวลา ");
+                _timerText.text = _timerString;
+            }
+            // side mission line: state -> text
+            byte side = _run.SideState;
+            int sideKey = side == 0 ? 100000 + Mathf.Max(0, Mathf.FloorToInt(_run.SideLimitSeconds - _run.ElapsedSeconds)) : side;
+            if (sideKey != _shownSide)
+            {
+                _shownSide = sideKey;
+                if (side == 1) { _sideString = "ภารกิจเสริมสำเร็จ  ดาว 1"; _sideText.color = UITheme.TextColor(UITextRole.Positive); }
+                else if (side == 2) { _sideString = "ภารกิจเสริมหมดเวลา"; _sideText.color = UITheme.TextColor(UITextRole.Secondary); }
+                else
+                {
+                    int left = sideKey - 100000;
+                    _sideString = "ภารกิจเสริม: ถึงเกาะชุดซ่อมก่อน " + (left / 60).ToString("00") + ":" + (left % 60).ToString("00");
+                    _sideText.color = UITheme.TextColor(UITextRole.Accent);
+                }
+                _sideText.text = _sideString;
+            }
+            // nearest checkpoint line: the active pad number and the distance from the local player
+            var pad = _checkpoints != null ? _checkpoints.Current : null;
+            var local = _player != null ? _player.transform : null;
+            int padNumber = pad != null && pad.IsActive ? pad.Number : 0;
+            int distance = pad != null && local != null ? Mathf.RoundToInt(Vector3.Distance(local.position, pad.transform.position)) : -1;
+            if (padNumber != _shownPad || distance != _shownPadDistance)
+            {
+                _shownPad = padNumber; _shownPadDistance = distance;
+                _padString = padNumber == 0 ? "เช็คพอยต์: ยังไม่ได้เซฟ (วางลังบนแท่นทอง)" : "เช็คพอยต์ล่าสุด " + padNumber + "  ห่าง " + distance + " ม.";
+                _padText.text = _padString;
+            }
+            // notices: shown in the context chip for a few seconds
+            if (_run.NoticeSequence != _noticeSeq)
+            {
+                _noticeSeq = _run.NoticeSequence;
+                _notice = _run.Notice;
+                _noticeUntil = Time.unscaledTime + 4.5f;
+            }
+            if (_notice != LevelNotice.None && Time.unscaledTime < _noticeUntil) detail = NoticeText(_notice, _run);
         }
 
         private static void SetChanged(Text text, string value, ref string cached)
@@ -283,6 +365,28 @@ namespace CoopGame.Network
             _detail = Label(_detailChip.transform, "Status", "", 19, Vector2.zero, new Vector2(528, 40));
             _detail.horizontalOverflow = HorizontalWrapMode.Wrap;
             _detailChip.SetActive(false);
+
+            // Run timer + side mission + checkpoint (top-centre, only built for levels with a LevelRunState).
+            if (_run != null)
+            {
+                _timerChip = Box("RunInfo", transform, new Vector2(.5f, 1f), new Vector2(0, -22), new Vector2(480, 10), UITheme.SolidPanel, UITheme.SmallSprite);
+                ((RectTransform)_timerChip.transform).pivot = new Vector2(.5f, 1f);
+                _timerChip.GetComponent<Image>().raycastTarget = false;
+                var runLayout = _timerChip.AddComponent<VerticalLayoutGroup>();
+                runLayout.padding = new RectOffset(16, 16, 8, 10);
+                runLayout.spacing = 2f; runLayout.childAlignment = TextAnchor.UpperCenter;
+                runLayout.childControlWidth = runLayout.childControlHeight = true;
+                runLayout.childForceExpandWidth = true; runLayout.childForceExpandHeight = false;
+                _timerChip.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+                _timerText = UITheme.MakeText(_timerChip.transform, "Timer", "เวลา 00:00", 30, UITextRole.Primary, TextAnchor.MiddleCenter);
+                UITheme.SetWeight(_timerText, UITheme.FontBold);
+                UITheme.SetPreferredHeight(_timerText.gameObject, 38f);
+                _sideText = UITheme.MakeText(_timerChip.transform, "SideMission", "", 19, UITextRole.Accent, TextAnchor.MiddleCenter);
+                UITheme.SetPreferredHeight(_sideText.gameObject, 26f);
+                _padText = UITheme.MakeText(_timerChip.transform, "Checkpoint", "", 17, UITextRole.Secondary, TextAnchor.MiddleCenter);
+                UITheme.SetPreferredHeight(_padText.gameObject, 24f);
+                _timerChip.SetActive(false);
+            }
 
             // Inventory (kit): dark panel, coins row, three key-cap item slots. Hidden under overlays.
             _inventoryRoot = Box("Inventory Panel", transform, new Vector2(1f, 1f), new Vector2(-150, -244), new Vector2(260, 10), UITheme.SolidPanel, UITheme.SmallSprite);

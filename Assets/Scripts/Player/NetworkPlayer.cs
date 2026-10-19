@@ -426,16 +426,27 @@ namespace CoopGame.Player
             return false;
         }
 
+        /// <summary>Owner only: send this player to the last active checkpoint pad (or the level start without one).</summary>
+        public void RespawnAtCheckpoint() { if (IsOwner && _movement != null && _characterController != null) RespawnAtStart(); }
+
         private void RespawnAtStart()
         {
             _playerCarry?.DropForRespawn();
             _wallclimb?.ResetForRespawn();
             ClearMovementInput();
             _movement.ResetVelocity();
+            // With checkpoint pads in the level, falling or a restart returns the player to the last active pad.
+            Vector3 position = _respawnPosition;
+            Quaternion rotation = _respawnRotation;
+            var checkpoints = CoopGame.Network.CheckpointManager.Instance;
+            if (checkpoints != null && checkpoints.TryGetPlayerRespawn(Mathf.Max(0, _spawnSlot.Value), out Vector3 padPosition, out Quaternion padRotation))
+            {
+                position = padPosition; rotation = padRotation;
+            }
             _characterController.enabled = false;
-            transform.SetPositionAndRotation(_respawnPosition, _respawnRotation);
+            transform.SetPositionAndRotation(position, rotation);
             GetComponent<Unity.Netcode.Components.NetworkTransform>()?.Teleport(
-                _respawnPosition, _respawnRotation, transform.localScale);
+                position, rotation, transform.localScale);
             _characterController.enabled = true;
             GetComponent<PlayerStamina>()?.ResetStamina();
         }

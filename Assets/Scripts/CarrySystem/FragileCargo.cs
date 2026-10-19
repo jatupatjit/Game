@@ -134,6 +134,20 @@ namespace CoopGame.CarrySystem
         private int _queuedDamage;
         private string _queuedReason;
         private bool _respawnPending;
+        private bool _restartRespawn;
+
+        /// <summary>Server only: repairs the cargo (repair kit). Returns the HP actually restored (capped at MaxHP).</summary>
+        public int HealServer(int amount)
+        {
+            if (_isDestroyed || IsSecured || amount <= 0 || (IsSpawned && !IsServer)) return 0;
+            int previous = CurrentHP.Value;
+            int next = Mathf.Min(_maxHP, previous + amount);
+            if (next <= previous) return 0;
+            CurrentHP.Value = next;
+            if (!IsSpawned) HandleHPValueChanged(previous, next);
+            Debug.Log($"[FragileCargo] '{name}' repaired +{next - previous} HP ({previous} -> {next}/{_maxHP}).");
+            return next - previous;
+        }
 
         protected override void Awake()
         {
@@ -447,6 +461,24 @@ namespace CoopGame.CarrySystem
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);
             if (newHP == CurrentHP.Value) return;
             _nextDamageAllowedAtFixedTime = Time.fixedTime + _damageCooldownSeconds;
+
+            // A level with checkpoints never dead-ends: HP 0 sends cargo and team back to the last active pad
+            // with the HP remembered there (CheckpointManager), instead of Mission Fail.
+            var checkpoints = CoopGame.Network.CheckpointManager.Instance;
+            if (newHP <= 0 && checkpoints != null && checkpoints.RestartOnZeroHp)
+            {
+                int restartHp = checkpoints.BeginRestart();
+                CurrentHP.Value = restartHp;
+                if (!IsSpawned) HandleHPValueChanged(previousHP, restartHp);
+                Debug.Log($"[FragileCargo] '{name}' reached 0 HP ({reason}). Restarting from the last checkpoint with {restartHp} HP.");
+                OnCargoDamagedGlobal?.Invoke(this, damageAmount);
+                if (IsSpawned) PlayImpactFxClientRpc(transform.position);
+                else PlayImpactFeedback(transform.position);
+                _restartRespawn = true;
+                _respawnPending = true;
+                return;
+            }
+
             CurrentHP.Value = newHP;
             // Offline cargo never subscribes through OnNetworkSpawn. Networked
             // cargo already emits this once from NetworkVariable.OnValueChanged.
@@ -673,11 +705,24 @@ namespace CoopGame.CarrySystem
                 _rigidbody.angularVelocity = Vector3.zero;
             }
 
+            // Levels with checkpoint pads put the cargo back on the last active pad; otherwise the level start.
+            Vector3 targetPosition = _spawnPosition;
+            Quaternion targetRotation = _spawnRotation;
+            bool atCheckpoint = false;
+            var checkpoints = CoopGame.Network.CheckpointManager.Instance;
+            if (checkpoints != null && checkpoints.TryGetCargoRespawn(out Vector3 padPosition, out Quaternion padRotation))
+            {
+                targetPosition = padPosition; targetRotation = padRotation; atCheckpoint = true;
+            }
+            bool fellOut = !_restartRespawn;
+            _restartRespawn = false;
+            if (fellOut && checkpoints != null) checkpoints.NotifyCargoFell();
+
             NetworkTransform networkTransform = GetComponent<NetworkTransform>();
             if (isNetworked && networkTransform != null)
-                networkTransform.Teleport(_spawnPosition, _spawnRotation, transform.localScale);
+                networkTransform.Teleport(targetPosition, targetRotation, transform.localScale);
             else
-                transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+                transform.SetPositionAndRotation(targetPosition, targetRotation);
 
             _rigidbody?.WakeUp();
 
@@ -687,7 +732,7 @@ namespace CoopGame.CarrySystem
             ResetPhysicsContactState();
             _damageEnabledAtFixedTime = Time.fixedTime + _spawnDamageGraceSeconds;
             _nextDamageAllowedAtFixedTime = _damageEnabledAtFixedTime;
-            Debug.Log($"[FragileCargo] '{name}' fell out of bounds (< {_killZ}m). Respawned at {_spawnPosition}.");
+            Debug.Log($"[FragileCargo] '{name}' {(fellOut ? $"fell out of bounds (< {_killZ}m)" : "restarted")}. Respawned at {targetPosition}{(atCheckpoint ? " (checkpoint)" : "")}.");
 
             OnCargoRespawnedGlobal?.Invoke(this);
         }
