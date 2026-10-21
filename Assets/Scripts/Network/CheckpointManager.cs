@@ -19,6 +19,8 @@ namespace CoopGame.Network
     {
         public static CheckpointManager Instance { get; private set; }
 
+        private const float PlayerPivotHeight = 1.05f;
+
         [SerializeField] private CheckpointPad[] _pads;
         [Tooltip("HP the cargo restarts with when its HP reaches 0, at minimum (the HP remembered at the pad is used when higher).")]
         [SerializeField, Range(1, 100)] private int _restartMinHp = 25;
@@ -74,6 +76,10 @@ namespace CoopGame.Network
                 Transform t = pad.PlayerPoint;
                 Vector3 offset = slot switch { 1 => new Vector3(1.8f, 0f, 0f), 2 => new Vector3(-1.8f, 0f, 0f), 3 => new Vector3(0f, 0f, -1.8f), _ => Vector3.zero };
                 position = t.TransformPoint(offset);
+                // The player's pivot sits about a metre above its feet (the level start spawns at ground + 1.05).
+                // A pad's respawn point placed on the ground would embed the capsule in the island and drop the
+                // player straight through it, so never respawn lower than that height above the pad surface.
+                position.y = Mathf.Max(position.y, pad.transform.position.y + PlayerPivotHeight);
                 rotation = t.rotation;
                 return true;
             }
