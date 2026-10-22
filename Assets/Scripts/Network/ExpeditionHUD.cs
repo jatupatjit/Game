@@ -14,6 +14,18 @@ namespace CoopGame.Network
     public sealed class ExpeditionHUD : MonoBehaviour
     {
         public static bool BlocksGameplayInput { get; private set; }
+        /// <summary>True while the card select / shop / card view overlay is open; other HUD pieces hide themselves.</summary>
+        public static bool OverlayOpen { get; private set; }
+        public static bool CardViewOpen { get; private set; }
+        /// <summary>Frame in which Esc closed the card view (PauseMenu must not also open).</summary>
+        public static int EscConsumedFrame { get; private set; } = -1;
+        private GameObject _view;
+        private bool _viewOpen;
+        private Image _viewOwnArt;
+        private Text _viewName, _viewEffect, _viewTip, _viewMatesTitle;
+        private readonly Image[] _viewMateArt = new Image[3];
+        private readonly Text[] _viewMateName = new Text[3];
+        private readonly CanvasGroup[] _hudGroups = new CanvasGroup[5];
         [SerializeField] private Font _font;
         private LevelMission _mission;
         private PlayerExpeditionState _player;
@@ -69,8 +81,10 @@ namespace CoopGame.Network
 
         private void OnDestroy()
         {
-            if (_modalShown) PlayerCameraController.LocalInstance?.SetCursorLock(true);
+            if (_modalShown || _viewOpen) PlayerCameraController.LocalInstance?.SetCursorLock(true);
             BlocksGameplayInput = false;
+            OverlayOpen = false;
+            CardViewOpen = false;
         }
 
         private void Update()
@@ -81,6 +95,7 @@ namespace CoopGame.Network
             if (_mission == null || _player == null || !_player.IsSpawned) return;
             if (_mission.Phase.Value == 3)
             {
+                _viewOpen = false; CardViewOpen = false; OverlayOpen = false;
                 ShowModal(false);
                 MissionFailUI.EnsureInstance().Show();
                 return;
@@ -89,12 +104,31 @@ namespace CoopGame.Network
             bool selecting = _player.Card.Value == 0 && _mission.Phase.Value < 2 && CardCatalog.HasOffer(offer);
             bool summary = _mission.Phase.Value == 2 && !_summaryDismissed;
             bool modal = (selecting || summary) && !PauseMenu.IsPaused;
+            // Card view (H): only after a card is chosen, never during select/shop, pause or mission fail.
+            bool canView = !modal && !summary && !selecting && _player.Card.Value != 0 && !PauseMenu.IsPaused && !MissionFailUI.IsVisible;
+            if (Keyboard.current != null)
+            {
+                if (canView && Keyboard.current.hKey.wasPressedThisFrame) _viewOpen = !_viewOpen;
+                else if (_viewOpen && Keyboard.current.escapeKey.wasPressedThisFrame) { _viewOpen = false; EscConsumedFrame = Time.frameCount; }
+            }
+            if (_viewOpen && !canView) _viewOpen = false;
+            if (_view.activeSelf != _viewOpen)
+            {
+                _view.SetActive(_viewOpen);
+                if (_viewOpen) RefreshView();
+            }
+            CardViewOpen = _viewOpen;
             ShowModal(modal);
             _cards.SetActive(selecting);
             _shop.SetActive(summary);
-            // HUD panels that would show through the card-select / shop overlay stay hidden while it is open.
-            if (_inventoryRoot.activeSelf == modal) _inventoryRoot.SetActive(!modal);
-            bool hints = !modal && _mission.Phase.Value < 2;
+            // HUD pieces that would compete with the card-select / shop / card-view overlay stay hidden while it is open.
+            bool overlay = modal || _viewOpen;
+            OverlayOpen = overlay;
+            if (_inventoryRoot.activeSelf == overlay) _inventoryRoot.SetActive(!overlay);
+            float hudAlpha = overlay ? 0f : 1f;
+            for (int i = 0; i < _hudGroups.Length; i++)
+                if (_hudGroups[i] != null && _hudGroups[i].alpha != hudAlpha) { _hudGroups[i].alpha = hudAlpha; _hudGroups[i].blocksRaycasts = !overlay; }
+            bool hints = !overlay && _mission.Phase.Value < 2;
             if (_hintBar.activeSelf != hints) _hintBar.SetActive(hints);
             if (Keyboard.current != null && !PauseMenu.IsPaused && !MissionFailUI.IsVisible)
             {
@@ -113,18 +147,46 @@ namespace CoopGame.Network
             if (Time.unscaledTime < _refreshAt) return;
             _refreshAt = Time.unscaledTime + .2f;
             Refresh(selecting, summary);
+            if (_viewOpen) RefreshView();
         }
+
+        private bool _lastBlock;
 
         private void ShowModal(bool show)
         {
-            if (_modalShown == show) return;
-            _modalShown = show;
-            _modal.SetActive(show);
-            BlocksGameplayInput = show;
-            if (show && EventSystem.current == null)
+            if (_modalShown != show) { _modalShown = show; _modal.SetActive(show); }
+            bool block = _modalShown || _viewOpen;
+            if (block == _lastBlock) return;
+            _lastBlock = block;
+            BlocksGameplayInput = block;
+            if (block && EventSystem.current == null)
                 new GameObject("Expedition EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             if (!PauseMenu.IsPaused && !MissionFailUI.IsVisible)
-                PlayerCameraController.LocalInstance?.SetCursorLock(!show);
+                PlayerCameraController.LocalInstance?.SetCursorLock(!block);
+        }
+
+        /// <summary>Own card full-art plus small teammate thumbnails with names (replicated Card + DisplayName).</summary>
+        private void RefreshView()
+        {
+            byte own = _player.Card.Value;
+            _viewOwnArt.sprite = CardCatalog.Art(own);
+            _viewName.text = own == 0 ? "ยังไม่ได้เลือกการ์ด" : CardCatalog.Name(own);
+            _viewEffect.text = own == 0 ? "" : CardCatalog.Description(own);
+            _viewTip.text = CardTip(own);
+            var mates = new System.Collections.Generic.List<PlayerExpeditionState>(FindObjectsByType<PlayerExpeditionState>());
+            mates.RemoveAll(p => p == null || !p.IsSpawned || p == _player);
+            mates.Sort((a, b) => a.OwnerClientId.CompareTo(b.OwnerClientId));
+            _viewMatesTitle.gameObject.SetActive(mates.Count > 0);
+            for (int i = 0; i < _viewMateArt.Length; i++)
+            {
+                bool has = i < mates.Count;
+                _viewMateArt[i].transform.parent.gameObject.SetActive(has);
+                if (!has) continue;
+                byte card = mates[i].Card.Value;
+                _viewMateArt[i].sprite = card != 0 ? CardCatalog.Art(card) : UITheme.CardBack(1);
+                string name = mates[i].DisplayName.Value.ToString();
+                _viewMateName[i].text = string.IsNullOrEmpty(name) ? $"Player {mates[i].OwnerClientId + 1}" : name;
+            }
         }
 
         private void Refresh(bool selecting, bool summary)
@@ -438,12 +500,37 @@ namespace CoopGame.Network
             _ownCardIcon.raycastTarget = true;
             _ownCardTip = own.AddComponent<UITooltip>();
             _ownCardTip.Side = new Vector2(-1f, 0f);
+            // "H ดูการ์ด" key hint to the left of the own-card icon (child of the icon, so it hides with it).
+            var viewHint = Box("ViewCardHint", own.transform, new Vector2(0f, .5f), new Vector2(-12f, 0f), new Vector2(10f, 10f), Color.clear);
+            ((RectTransform)viewHint.transform).pivot = new Vector2(1f, .5f);
+            viewHint.GetComponent<Image>().raycastTarget = false;
+            var viewLayout = viewHint.AddComponent<HorizontalLayoutGroup>();
+            viewLayout.spacing = 8f; viewLayout.childAlignment = TextAnchor.MiddleRight;
+            viewLayout.childControlWidth = viewLayout.childControlHeight = true;
+            viewLayout.childForceExpandWidth = viewLayout.childForceExpandHeight = false;
+            var viewFit = viewHint.AddComponent<ContentSizeFitter>();
+            viewFit.horizontalFit = viewFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            KeyCap(viewHint.transform, "H", 32f, 35f);
+            var viewLabel = UITheme.MakeText(viewHint.transform, "Hint H", "ดูการ์ด", 20, UITextRole.Primary);
+            viewLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            UITheme.AddOutline(viewLabel);
+            var viewElement = viewLabel.gameObject.AddComponent<LayoutElement>();
+            viewElement.preferredHeight = 35f;
+            viewElement.minWidth = viewLabel.preferredWidth + 10f;
 
             // Card select / summary (mockup 2): banner header flanked by card backs, message on a dark
             // strip, three tall cards with a selection frame, pink confirm button.
-            _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1920, 1080), UITheme.Overlay);
+            _hudGroups[0] = objective.AddComponent<CanvasGroup>();
+            _hudGroups[1] = _detailChip.AddComponent<CanvasGroup>();
+            _hudGroups[2] = _timerChip != null ? _timerChip.AddComponent<CanvasGroup>() : null;
+            _hudGroups[3] = own.AddComponent<CanvasGroup>();
+
+            // Full-screen dim + large soft dark panel behind the banner and cards (uGUI has no real blur).
+            _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, Vector2.zero, UITheme.Overlay);
+            StretchFull(_modal);
             var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1100, 700), Color.clear);
             panel.GetComponent<Image>().raycastTarget = false;
+            Backdrop(panel.transform);
             var banner = Box("Banner", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 330), new Vector2(620, 92), UITheme.MissionRed, UITheme.SmallSprite);
             var leftBack = Box("BannerCardLeft", panel.transform, new Vector2(.5f, .5f), new Vector2(-340, 330), new Vector2(58, 88), Color.white);
             UITheme.StyleIcon(leftBack.GetComponent<Image>(), UITheme.CardBack(1));
@@ -471,6 +558,77 @@ namespace CoopGame.Network
             _buy[1] = Button(_shop.transform, "Cargo Padding — 60 เหรียญ\nลดความเสียหายครั้งถัดไป 50%\nใช้ขณะจับลัง", new Vector2(250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(2));
             Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(0, -170), new Vector2(340, 66), Dismiss, UIButtonStyle.Primary);
             _modal.SetActive(false);
+            BuildView();
+        }
+
+        private static void StretchFull(GameObject go)
+        {
+            var rect = (RectTransform)go.transform;
+            rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one;
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>Large dark rounded panel (themed panel sprite) behind the card UI, sibling index 0.</summary>
+        private void Backdrop(Transform parent, Vector2? size = null, Vector2? offset = null)
+        {
+            var go = Box("Backdrop", parent, new Vector2(.5f, .5f), offset ?? new Vector2(0, -45), size ?? new Vector2(1280, 930), UITheme.Panel, UITheme.PanelSprite);
+            go.GetComponent<Image>().raycastTarget = false;
+            go.transform.SetAsFirstSibling();
+        }
+
+        /// <summary>H card view: same dim + backdrop, own card full-size, teammates as small thumbnails with names.</summary>
+        private void BuildView()
+        {
+            _view = Box("Card View", transform, new Vector2(.5f, .5f), Vector2.zero, Vector2.zero, UITheme.Overlay);
+            StretchFull(_view);
+            var root = Box("Panel", _view.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1500, 940), Color.clear);
+            root.GetComponent<Image>().raycastTarget = false;
+            Backdrop(root.transform, new Vector2(1500, 940), Vector2.zero);
+            var title = Label(root.transform, "Title", "การ์ดของคุณ", 44, new Vector2(0, 410), new Vector2(900, 64), TextAnchor.MiddleCenter);
+            UITheme.SetWeight(title, UITheme.FontBold);
+            // Own card, large, on the left; its name, effect and a plain-language tip on the right.
+            var own = Box("OwnCard", root.transform, new Vector2(.5f, .5f), new Vector2(-400, -15), new Vector2(520, 735), Color.white);
+            _viewOwnArt = own.GetComponent<Image>();
+            _viewOwnArt.preserveAspect = true; _viewOwnArt.raycastTarget = false;
+            _viewName = Label(root.transform, "CardName", "", 54, new Vector2(330, 250), new Vector2(720, 80), TextAnchor.MiddleLeft);
+            UITheme.SetWeight(_viewName, UITheme.FontBold);
+            _viewEffect = Label(root.transform, "CardEffect", "", 36, new Vector2(330, 150), new Vector2(720, 110), TextAnchor.UpperLeft);
+            UITheme.SetWeight(_viewEffect, UITheme.FontSemiBold);
+            _viewTip = Label(root.transform, "CardTip", "", 30, new Vector2(330, 10), new Vector2(720, 170), TextAnchor.UpperLeft, UITextRole.Secondary);
+            _viewMatesTitle = Label(root.transform, "MatesTitle", "การ์ดของเพื่อน", 28, new Vector2(330, -120), new Vector2(720, 40), TextAnchor.MiddleLeft, UITextRole.Secondary);
+            for (int i = 0; i < 3; i++)
+            {
+                var mate = Box($"Mate{i + 1}", root.transform, new Vector2(.5f, .5f), new Vector2(150 + i * 230, -300), new Vector2(210, 250), Color.clear);
+                mate.GetComponent<Image>().raycastTarget = false;
+                var art = Box("Art", mate.transform, new Vector2(.5f, .5f), new Vector2(0, 28), new Vector2(125, 176), Color.white);
+                _viewMateArt[i] = art.GetComponent<Image>();
+                _viewMateArt[i].preserveAspect = true; _viewMateArt[i].raycastTarget = false;
+                _viewMateName[i] = Label(mate.transform, "Name", "", 22, new Vector2(0, -92), new Vector2(210, 34), TextAnchor.MiddleCenter, UITextRole.Secondary);
+            }
+            Label(root.transform, "Close", "H / Esc  ปิด", 24, new Vector2(0, -435), new Vector2(500, 36), TextAnchor.MiddleCenter, UITextRole.Secondary);
+            _view.SetActive(false);
+        }
+
+        /// <summary>Plain-language explanation shown under the card effect in the H view.</summary>
+        private static string CardTip(byte id)
+        {
+            switch (CardCatalog.Get(id).Key)
+            {
+                case "strong_arms": return "ลังที่ถือจะเบาลงสำหรับคุณ และเหนื่อยช้าลง ยกคนเดียวได้สบายกว่าเดิม";
+                case "long_throw": return "กด Q ค้างเพื่อชาร์จแล้วปล่อย ลังจะไปได้ไกลขึ้น 40% เหมาะกับข้ามช่องว่างหรือส่งต่อให้เพื่อน";
+                case "high_jumper": return "กระโดดสูงขึ้น ช่วยขึ้นแท่นสูงและข้ามหินให้ถึงง่ายขึ้น";
+                case "endurance": return "ตอนแบกลังคนเดียว stamina จะลดช้าลง แบกได้ไกลขึ้นก่อนต้องพัก";
+                case "teamwork": return "เมื่อมีคนช่วยยกตั้งแต่ 2 คนขึ้นไป ลังจะเบาลง 20% ยิ่งช่วยกัน ยิ่งเบา";
+                case "steady_hands": return "ลังที่ถือจะสั่นและแกว่งน้อยลงครึ่งหนึ่ง เวลาเลี้ยวหรือกระโดดลังจะไม่เหวี่ยงง่าย";
+                case "light_step": return "การวิ่งและการกระโดดเกาะผนังจะเสีย stamina น้อยลง 20%";
+                case "double_jump": return "กดกระโดดซ้ำกลางอากาศได้อีก 1 ครั้ง ใช้ช่วยตอนพลาดจังหวะหรือข้ามช่องที่ไกล";
+                case "quick_recovery": return "ตอนไม่ได้ถือของ stamina จะฟื้นเร็วขึ้น 30% สลับให้เพื่อนแบกแล้วพักเพื่อกลับมาแบกต่อได้ไว";
+                case "climber": return "ปีนกำแพงและหอได้เร็วขึ้น 25% ช่วยให้ไปกดสวิตช์ที่สูงได้ทันใจ";
+                case "last_mile": return "เมื่อลังเข้าใกล้จุดส่งของ (ประมาณ 12 เมตร) ลังจะเบาลง 30% ช่วยดันช่วงสุดท้ายให้จบ";
+                case "close_support": return "เมื่อคุณยืนใกล้เพื่อนที่กำลังแบกของ (ภายใน 6 เมตร) stamina ของเพื่อนคนนั้นจะลดช้าลง 20% ไม่ต้องถือของเองก็ช่วยได้";
+                case "fast_carrier": return "เดินเร็วขึ้น 15% ตอนแบกลัง ช่วยให้ส่งของเสร็จไวขึ้น";
+                default: return "เลือกการ์ดก่อน แล้วกด H เพื่อดูคำอธิบายของการ์ดที่คุณได้";
+            }
         }
 
         /// <summary>Key-cap sprite with a centred label (inventory slots, control hints).</summary>

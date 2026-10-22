@@ -51,7 +51,9 @@ namespace CoopGame.Network
             // The room code and player list now live in the Pause menu (PauseMenu room-code section).
             // The component stays in the scene (ConnectionHUD treats it as "modern HUD present"), but the
             // card itself is never shown.
-            if (!_showCard)
+            // Card is shown only in the Lobby scene; gameplay scenes never show the room code.
+            bool lobby = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Lobby";
+            if (!_showCard && !lobby)
             {
                 if (_hudGroup != null) { _hudGroup.alpha = 0f; _hudGroup.interactable = false; _hudGroup.blocksRaycasts = false; }
                 if (_canvas != null) _canvas.enabled = false;
@@ -203,12 +205,13 @@ namespace CoopGame.Network
 
             if (_copyButton != null)
             {
-                _copyButton.gameObject.SetActive(!local);
-                // Collapse the whole copy row (no reserved empty band) when there is nothing to copy.
+                // This always-visible card cannot be clicked (the cursor is locked in play), so it shows no Copy
+                // button; copying lives in the pause menu. Collapse the whole row so no empty band is left.
+                _copyButton.gameObject.SetActive(false);
                 Transform copyRow = _copyButton.transform.parent;
                 if (copyRow != null && copyRow != transform && copyRow.GetComponent<Image>() == null &&
-                    copyRow.gameObject.activeSelf == local)
-                    copyRow.gameObject.SetActive(!local);
+                    copyRow.gameObject.activeSelf)
+                    copyRow.gameObject.SetActive(false);
             }
 
             var names = mgr != null ? mgr.GetCurrentPlayerNames() : new List<string>();

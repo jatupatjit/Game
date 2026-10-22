@@ -124,10 +124,11 @@ namespace CoopGame.Network
 
             NetworkManager manager = NetworkManager.Singleton;
             bool connected = manager != null && manager.IsListening;
+            bool shown = connected && _hudVisible && !ExpeditionHUD.OverlayOpen;
             if (_hudGroup != null)
             {
-                _hudGroup.alpha = connected && _hudVisible ? 1f : 0f;
-                _hudGroup.blocksRaycasts = connected && _hudVisible;
+                _hudGroup.alpha = shown ? 1f : 0f;
+                _hudGroup.blocksRaycasts = shown;
             }
 
             if (!connected || Time.unscaledTime < _nextRefreshTime)

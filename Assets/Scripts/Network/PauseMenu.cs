@@ -91,7 +91,7 @@ namespace CoopGame.Network
         // RoomCodeHUD card). Hidden when there is no code (solo / offline / not connected).
 
         private GameObject _roomSection;
-        private Text _roomCodeValue, _roomPlayersTitle, _roomPlayersList;
+        private Text _roomCodeValue;
         private Button _copyCodeButton;
         private Text _copyCodeLabel;
         private float _roomRefreshAt, _copiedUntil;
@@ -99,13 +99,14 @@ namespace CoopGame.Network
 
         private void BuildRoomCodeSection()
         {
-            if (_pausePanel == null || _roomSection != null) return;
+            // The room code is a Lobby-only element; gameplay scenes never build or show it.
+            if (!IsLobbyScene || _pausePanel == null || _roomSection != null) return;
             _roomSection = new GameObject("RoomCodeSection", typeof(RectTransform), typeof(VerticalLayoutGroup));
             _roomSection.transform.SetParent(_pausePanel.transform, false);
             var layout = _roomSection.GetComponent<VerticalLayoutGroup>();
             layout.spacing = 6f;
             layout.padding = new RectOffset(0, 0, 0, 4);
-            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childAlignment = TextAnchor.UpperCenter;
             layout.childControlWidth = layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
@@ -119,38 +120,41 @@ namespace CoopGame.Network
             Transform section = _roomSection.transform;
             Text heading = UITheme.MakeText(section, "RoomCodeLabel", "ROOM CODE", UITheme.CardLabelFontSize, UITextRole.Accent);
             UITheme.SetWeight(heading, UITheme.FontSemiBold);
-            UITheme.SetPreferredHeight(heading.gameObject, 22f);
+            heading.alignment = TextAnchor.MiddleCenter;
+            UITheme.SetPreferredHeight(heading.gameObject, 26f);
 
             var codeRow = new GameObject("CodeRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             codeRow.transform.SetParent(section, false);
             var row = codeRow.GetComponent<HorizontalLayoutGroup>();
+            // Big centred code with the Copy button on its own row underneath (Lobby pause shows only this).
             row.spacing = 12f;
-            row.childAlignment = TextAnchor.MiddleLeft;
+            row.childAlignment = TextAnchor.MiddleCenter;
             row.childControlWidth = row.childControlHeight = true;
-            row.childForceExpandWidth = false;
+            row.childForceExpandWidth = true;
             row.childForceExpandHeight = false;
-            UITheme.SetPreferredHeight(codeRow, 48f);
+            UITheme.SetPreferredHeight(codeRow, 76f);
 
-            _roomCodeValue = UITheme.MakeText(codeRow.transform, "RoomCodeValue", "------", 36, UITextRole.Primary);
+            _roomCodeValue = UITheme.MakeText(codeRow.transform, "RoomCodeValue", "------", 60, UITextRole.Primary, TextAnchor.MiddleCenter);
             UITheme.SetWeight(_roomCodeValue, UITheme.FontBold);
             _roomCodeValue.horizontalOverflow = HorizontalWrapMode.Overflow;
             var codeElement = _roomCodeValue.gameObject.AddComponent<LayoutElement>();
             codeElement.flexibleWidth = 1f;
-            codeElement.preferredHeight = 48f;
+            codeElement.preferredHeight = 76f;
 
-            _copyCodeButton = UITheme.MakeButton(codeRow.transform, "CopyCodeButton", CopyLabel, UIButtonStyle.Secondary, new Vector2(140f, 40f), 17);
+            var copyRow = new GameObject("CopyRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            copyRow.transform.SetParent(section, false);
+            var copyLayout = copyRow.GetComponent<HorizontalLayoutGroup>();
+            copyLayout.childAlignment = TextAnchor.MiddleCenter;
+            copyLayout.childControlWidth = copyLayout.childControlHeight = true;
+            copyLayout.childForceExpandWidth = copyLayout.childForceExpandHeight = false;
+            UITheme.SetPreferredHeight(copyRow, 48f);
+            _copyCodeButton = UITheme.MakeButton(copyRow.transform, "CopyCodeButton", CopyLabel, UIButtonStyle.Secondary, new Vector2(200f, 44f), 20);
             var buttonElement = _copyCodeButton.gameObject.AddComponent<LayoutElement>();
-            buttonElement.preferredWidth = 140f;
-            buttonElement.preferredHeight = 40f;
+            buttonElement.preferredWidth = 200f;
+            buttonElement.preferredHeight = 44f;
+            _copyCodeButton.targetGraphic.raycastTarget = true;
             _copyCodeLabel = _copyCodeButton.GetComponentInChildren<Text>();
             _copyCodeButton.onClick.AddListener(OnCopyCodeClicked);
-
-            _roomPlayersTitle = UITheme.MakeText(section, "PlayersTitle", "PLAYERS", UITheme.CardLabelFontSize, UITextRole.Accent);
-            UITheme.SetWeight(_roomPlayersTitle, UITheme.FontSemiBold);
-            UITheme.SetPreferredHeight(_roomPlayersTitle.gameObject, 24f);
-
-            _roomPlayersList = UITheme.MakeText(section, "PlayersList", "", 17, UITextRole.Primary, TextAnchor.UpperLeft);
-            UITheme.SetPreferredHeight(_roomPlayersList.gameObject, -1f); // fit the list
 
             var bottomRule = new GameObject("SectionDivider", typeof(RectTransform), typeof(Image));
             bottomRule.transform.SetParent(section, false);
@@ -187,22 +191,35 @@ namespace CoopGame.Network
 
             var mgr = SteamLobbyManager.Instance;
             var nm = NetworkManager.Singleton;
-            bool show = mgr != null && !mgr.IsLocalSession && !string.IsNullOrEmpty(mgr.CurrentRoomCode) &&
+            bool show = IsLobbyScene && mgr != null && !mgr.IsLocalSession && !string.IsNullOrEmpty(mgr.CurrentRoomCode) &&
                         nm != null && nm.IsListening;
             if (_roomSection.activeSelf != show) _roomSection.SetActive(show);
             if (!show) return;
-
             _roomCodeValue.text = mgr.CurrentRoomCode;
-            var names = mgr.GetCurrentPlayerNames();
-            int count = names.Count > 0 ? names.Count : Mathf.Max(1, nm.ConnectedClientsIds.Count);
-            _roomPlayersTitle.text = $"PLAYERS ({count}/4)";
-            var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < names.Count; i++)
+        }
+
+        private static bool IsLobbyScene =>
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Lobby";
+
+        /// <summary>Clicks need an EventSystem with an Input System UI module; gameplay scenes may have none.</summary>
+        private static void EnsureEventSystem()
+        {
+            var current = UnityEngine.EventSystems.EventSystem.current;
+            if (current == null)
             {
-                if (i > 0) sb.Append('\n');
-                sb.Append("• ").Append(names[i]);
+                new GameObject("Pause EventSystem", typeof(UnityEngine.EventSystems.EventSystem),
+                    typeof(UnityEngine.InputSystem.UI.InputSystemUIInputModule));
+                return;
             }
-            _roomPlayersList.text = sb.Length > 0 ? sb.ToString() : "• Connecting...";
+            var legacy = current.GetComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+            if (legacy != null)
+            {
+                Destroy(legacy);
+                if (current.GetComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>() == null)
+                    current.gameObject.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+            }
+            else if (current.GetComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>() == null)
+                current.gameObject.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
         }
 
         /// <summary>
@@ -216,6 +233,15 @@ namespace CoopGame.Network
             foreach (GameObject panel in new[] { _pausePanel, _settingsPanel, _confirmDialog })
                 FitCardToContent(panel);
             FixToggleRow(_fullscreenToggle);
+            if (_pausePanel != null && _pausePanel.TryGetComponent(out VerticalLayoutGroup pauseLayout))
+            {
+                // Consistent padding, buttons centred and filling the card width.
+                pauseLayout.padding = new RectOffset(40, 40, 34, 40);
+                pauseLayout.spacing = 14f;
+                pauseLayout.childAlignment = TextAnchor.UpperCenter;
+                pauseLayout.childControlWidth = true;
+                pauseLayout.childForceExpandWidth = true;
+            }
 
             if (_backgroundOverlay != null)
             {
@@ -376,6 +402,7 @@ namespace CoopGame.Network
             bool escPressed = UnityEngine.InputSystem.Keyboard.current != null &&
                               UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame;
             if (!escPressed) return;
+            if (!_isPaused && (ExpeditionHUD.CardViewOpen || ExpeditionHUD.EscConsumedFrame == Time.frameCount)) return; // Esc closes the card view
             if (_requireActiveSession && !IsSessionActive()) return;
 
             if (_settingsOpen) OnBackFromSettings();
@@ -394,6 +421,8 @@ namespace CoopGame.Network
             HideSettingsPanel();
             HideConfirmDialog();
             if (_pausePanel != null) _pausePanel.SetActive(true);
+            EnsureEventSystem();
+            if (_pausePanel != null) LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)_pausePanel.transform);
             _roomRefreshAt = 0f;
             RefreshRoomCodeSection();
 

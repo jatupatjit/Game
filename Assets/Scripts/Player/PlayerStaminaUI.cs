@@ -206,7 +206,8 @@ namespace CoopGame.Player
 
             if (_hudCanvasGroup != null)
             {
-                _hudCanvasGroup.alpha = Mathf.MoveTowards(_hudCanvasGroup.alpha, _targetAlpha, Time.deltaTime * _fadeSpeed);
+                if (CoopGame.Network.ExpeditionHUD.OverlayOpen) _hudCanvasGroup.alpha = 0f;
+                else _hudCanvasGroup.alpha = Mathf.MoveTowards(_hudCanvasGroup.alpha, _targetAlpha, Time.deltaTime * _fadeSpeed);
             }
         }
 
