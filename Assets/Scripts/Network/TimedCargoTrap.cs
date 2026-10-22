@@ -36,7 +36,12 @@ namespace CoopGame.Network
         {
             _lastDisplay = -1;
             _lastDamageCycle = -1;
-            if (IsServer) { _epoch.Value = NetworkManager.ServerTime.Time; _phase.Value = 0; }
+            if (IsServer)
+            {
+                if (_cargo == null) _cargo = FindAnyObjectByType<FragileCargo>();
+                _epoch.Value = NetworkManager.ServerTime.Time;
+                _phase.Value = 0;
+            }
         }
 
         private void FixedUpdate()

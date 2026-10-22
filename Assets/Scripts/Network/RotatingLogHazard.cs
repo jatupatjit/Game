@@ -26,6 +26,8 @@ namespace CoopGame.Network
         [SerializeField, Min(.25f)] private float _warningSeconds = 2f;
         [SerializeField, Min(1f)] private float _sweepSeconds = 5f;
         [SerializeField] private float _parkAngle = 90f;
+        [Tooltip("Use the Rigidbody's authored rotation as its parked pose. Existing scene hazards keep the legacy park angle by default.")]
+        [SerializeField] private bool _useAuthoredRestPose;
 
         [Header("Damage & Impact")]
         [SerializeField] private FragileCargo _cargo;
@@ -43,6 +45,7 @@ namespace CoopGame.Network
         private long _lastHitCycle = -1;
         private bool _physicsReady;
         private int _shownPhase = -1;
+        private Quaternion _runtimeRestRotation = Quaternion.identity;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         public bool OwnsColliderContact(Collider collider) => collider != null &&
             _logRigidbody != null && collider.attachedRigidbody == _logRigidbody;
@@ -58,6 +61,8 @@ namespace CoopGame.Network
                     _logRigidbody = GetComponentInChildren<Rigidbody>();
                 }
             }
+            if (_logRigidbody != null)
+                _runtimeRestRotation = Quaternion.Inverse(transform.rotation) * _logRigidbody.rotation;
         }
 
         public override void OnNetworkSpawn()
@@ -68,6 +73,7 @@ namespace CoopGame.Network
             _shownPhase = -1;
             if (IsServer)
             {
+                if (_cargo == null) _cargo = FindAnyObjectByType<FragileCargo>();
                 _startServerTime.Value = NetworkManager.ServerTime.Time;
             }
         }
@@ -96,7 +102,8 @@ namespace CoopGame.Network
                 cycle = (long)Math.Floor(elapsed / duration);
                 double within = elapsed - cycle * duration;
                 phase = within < _safeSeconds ? 0 : within < _safeSeconds + _warningSeconds ? 1 : 2;
-                currentAngle = _parkAngle + (phase == 2 ?
+                float authoredOffset = _useAuthoredRestPose ? 0f : _parkAngle;
+                currentAngle = authoredOffset + (phase == 2 ?
                     Mathf.Clamp01((float)((within - _safeSeconds - _warningSeconds) / _sweepSeconds)) * 360f * dir : 0f);
             }
             else currentAngle = (float)((elapsed * _rotationSpeedDegrees * dir) % 360.0);
@@ -108,7 +115,8 @@ namespace CoopGame.Network
                 _ => Vector3.forward
             };
 
-            Quaternion targetRotation = transform.rotation * Quaternion.AngleAxis(currentAngle, localAxis);
+            Quaternion restRotation = _useAuthoredRestPose ? _runtimeRestRotation : Quaternion.identity;
+            Quaternion targetRotation = transform.rotation * restRotation * Quaternion.AngleAxis(currentAngle, localAxis);
             _logRigidbody.MoveRotation(targetRotation);
             Present(phase);
 
