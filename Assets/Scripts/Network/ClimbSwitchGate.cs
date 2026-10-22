@@ -22,7 +22,12 @@ namespace CoopGame.Network
         private readonly NetworkVariable<bool> _open = new(false);
         private MaterialPropertyBlock _properties;
         private ulong _pendingSender;
+        private Vector3 _pendingPosition;
         private bool _pressPending;
+        // The server sees a remote player one network delay late (interpolated), so it may still have them
+        // climbing below the button when they press. The press carries where the presser really is; the
+        // server accepts it only near its own copy of that player.
+        private const float MaxReportedOffset = 3f;
         private int _lastDisplay = -1;
         private static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
 
@@ -39,28 +44,42 @@ namespace CoopGame.Network
 
         public override void OnNetworkDespawn() => _pressPending = false;
 
-        private bool CanReach(NetworkObject player)
+        private bool CanReach(NetworkObject player) =>
+            player != null && player.IsSpawned && CanReachFrom(player.transform.position);
+
+        private bool CanReachFrom(Vector3 position)
         {
-            return player != null && player.IsSpawned && _button != null &&
-                player.transform.position.y >= _button.position.y + _requiredHeightOffset &&
-                (player.transform.position - _button.position).sqrMagnitude <= _interactionDistance * _interactionDistance;
+            return _button != null && position.y >= _button.position.y + _requiredHeightOffset &&
+                (position - _button.position).sqrMagnitude <= _interactionDistance * _interactionDistance;
+        }
+
+        /// <summary>Server: the presser's reported position if plausible for its replicated copy, else that copy.</summary>
+        private static Vector3 PresserPosition(NetworkObject player, Vector3 reported)
+        {
+            Vector3 seen = player.transform.position;
+            return float.IsFinite(reported.x) && float.IsFinite(reported.y) && float.IsFinite(reported.z) &&
+                (reported - seen).sqrMagnitude <= MaxReportedOffset * MaxReportedOffset ? reported : seen;
         }
 
         private void Update()
         {
             if (!IsSpawned || !IsClient || _open.Value || !IsLocalNear ||
                 PauseMenu.IsPaused || MissionFailUI.IsVisible || ExpeditionHUD.BlocksGameplayInput) return;
-            if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame) PressSwitchRpc();
+            if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
+                PressSwitchRpc(NetworkManager.LocalClient.PlayerObject.transform.position);
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-        private void PressSwitchRpc(RpcParams parameters = default)
+        private void PressSwitchRpc(Vector3 presserPosition, RpcParams parameters = default)
         {
             if (_open.Value || (_mission != null && _mission.Phase.Value >= 2) ||
                 !NetworkManager.ConnectedClients.TryGetValue(parameters.Receive.SenderClientId, out var client) ||
-                !CanReach(client.PlayerObject) || !client.PlayerObject.TryGetComponent<NetworkPlayer>(out _)) return;
+                client.PlayerObject == null || !client.PlayerObject.TryGetComponent<NetworkPlayer>(out _)) return;
+            Vector3 position = PresserPosition(client.PlayerObject, presserPosition);
+            if (!CanReachFrom(position)) return;
             // Revalidate and perform the sight query on the physics step.
             _pendingSender = parameters.Receive.SenderClientId;
+            _pendingPosition = presserPosition;
             _pressPending = true;
         }
 
@@ -70,9 +89,10 @@ namespace CoopGame.Network
             {
                 _pressPending = false;
                 if (!_open.Value && (_mission == null || _mission.Phase.Value < 2) &&
-                    NetworkManager.ConnectedClients.TryGetValue(_pendingSender, out var client) && CanReach(client.PlayerObject))
+                    NetworkManager.ConnectedClients.TryGetValue(_pendingSender, out var client) && client.PlayerObject != null &&
+                    CanReachFrom(PresserPosition(client.PlayerObject, _pendingPosition)))
                 {
-                    Vector3 from = client.PlayerObject.transform.position + Vector3.up * .5f;
+                    Vector3 from = PresserPosition(client.PlayerObject, _pendingPosition) + Vector3.up * .5f;
                     Vector3 direction = _button.position - from;
                     float distance = direction.magnitude;
                     if (distance <= .05f || !Physics.Raycast(from, direction / distance, distance - .05f,

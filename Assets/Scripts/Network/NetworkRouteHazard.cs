@@ -23,17 +23,36 @@ namespace CoopGame.Network
         [SerializeField] private FragileCargo _cargo;
         [SerializeField] private Vector3 _primaryRest;
         [SerializeField] private Vector3 _secondaryRest;
-        [SerializeField] private float _travel = 2.3f;
-        [SerializeField] private float _swingAngle = 65f;
+        [Tooltip("Crusher: how far (metres) each jaw slides along local X when active.")]
+        [SerializeField, Min(0f)] private float _travel = 2.3f;
+        [Tooltip("Hammer/pendulum: swing amplitude in degrees.")]
+        [SerializeField, Range(0f, 175f)] private float _swingAngle = 65f;
+        [Tooltip("Collapsing deck: how far (metres) the deck drops while collapsed.")]
+        [SerializeField, Min(0f)] private float _dropDistance = .8f;
+        [Tooltip("Double pendulum: swing amplitude multiplier of the second arm (non-authored pose mode).")]
+        [SerializeField, Min(0f)] private float _secondarySwingScale = 1.15f;
+        [Tooltip("Shown in damage logs. Empty keeps the per-kind default (Swing hammer / Stone crusher).")]
+        [SerializeField] private string _damageReason = "";
+        [Tooltip("Use the moving bodies' authored rotations as their parked pose. Existing scene hazards keep the legacy angle mode by default.")]
+        [SerializeField] private bool _useAuthoredRestPose;
+        [Tooltip("Seconds the hazard is parked and safe.")]
         [SerializeField, Min(1f)] private float _safeSeconds = 6f;
+        [Tooltip("Seconds of warning before the hazard activates.")]
         [SerializeField, Min(.5f)] private float _warningSeconds = 1.75f;
+        [Tooltip("Seconds the hazard is active (moving / dangerous).")]
         [SerializeField, Min(1f)] private float _activeSeconds = 2.5f;
+        [Tooltip("Cargo damage applied once per active cycle on contact.")]
         [SerializeField, Min(1)] private int _damage = 10;
+        [Tooltip("Seconds added to the cycle clock so neighbouring hazards can be staggered.")]
         [SerializeField, Min(0f)] private float _phaseOffset;
         private readonly NetworkVariable<double> _epoch = new(0);
         private readonly NetworkVariable<byte> _phase = new(0);
         private readonly Collider[] _overlaps = new Collider[64];
         private MaterialPropertyBlock _properties;
+        private Vector3 _primaryRuntimeRest;
+        private Vector3 _secondaryRuntimeRest;
+        private Quaternion _primaryRuntimeRotation;
+        private Quaternion _secondaryRuntimeRotation;
         private long _hitCycle = -1;
         private int _lastDisplay = -1;
         private static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
@@ -44,13 +63,41 @@ namespace CoopGame.Network
         public bool OwnsColliderContact(Collider collider) => OwnsContactDamage && collider != null &&
             (collider.attachedRigidbody == _primary || (_secondary != null && collider.attachedRigidbody == _secondary));
 
-        private void Awake() => _properties = new MaterialPropertyBlock();
+        private void Awake()
+        {
+            _properties = new MaterialPropertyBlock();
+            if (_primary != null)
+            {
+                _primaryRuntimeRest = transform.InverseTransformPoint(_primary.position);
+                _primaryRuntimeRotation = Quaternion.Inverse(transform.rotation) * _primary.rotation;
+            }
+            else
+            {
+                _primaryRuntimeRest = _primaryRest;
+                _primaryRuntimeRotation = Quaternion.identity;
+            }
+            if (_secondary != null)
+            {
+                _secondaryRuntimeRest = transform.InverseTransformPoint(_secondary.position);
+                _secondaryRuntimeRotation = Quaternion.Inverse(transform.rotation) * _secondary.rotation;
+            }
+            else
+            {
+                _secondaryRuntimeRest = _secondaryRest;
+                _secondaryRuntimeRotation = Quaternion.identity;
+            }
+        }
 
         public override void OnNetworkSpawn()
         {
             _lastDisplay = -1;
             _hitCycle = -1;
-            if (IsServer) { _epoch.Value = NetworkManager.ServerTime.Time; _phase.Value = 0; }
+            if (IsServer)
+            {
+                if (_cargo == null) _cargo = FindAnyObjectByType<FragileCargo>();
+                _epoch.Value = NetworkManager.ServerTime.Time;
+                _phase.Value = 0;
+            }
         }
 
         private void FixedUpdate()
@@ -77,7 +124,7 @@ namespace CoopGame.Network
                 _cargo != null && !_cargo.IsDestroyed && !_cargo.IsSecured && (TouchesCargo(_hitA) || TouchesCargo(_hitB)))
             {
                 _hitCycle = cycle;
-                _cargo.ApplyDamageServer(_damage, _kind == HazardKind.SwingHammer ? "Swing hammer" : "Stone crusher");
+                _cargo.ApplyDamageServer(_damage, !string.IsNullOrEmpty(_damageReason) ? _damageReason : _kind == HazardKind.SwingHammer ? "Swing hammer" : "Stone crusher");
             }
             Present(Phase);
         }
@@ -86,28 +133,46 @@ namespace CoopGame.Network
         {
             if (_kind == HazardKind.SwingHammer)
             {
-                // Park outside the lane during safe/warning; sweep out and back once per activation.
-                float angle = phase == 2 ? _swingAngle * Mathf.Cos(active * Mathf.PI * 2f) : _swingAngle;
-                _primary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle, Vector3.forward));
+                if (_useAuthoredRestPose)
+                {
+                    // The authored prefab pose is the parked pose. Sweep through the lane and return without snapping.
+                    float angle = phase == 2 ? -2f * _swingAngle * Mathf.Sin(active * Mathf.PI) : 0f;
+                    _primary.MoveRotation(transform.rotation * _primaryRuntimeRotation * Quaternion.AngleAxis(angle, Vector3.forward));
+                }
+                else
+                {
+                    float angle = phase == 2 ? _swingAngle * Mathf.Cos(active * Mathf.PI * 2f) : _swingAngle;
+                    _primary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle, Vector3.forward));
+                }
             }
             else if (_kind == HazardKind.Crusher)
             {
                 float extension = phase == 2 ? Mathf.Sin(active * Mathf.PI) * _travel : 0f;
-                _primary.MovePosition(transform.TransformPoint(_primaryRest + Vector3.right * extension));
-                if (_secondary != null) _secondary.MovePosition(transform.TransformPoint(_secondaryRest - Vector3.right * extension));
+                _primary.MovePosition(transform.TransformPoint(_primaryRuntimeRest + Vector3.right * extension));
+                if (_secondary != null) _secondary.MovePosition(transform.TransformPoint(_secondaryRuntimeRest - Vector3.right * extension));
             }
             else if (_kind == HazardKind.DoublePendulum)
             {
-                float angle1 = phase == 2 ? _swingAngle * Mathf.Cos(active * Mathf.PI * 2f) : _swingAngle;
-                float angle2 = phase == 2 ? -_swingAngle * 1.15f * Mathf.Cos(active * Mathf.PI * 2.5f) : -_swingAngle;
-                _primary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle1, Vector3.forward));
-                if (_secondary != null) _secondary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle2, Vector3.forward));
+                if (_useAuthoredRestPose)
+                {
+                    float sweep = phase == 2 ? 2f * _swingAngle * Mathf.Sin(active * Mathf.PI) : 0f;
+                    _primary.MoveRotation(transform.rotation * _primaryRuntimeRotation * Quaternion.AngleAxis(-sweep, Vector3.forward));
+                    if (_secondary != null)
+                        _secondary.MoveRotation(transform.rotation * _secondaryRuntimeRotation * Quaternion.AngleAxis(sweep, Vector3.forward));
+                }
+                else
+                {
+                    float angle1 = phase == 2 ? _swingAngle * Mathf.Cos(active * Mathf.PI * 2f) : _swingAngle;
+                    float angle2 = phase == 2 ? -_swingAngle * _secondarySwingScale * Mathf.Cos(active * Mathf.PI * 2.5f) : -_swingAngle;
+                    _primary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle1, Vector3.forward));
+                    if (_secondary != null) _secondary.MoveRotation(transform.rotation * Quaternion.AngleAxis(angle2, Vector3.forward));
+                }
             }
             else
             {
                 bool dropped = phase >= 2;
                 if (_hitA != null) _hitA.enabled = !dropped;
-                _primary.MovePosition(transform.TransformPoint(_primaryRest - Vector3.up * (dropped ? .8f : 0f)));
+                _primary.MovePosition(transform.TransformPoint(_primaryRuntimeRest - Vector3.up * (dropped ? _dropDistance : 0f)));
             }
         }
 

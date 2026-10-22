@@ -19,17 +19,27 @@ namespace CoopGame.Network
         [Header("Hazard Configuration")]
         [SerializeField] private Rigidbody _logRigidbody;
         [SerializeField] private RotationAxis _axis = RotationAxis.Z;
-        [SerializeField] private float _rotationSpeedDegrees = 90f; // degrees per second
+        [Tooltip("Continuous mode (Safe Seconds = 0): degrees per second.")]
+        [SerializeField, Min(0f)] private float _rotationSpeedDegrees = 90f; // degrees per second
         [SerializeField] private bool _reverseDirection = false;
         [Tooltip("Zero preserves continuous rotation; positive values add a parked waiting phase.")]
         [SerializeField, Min(0f)] private float _safeSeconds;
+        [Tooltip("Seconds added to the cycle clock (timed mode). Shifts the start of the sweep.")]
+        [SerializeField, Min(0f)] private float _phaseOffset;
         [SerializeField, Min(.25f)] private float _warningSeconds = 2f;
         [SerializeField, Min(1f)] private float _sweepSeconds = 5f;
         [SerializeField] private float _parkAngle = 90f;
+        [Tooltip("Use the Rigidbody's authored rotation as its parked pose. Existing scene hazards keep the legacy park angle by default.")]
+        [SerializeField] private bool _useAuthoredRestPose;
 
         [Header("Damage & Impact")]
         [SerializeField] private FragileCargo _cargo;
+        [Tooltip("Cargo damage per hit.")]
         [SerializeField, Min(1)] private int _cargoImpactDamage = 10;
+        [Tooltip("Minimum seconds between damaging hits.")]
+        [SerializeField, Min(0f)] private float _damageCooldownSeconds = 1f;
+        [Tooltip("Shown in damage logs.")]
+        [SerializeField] private string _damageReason = "Rotating wooden beam";
         [SerializeField] private BoxCollider _impactZone;
 
         [Header("Visual Feedback")]
@@ -43,6 +53,7 @@ namespace CoopGame.Network
         private long _lastHitCycle = -1;
         private bool _physicsReady;
         private int _shownPhase = -1;
+        private Quaternion _runtimeRestRotation = Quaternion.identity;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         public bool OwnsColliderContact(Collider collider) => collider != null &&
             _logRigidbody != null && collider.attachedRigidbody == _logRigidbody;
@@ -58,6 +69,8 @@ namespace CoopGame.Network
                     _logRigidbody = GetComponentInChildren<Rigidbody>();
                 }
             }
+            if (_logRigidbody != null)
+                _runtimeRestRotation = Quaternion.Inverse(transform.rotation) * _logRigidbody.rotation;
         }
 
         public override void OnNetworkSpawn()
@@ -68,6 +81,7 @@ namespace CoopGame.Network
             _shownPhase = -1;
             if (IsServer)
             {
+                if (_cargo == null) _cargo = FindAnyObjectByType<FragileCargo>();
                 _startServerTime.Value = NetworkManager.ServerTime.Time;
             }
         }
@@ -85,7 +99,7 @@ namespace CoopGame.Network
             }
 
             // Deterministic angle from NGO ServerTime
-            double elapsed = Math.Max(0, NetworkManager.ServerTime.Time - _startServerTime.Value);
+            double elapsed = Math.Max(0, NetworkManager.ServerTime.Time - _startServerTime.Value + _phaseOffset);
             float dir = _reverseDirection ? -1f : 1f;
             float currentAngle;
             int phase = 2;
@@ -96,7 +110,8 @@ namespace CoopGame.Network
                 cycle = (long)Math.Floor(elapsed / duration);
                 double within = elapsed - cycle * duration;
                 phase = within < _safeSeconds ? 0 : within < _safeSeconds + _warningSeconds ? 1 : 2;
-                currentAngle = _parkAngle + (phase == 2 ?
+                float authoredOffset = _useAuthoredRestPose ? 0f : _parkAngle;
+                currentAngle = authoredOffset + (phase == 2 ?
                     Mathf.Clamp01((float)((within - _safeSeconds - _warningSeconds) / _sweepSeconds)) * 360f * dir : 0f);
             }
             else currentAngle = (float)((elapsed * _rotationSpeedDegrees * dir) % 360.0);
@@ -108,7 +123,8 @@ namespace CoopGame.Network
                 _ => Vector3.forward
             };
 
-            Quaternion targetRotation = transform.rotation * Quaternion.AngleAxis(currentAngle, localAxis);
+            Quaternion restRotation = _useAuthoredRestPose ? _runtimeRestRotation : Quaternion.identity;
+            Quaternion targetRotation = transform.rotation * restRotation * Quaternion.AngleAxis(currentAngle, localAxis);
             _logRigidbody.MoveRotation(targetRotation);
             Present(phase);
 
@@ -134,7 +150,7 @@ namespace CoopGame.Network
 
         private void CheckCargoImpact(Quaternion targetRotation, long cycle)
         {
-            if (NetworkManager.ServerTime.Time - _lastDamageTime < 1.0) return;
+            if (NetworkManager.ServerTime.Time - _lastDamageTime < _damageCooldownSeconds) return;
 
             Vector3 scale = _impactZone.transform.lossyScale;
             Vector3 halfExtents = Vector3.Scale(_impactZone.size * 0.5f,
@@ -159,7 +175,7 @@ namespace CoopGame.Network
                 {
                     _lastDamageTime = NetworkManager.ServerTime.Time;
                     _lastHitCycle = cycle;
-                    _cargo.ApplyDamageServer(_cargoImpactDamage, "Rotating wooden beam");
+                    _cargo.ApplyDamageServer(_cargoImpactDamage, _damageReason);
                     break;
                 }
             }

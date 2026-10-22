@@ -21,7 +21,9 @@ namespace CoopGame.Network
         }
 
         [Header("Timing")]
+        [Tooltip("Seconds of shaking after first contact before the stone drops.")]
         [SerializeField, Min(0.1f)] private float _warningSeconds = 0.65f;
+        [Tooltip("Seconds the stone stays collapsed before it returns.")]
         [SerializeField, Min(0.5f)] private float _collapsedSeconds = 2.5f;
 
         [Header("Components")]
@@ -33,8 +35,14 @@ namespace CoopGame.Network
         [SerializeField] private Color _collapsedColor = new Color(0.3f, 0.1f, 0.1f, 0.2f);
 
         [Header("Motion")]
-        [SerializeField] private float _shakeMagnitude = 0.04f;
-        [SerializeField] private float _dropDistance = 6.0f;
+        [Tooltip("Tremor amplitude in metres during the warning.")]
+        [SerializeField, Min(0f)] private float _shakeMagnitude = 0.04f;
+        [Tooltip("Tremor frequency (rad/s) during the warning.")]
+        [SerializeField, Min(0f)] private float _shakeFrequency = 35f;
+        [Tooltip("How far (metres) the stone falls when collapsed.")]
+        [SerializeField, Min(0f)] private float _dropDistance = 6.0f;
+        [Tooltip("Seconds the fall animation takes.")]
+        [SerializeField, Min(0.05f)] private float _dropSeconds = 0.4f;
 
         private readonly NetworkVariable<StoneState> _state = new(StoneState.Solid);
         private readonly NetworkVariable<double> _stateChangeTime = new(0);
@@ -145,14 +153,14 @@ namespace CoopGame.Network
             else if (state == StoneState.Warning)
             {
                 // Rapid high-frequency tremor
-                float freq = 35f;
+                float freq = _shakeFrequency;
                 float shakeX = Mathf.Sin(elapsed * freq) * _shakeMagnitude;
                 float shakeZ = Mathf.Cos(elapsed * freq * 1.3f) * _shakeMagnitude;
                 _rigidbody.MovePosition(_restPosition + new Vector3(shakeX, 0f, shakeZ));
             }
             else if (state == StoneState.Collapsed)
             {
-                float t = Mathf.Clamp01(elapsed / 0.4f);
+                float t = Mathf.Clamp01(elapsed / _dropSeconds);
                 float drop = Mathf.SmoothStep(0f, _dropDistance, t);
                 _rigidbody.MovePosition(_restPosition - Vector3.up * drop);
             }

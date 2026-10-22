@@ -15,11 +15,18 @@ namespace CoopGame.Network
         [SerializeField] private Renderer _marker;
         [SerializeField] private TextMesh _label;
         [SerializeField] private FragileCargo _cargo;
+        [Tooltip("Seconds the trap is idle and safe.")]
         [SerializeField, Min(.5f)] private float _safeSeconds = 4f;
+        [Tooltip("Seconds of warning before the pulse.")]
         [SerializeField, Min(.5f)] private float _warningSeconds = 1f;
+        [Tooltip("Seconds the flames/spikes stay active.")]
         [SerializeField, Min(.5f)] private float _activeSeconds = 1.5f;
+        [Tooltip("Seconds added to the cycle clock to stagger neighbouring traps.")]
         [SerializeField, Min(0f)] private float _phaseOffset;
+        [Tooltip("Cargo damage applied once per activation.")]
         [SerializeField, Min(1)] private int _damage = 10;
+        [Tooltip("Shown in damage logs.")]
+        [SerializeField] private string _damageReason = "Timed flame trap";
         private readonly NetworkVariable<byte> _phase = new(0);
         private readonly NetworkVariable<double> _epoch = new(0);
         private readonly Collider[] _overlaps = new Collider[32];
@@ -36,7 +43,12 @@ namespace CoopGame.Network
         {
             _lastDisplay = -1;
             _lastDamageCycle = -1;
-            if (IsServer) { _epoch.Value = NetworkManager.ServerTime.Time; _phase.Value = 0; }
+            if (IsServer)
+            {
+                if (_cargo == null) _cargo = FindAnyObjectByType<FragileCargo>();
+                _epoch.Value = NetworkManager.ServerTime.Time;
+                _phase.Value = 0;
+            }
         }
 
         private void FixedUpdate()
@@ -60,7 +72,7 @@ namespace CoopGame.Network
                     {
                         if (_overlaps[i] == null || _overlaps[i].GetComponentInParent<FragileCargo>() != _cargo) continue;
                         _lastDamageCycle = cycle;
-                        _cargo.ApplyDamageServer(_damage, "Timed flame trap");
+                        _cargo.ApplyDamageServer(_damage, _damageReason);
                         break;
                     }
                     // Do not retain despawned colliders until the next pulse.
