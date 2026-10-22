@@ -19,10 +19,13 @@ namespace CoopGame.Network
         [Header("Hazard Configuration")]
         [SerializeField] private Rigidbody _logRigidbody;
         [SerializeField] private RotationAxis _axis = RotationAxis.Z;
-        [SerializeField] private float _rotationSpeedDegrees = 90f; // degrees per second
+        [Tooltip("Continuous mode (Safe Seconds = 0): degrees per second.")]
+        [SerializeField, Min(0f)] private float _rotationSpeedDegrees = 90f; // degrees per second
         [SerializeField] private bool _reverseDirection = false;
         [Tooltip("Zero preserves continuous rotation; positive values add a parked waiting phase.")]
         [SerializeField, Min(0f)] private float _safeSeconds;
+        [Tooltip("Seconds added to the cycle clock (timed mode). Shifts the start of the sweep.")]
+        [SerializeField, Min(0f)] private float _phaseOffset;
         [SerializeField, Min(.25f)] private float _warningSeconds = 2f;
         [SerializeField, Min(1f)] private float _sweepSeconds = 5f;
         [SerializeField] private float _parkAngle = 90f;
@@ -31,7 +34,12 @@ namespace CoopGame.Network
 
         [Header("Damage & Impact")]
         [SerializeField] private FragileCargo _cargo;
+        [Tooltip("Cargo damage per hit.")]
         [SerializeField, Min(1)] private int _cargoImpactDamage = 10;
+        [Tooltip("Minimum seconds between damaging hits.")]
+        [SerializeField, Min(0f)] private float _damageCooldownSeconds = 1f;
+        [Tooltip("Shown in damage logs.")]
+        [SerializeField] private string _damageReason = "Rotating wooden beam";
         [SerializeField] private BoxCollider _impactZone;
 
         [Header("Visual Feedback")]
@@ -91,7 +99,7 @@ namespace CoopGame.Network
             }
 
             // Deterministic angle from NGO ServerTime
-            double elapsed = Math.Max(0, NetworkManager.ServerTime.Time - _startServerTime.Value);
+            double elapsed = Math.Max(0, NetworkManager.ServerTime.Time - _startServerTime.Value + _phaseOffset);
             float dir = _reverseDirection ? -1f : 1f;
             float currentAngle;
             int phase = 2;
@@ -142,7 +150,7 @@ namespace CoopGame.Network
 
         private void CheckCargoImpact(Quaternion targetRotation, long cycle)
         {
-            if (NetworkManager.ServerTime.Time - _lastDamageTime < 1.0) return;
+            if (NetworkManager.ServerTime.Time - _lastDamageTime < _damageCooldownSeconds) return;
 
             Vector3 scale = _impactZone.transform.lossyScale;
             Vector3 halfExtents = Vector3.Scale(_impactZone.size * 0.5f,
@@ -167,7 +175,7 @@ namespace CoopGame.Network
                 {
                     _lastDamageTime = NetworkManager.ServerTime.Time;
                     _lastHitCycle = cycle;
-                    _cargo.ApplyDamageServer(_cargoImpactDamage, "Rotating wooden beam");
+                    _cargo.ApplyDamageServer(_cargoImpactDamage, _damageReason);
                     break;
                 }
             }
