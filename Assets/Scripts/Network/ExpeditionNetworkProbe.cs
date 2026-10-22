@@ -255,12 +255,12 @@ namespace CoopGame.Network
                 case "lever":
                     var gate = FindAnyObjectByType<TeamLeverGate>();
                     if (gate != null) typeof(TeamLeverGate).GetMethod("HoldLeverRpc", BindingFlags.NonPublic | BindingFlags.Instance)
-                        .Invoke(gate, new object[] { default(RpcParams) });
+                        .Invoke(gate, new object[] { player.transform.position, default(RpcParams) });
                     break;
                 case "switch":
                     var highSwitch = GameObject.Find(parts[2] == "B" ? "WallSwitch_B" : "WallSwitch_A")?.GetComponent<ClimbSwitchGate>();
                     if (highSwitch != null) typeof(ClimbSwitchGate).GetMethod("PressSwitchRpc", BindingFlags.NonPublic | BindingFlags.Instance)
-                        .Invoke(highSwitch, new object[] { default(RpcParams) });
+                        .Invoke(highSwitch, new object[] { player.transform.position, default(RpcParams) });
                     break;
                 case "teleport":
                     _teleport = new Vector3(float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture), float.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture), float.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture));

@@ -17,6 +17,9 @@ namespace CoopGame.Network
         [SerializeField, Min(1f)] private float _openSeconds = 8f;
         private readonly NetworkVariable<bool> _open = new(false);
         private float _openUntil, _nextSend;
+        // A remote player's server copy trails them by the network delay; the hold carries where the holder
+        // really is, accepted only near that copy.
+        private const float LeverReach = 3f, MaxReportedOffset = 3f;
         private bool _wasHeld, _visualOpen;
         public bool IsOpen => _open.Value;
         public float OpenDurationSeconds => _openSeconds;
@@ -37,18 +40,21 @@ namespace CoopGame.Network
                 !PauseMenu.IsPaused && !MissionFailUI.IsVisible && !ExpeditionHUD.BlocksGameplayInput;
             if (held && (!_wasHeld || Time.unscaledTime >= _nextSend))
             {
-                HoldLeverRpc();
+                HoldLeverRpc(NetworkManager.LocalClient.PlayerObject.transform.position);
                 _nextSend = Time.unscaledTime + .2f;
             }
             _wasHeld = held;
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-        private void HoldLeverRpc(RpcParams parameters = default)
+        private void HoldLeverRpc(Vector3 holderPosition, RpcParams parameters = default)
         {
             if (!NetworkManager.ConnectedClients.TryGetValue(parameters.Receive.SenderClientId, out var client) ||
-                client.PlayerObject == null || _lever == null ||
-                (client.PlayerObject.transform.position - _lever.position).sqrMagnitude > 9f) return;
+                client.PlayerObject == null || _lever == null) return;
+            Vector3 seen = client.PlayerObject.transform.position;
+            Vector3 position = float.IsFinite(holderPosition.x) && float.IsFinite(holderPosition.y) && float.IsFinite(holderPosition.z) &&
+                (holderPosition - seen).sqrMagnitude <= MaxReportedOffset * MaxReportedOffset ? holderPosition : seen;
+            if ((position - _lever.position).sqrMagnitude > LeverReach * LeverReach) return;
             _openUntil = Time.unscaledTime + _openSeconds;
         }
 

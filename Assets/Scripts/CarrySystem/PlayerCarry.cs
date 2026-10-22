@@ -159,6 +159,9 @@ namespace CoopGame.CarrySystem
         private Vector3 _cargoReplicaLastPosition;
         private float _cargoReplicaMovedAt;
         private float _cargoReplicaSampledAt = -1f;
+        private float _cargoReplicaYawRate; // deg/s, measured on the replica
+        private Quaternion _cargoReplicaLastRotation = Quaternion.identity;
+        private float _cargoReplicaRotatedAt;
         private Vector3 _lastStreamPosition;
         private bool _streamPositionValid;
         private readonly System.Collections.Generic.List<Collider> _collisionRestores = new(8);
@@ -537,7 +540,33 @@ namespace CoopGame.CarrySystem
             if (_rightHandGripping) excess = Mathf.Max(excess, GripOverreach(false));
             _overreachTime = excess > .2f ? _overreachTime + Time.fixedDeltaTime : 0f;
             if (_overreachTime > .65f && Time.time - _attachedAt > 1.1f) DropForRespawn();
+            LogCarryDiagnostics(excess);
         }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private float _nextDiagAt;
+        private Vector3 _diagLastPosition;
+
+        /// <summary>Once a second while this player walks with cargo: why a carrier is slow (reach limit, replica
+        /// lag, speed multipliers). Read the lines from Player.log; same line format on host and client.</summary>
+        private void LogCarryDiagnostics(float overreach)
+        {
+            if (Time.unscaledTime < _nextDiagAt || _inputReader == null || _movement == null) return;
+            if (_inputReader.MoveInput.sqrMagnitude < .01f) { _diagLastPosition = transform.position; return; }
+            float dt = Time.unscaledTime - (_nextDiagAt - 1f);
+            _nextDiagAt = Time.unscaledTime + 1f;
+            Vector3 moved = transform.position - _diagLastPosition; moved.y = 0f;
+            _diagLastPosition = transform.position;
+            string cargo = _currentCargoRigidbody != null
+                ? $"cargoSpeed={Vector3.ProjectOnPlane(_currentCargoRigidbody.linearVelocity, Vector3.up).magnitude:F2} replicaVel={_cargoReplicaVelocity.magnitude:F2} yawRate={_cargoReplicaYawRate:F0} rigidbodyKinematic={_currentCargoRigidbody.isKinematic}"
+                : "cargo=none";
+            Debug.Log($"[CarryDiag] role={(IsServer ? "host" : "client")} carriers={_currentCarryable.CurrentCarrierCount} playerSpeed={(dt > .1f ? moved.magnitude / dt : 0f):F2} " +
+                      $"requested={_movement.RequestedSpeed:F2} speedMult={_movement.SpeedMultiplier:F2} allowedRatio={LastCarryAllowedRatio:F2} overreach={overreach:F2} " +
+                      $"lead={(IsServer ? 0f : ReplicaLeadSeconds()):F3} oneWay={OneWayDelayToServer:F3} {cargo}");
+        }
+#else
+        private void LogCarryDiagnostics(float overreach) { }
+#endif
 
         private void Update()
         {
@@ -1511,36 +1540,69 @@ namespace CoopGame.CarrySystem
         {
             Vector3 local = left ? _currentLocalContactLeft : _currentLocalContactRight;
             if (_currentCargoRigidbody == null) return _currentCarryable.transform.TransformPoint(local);
-            return PredictedServerCargoPosition() + _currentCargoRigidbody.rotation * Vector3.Scale(local, _currentCarryable.transform.lossyScale);
+            return PredictedServerCargoPosition() + PredictedServerCargoRotation() * Vector3.Scale(local, _currentCarryable.transform.lossyScale);
         }
 
         /// <summary>Cargo position for reach/body limits: where the server has the cargo now. On a client the
-        /// co-op cargo is a replica one network delay behind the server; a carrier walking away from it would
+        /// cargo is a replica one network delay behind the server (solo or co-op); a carrier walking away from it would
         /// look over-reached and have every step cut, so it is extrapolated. The server simulates the cargo
-        /// itself (including kinematic delivery/placement states), and solo/offline carry is unchanged.</summary>
+        /// itself (including kinematic delivery/placement states), and offline carry is unchanged.</summary>
         private Vector3 PredictedServerCargoPosition()
         {
             Vector3 position = _currentCargoRigidbody.position;
-            if (IsServer || !_currentCarryable.IsSpawned || _currentCarryable.CurrentCarrierCount < 2) return position;
-            if (_cargoReplicaSampledAt != Time.fixedTime)
+            if (IsServer || !_currentCarryable.IsSpawned) return position;
+            SampleCargoReplica();
+            return position + _cargoReplicaVelocity * ReplicaLeadSeconds();
+        }
+
+        /// <summary>Cargo rotation for the same reach limits. A turning cargo (a solo carrier steering it, or a
+        /// team swinging it round) sits one network delay behind on a client, so the grip points swing away from
+        /// the hands: at 140 deg/s and 0.13 s that is about 18 deg, 0.2 m at the grip, enough to count as
+        /// over-reach and let go. The yaw is extrapolated the same way as the position.</summary>
+        private Quaternion PredictedServerCargoRotation()
+        {
+            Quaternion rotation = _currentCargoRigidbody.rotation;
+            if (IsServer || !_currentCarryable.IsSpawned) return rotation;
+            SampleCargoReplica();
+            if (Mathf.Abs(_cargoReplicaYawRate) < .5f) return rotation;
+            return Quaternion.AngleAxis(_cargoReplicaYawRate * ReplicaLeadSeconds(), Vector3.up) * rotation;
+        }
+
+        private float ReplicaLeadSeconds() =>
+            NetworkMotionDelay.Estimate(NetworkManager.Singleton, _cargoNetworkTransform, OneWayDelayToServer);
+
+        private void SampleCargoReplica()
+        {
+            if (_cargoReplicaSampledAt == Time.fixedTime) return;
+            _cargoReplicaSampledAt = Time.fixedTime;
+            // The replica moves once per rendered frame; measure over actual changes.
+            Vector3 position = _currentCargoRigidbody.position;
+            Vector3 moved = position - _cargoReplicaLastPosition;
+            if (moved.sqrMagnitude > 1e-8f)
             {
-                _cargoReplicaSampledAt = Time.fixedTime;
-                // The replica moves once per rendered frame; measure over actual position changes.
-                Vector3 moved = position - _cargoReplicaLastPosition;
-                if (moved.sqrMagnitude > 1e-8f)
-                {
-                    float span = Mathf.Max(Time.fixedDeltaTime, Time.fixedTime - _cargoReplicaMovedAt);
-                    _cargoReplicaVelocity = Vector3.Lerp(_cargoReplicaVelocity, Vector3.ClampMagnitude(moved / span, MaxReplicaCargoSpeed), .5f);
-                    _cargoReplicaLastPosition = position;
-                    _cargoReplicaMovedAt = Time.fixedTime;
-                }
-                else if (Time.fixedTime - _cargoReplicaMovedAt > ReplicaStillSeconds) _cargoReplicaVelocity = Vector3.zero;
+                float span = Mathf.Max(Time.fixedDeltaTime, Time.fixedTime - _cargoReplicaMovedAt);
+                _cargoReplicaVelocity = Vector3.Lerp(_cargoReplicaVelocity, Vector3.ClampMagnitude(moved / span, MaxReplicaCargoSpeed), .5f);
+                _cargoReplicaLastPosition = position;
+                _cargoReplicaMovedAt = Time.fixedTime;
             }
-            return position + _cargoReplicaVelocity *
-                NetworkMotionDelay.Estimate(NetworkManager.Singleton, _cargoNetworkTransform, OneWayDelayToServer);
+            else if (Time.fixedTime - _cargoReplicaMovedAt > ReplicaStillSeconds) _cargoReplicaVelocity = Vector3.zero;
+
+            Quaternion rotation = _currentCargoRigidbody.rotation;
+            (rotation * Quaternion.Inverse(_cargoReplicaLastRotation)).ToAngleAxis(out float angle, out Vector3 axis);
+            if (angle > 180f) angle -= 360f;
+            if (Mathf.Abs(angle) > .02f)
+            {
+                float span = Mathf.Max(Time.fixedDeltaTime, Time.fixedTime - _cargoReplicaRotatedAt);
+                float yawRate = Mathf.Clamp(angle * axis.y / span, -MaxReplicaYawRate, MaxReplicaYawRate);
+                _cargoReplicaYawRate = Mathf.Lerp(_cargoReplicaYawRate, yawRate, .5f);
+                _cargoReplicaLastRotation = rotation;
+                _cargoReplicaRotatedAt = Time.fixedTime;
+            }
+            else if (Time.fixedTime - _cargoReplicaRotatedAt > ReplicaStillSeconds) _cargoReplicaYawRate = 0f;
         }
 
         private const float MaxReplicaCargoSpeed = 12f;
+        private const float MaxReplicaYawRate = 360f;
         private const float ReplicaStillSeconds = .2f;
 
         // ---- One-way transit to the server, measured in-game (transports such as Facepunch report no RTT) ----
@@ -1749,6 +1811,9 @@ namespace CoopGame.CarrySystem
             _cargoReplicaVelocity = Vector3.zero;
             _cargoReplicaLastPosition = _currentCargoRigidbody != null ? _currentCargoRigidbody.position : carryable.transform.position;
             _cargoReplicaMovedAt = Time.fixedTime;
+            _cargoReplicaYawRate = 0f;
+            _cargoReplicaLastRotation = _currentCargoRigidbody != null ? _currentCargoRigidbody.rotation : carryable.transform.rotation;
+            _cargoReplicaRotatedAt = Time.fixedTime;
             _cargoReplicaSampledAt = -1f;
             _streamPositionValid = false;
 

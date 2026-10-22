@@ -433,6 +433,7 @@ namespace CoopGame.CarrySystem
                 Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * (soloDrag ? 6f * DragTractionScale : 6f),
                     _carryTractionAcceleration * (SoloAssistActive ? 1.5f : 1f) * (soloDrag ? DragTractionScale : 1f));
                 _rigidbody.AddForce(acceleration, ForceMode.Acceleration);
+                LogTractionDiagnostics(sharedIntent, speed, horizontalVelocity, acceleration, supportingCarrierCount);
             }
 
             Vector3 objectScale = transform.lossyScale;
@@ -481,11 +482,11 @@ namespace CoopGame.CarrySystem
                 targetHandL = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetLeft, targetHandL, settle);
                 targetHandR = Vector3.Lerp(pTransform.position + carrier.InitialSupportOffsetRight, targetHandR, settle);
 
-                // A remote co-op carrier is seen where they were one network delay ago. Without this their
+                // A remote carrier (solo or co-op) is seen where they were one network delay ago. Without this their
                 // grip targets (and the velocity the grips damp toward) trail them, the springs drag that
                 // end back and the team stalls; on stopping the stale velocity would push the cargo on.
                 Vector3 supportVelocity = carrier.PlayerVelocity;
-                if (TryGetRemoteCarrierMotion(carrier, isNetworked && supportingCarrierCount > 1, out Vector3 lead, out Vector3 reportedVelocity))
+                if (TryGetRemoteCarrierMotion(carrier, isNetworked, out Vector3 lead, out Vector3 reportedVelocity))
                 {
                     targetHandL += lead;
                     targetHandR += lead;
@@ -617,6 +618,22 @@ namespace CoopGame.CarrySystem
             lead = gap * carrier.LeadWeight;
             return true;
         }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private float _nextTractionLogAt;
+
+        /// <summary>Server, once a second while a carrier's input drives the cargo: target speed, the cargo's
+        /// real speed and the pull applied, to tell a weak pull from a blocked carrier.</summary>
+        private void LogTractionDiagnostics(Vector3 intent, float targetSpeed, Vector3 horizontalVelocity, Vector3 acceleration, int carriers)
+        {
+            if (Time.unscaledTime < _nextTractionLogAt) return;
+            _nextTractionLogAt = Time.unscaledTime + 1f;
+            Debug.Log($"[CarryDiagS] carriers={carriers} intent={intent.magnitude:F2} targetSpeed={targetSpeed:F2} cargoSpeed={horizontalVelocity.magnitude:F2} " +
+                      $"pull={acceleration.magnitude:F2} cap={_carryTractionAcceleration * (SoloAssistActive ? 1.5f : 1f):F2} mass={_rigidbody.mass:F1} soloAssist={SoloAssistActive}");
+        }
+#else
+        private void LogTractionDiagnostics(Vector3 intent, float targetSpeed, Vector3 horizontalVelocity, Vector3 acceleration, int carriers) { }
+#endif
 
         private const float InputStaleSeconds = .3f;
         // Carry sprint is 8 m/s x 0.9 co-op x 1.15 Fast Carrier card = 8.3 m/s; reports above this are not plausible.
