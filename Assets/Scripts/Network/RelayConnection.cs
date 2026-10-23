@@ -17,7 +17,12 @@ namespace CoopGame.Network
         private static async Task EnsureSignedInAsync()
         {
             if (UnityServices.State != ServicesInitializationState.Initialized)
-                await UnityServices.InitializeAsync();
+            {
+                // A fresh profile per launch so several copies on one PC (builds, Multiplayer Play Mode) get
+                // different anonymous identities instead of sharing the one saved in PlayerPrefs.
+                var options = new InitializationOptions().SetProfile("p" + Guid.NewGuid().ToString("N").Substring(0, 16));
+                await UnityServices.InitializeAsync(options);
+            }
             if (!AuthenticationService.Instance.IsSignedIn)
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
         }
