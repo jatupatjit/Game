@@ -1,3 +1,4 @@
+using System;
 using CoopGame.CarrySystem;
 using CoopGame.Player;
 using Unity.Netcode;
@@ -27,6 +28,53 @@ namespace CoopGame.Network
         private readonly Text[] _viewMateName = new Text[3];
         private readonly CanvasGroup[] _hudGroups = new CanvasGroup[5];
         [SerializeField] private Font _font;
+
+        /// <summary>Position/size of one HUD element, editable in the Inspector (applied on Play, live while playing).</summary>
+        [Serializable]
+        public struct Slot
+        {
+            [Tooltip("Anchored position from the element's anchor.")] public Vector2 Position;
+            [Tooltip("Width/height. Height is ignored for elements that size themselves from content.")] public Vector2 Size;
+            public Slot(float x, float y, float w, float h) { Position = new Vector2(x, y); Size = new Vector2(w, h); }
+        }
+
+        [Header("Layout (reference 1920x1080)")]
+        [SerializeField] private Slot _missionPanel = new Slot(-300, -78, 560, 116);
+        [SerializeField] private Slot _contextChip = new Slot(-300, -146, 560, 60);
+        [SerializeField] private Slot _runInfo = new Slot(0, -22, 480, 10);
+        [SerializeField] private Slot _inventory = new Slot(-150, -244, 260, 10);
+        [SerializeField] private Slot _controlHints = new Slot(24, 24, 10, 46);
+        [SerializeField] private Slot _ownCard = new Slot(-72, 72, 84, 84);
+        [Header("Card select")]
+        [SerializeField] private float _cardWidth = 340f;
+        [SerializeField] private float _cardHeight = 480f;
+        [SerializeField] private float _cardSpacing = 390f;
+        [SerializeField] private float _cardsY = -86f;
+        [Header("Card view (H)")]
+        [SerializeField] private Vector2 _viewPanelSize = new Vector2(1500, 940);
+        private RectTransform _rMission, _rChip, _rRun, _rInv, _rHints, _rOwn;
+
+        private static void Place(RectTransform r, Slot s, bool setHeight = true)
+        {
+            if (r == null) return;
+            r.anchoredPosition = s.Position;
+            r.sizeDelta = setHeight ? s.Size : new Vector2(s.Size.x, r.sizeDelta.y);
+        }
+
+        private void ApplyLayout()
+        {
+            Place(_rMission, _missionPanel);
+            Place(_rChip, _contextChip, false);
+            Place(_rRun, _runInfo, false);
+            Place(_rInv, _inventory, false);
+            Place(_rHints, _controlHints, false);
+            Place(_rOwn, _ownCard);
+        }
+
+        private void OnValidate()
+        {
+            if (Application.isPlaying && _rMission != null) ApplyLayout();
+        }
         private LevelMission _mission;
         private PlayerExpeditionState _player;
         private TeamLeverGate _lever;
@@ -520,6 +568,10 @@ namespace CoopGame.Network
 
             // Card select / summary (mockup 2): banner header flanked by card backs, message on a dark
             // strip, three tall cards with a selection frame, pink confirm button.
+            _rMission = (RectTransform)objective.transform; _rChip = chipRect;
+            _rRun = _timerChip != null ? (RectTransform)_timerChip.transform : null;
+            _rInv = invRect; _rHints = hintRect; _rOwn = (RectTransform)own.transform;
+            ApplyLayout();
             _hudGroups[0] = objective.AddComponent<CanvasGroup>();
             _hudGroups[1] = _detailChip.AddComponent<CanvasGroup>();
             _hudGroups[2] = _timerChip != null ? _timerChip.AddComponent<CanvasGroup>() : null;
@@ -546,7 +598,7 @@ namespace CoopGame.Network
 
             _cards = new GameObject("Cards", typeof(RectTransform)); _cards.transform.SetParent(panel.transform, false);
             for (int slot = 0; slot < 3; slot++)
-                CardButton(_cards.transform, slot, new Vector2((slot - 1) * CardSpacing, -86));
+                CardButton(_cards.transform, slot, new Vector2((slot - 1) * CardSpacing, _cardsY));
             _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -430), new Vector2(320, 70), ConfirmCard, UIButtonStyle.Primary);
 
             _shop = new GameObject("Shop", typeof(RectTransform)); _shop.transform.SetParent(panel.transform, false);
@@ -581,9 +633,9 @@ namespace CoopGame.Network
         {
             _view = Box("Card View", transform, new Vector2(.5f, .5f), Vector2.zero, Vector2.zero, UITheme.Overlay);
             StretchFull(_view);
-            var root = Box("Panel", _view.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1500, 940), Color.clear);
+            var root = Box("Panel", _view.transform, new Vector2(.5f, .5f), Vector2.zero, _viewPanelSize, Color.clear);
             root.GetComponent<Image>().raycastTarget = false;
-            Backdrop(root.transform, new Vector2(1500, 940), Vector2.zero);
+            Backdrop(root.transform, _viewPanelSize, Vector2.zero);
             var title = Label(root.transform, "Title", "การ์ดของคุณ", 44, new Vector2(0, 410), new Vector2(900, 64), TextAnchor.MiddleCenter);
             UITheme.SetWeight(title, UITheme.FontBold);
             // Own card, large, on the left; its name, effect and a plain-language tip on the right.
@@ -658,7 +710,9 @@ namespace CoopGame.Network
         }
 
         // Card art is 640:904. 340x480 reference px is 480 px tall at 1080p; the canvas scaler shrinks it to ~320 px at 720p.
-        private const float CardWidth = 340f, CardHeight = 480f, CardSpacing = 390f;
+        private float CardWidth => _cardWidth;
+        private float CardHeight => _cardHeight;
+        private float CardSpacing => _cardSpacing;
 
         /// <summary>One offered card slot: the full card image (name and effect are baked into the art) with a neon
         /// selection frame and a small lift when selected. Click previews; confirm (or keys 1-3) applies it.</summary>
