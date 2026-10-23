@@ -46,7 +46,8 @@ namespace CoopGame.Network
         public enum TransportType
         {
             Steam,
-            UnityTransport
+            UnityTransport,
+            Relay
         }
 
         public TransportType CurrentTransportType => _currentTransportType;
@@ -479,6 +480,30 @@ namespace CoopGame.Network
             int request = ++_hostRequestVersion;
             try
             {
+                // Preferred path: Unity Relay. The join code is the room code; no Steam needed.
+                try
+                {
+                    StatusMessage = "Creating room...";
+                    EnsureTransports();
+                    string joinCode = await RelayConnection.PrepareHostAsync(_unityTransport, maxMembers);
+                    if (this == null || request != _hostRequestVersion || nm == null) return;
+                    SetTransportType(TransportType.Relay);
+                    if (nm.StartHost())
+                    {
+                        CurrentRoomCode = joinCode;
+                        IsLocalSession = false;
+                        StatusMessage = $"Room Created! Code: {CurrentRoomCode}";
+                        OnLobbyMembersChanged?.Invoke();
+                        return;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"[SteamLobbyManager] Relay hosting unavailable: {exception.Message}; trying Steam.");
+                }
+                if (this == null || request != _hostRequestVersion || nm == null) return;
+                if (nm.IsListening) nm.Shutdown();
+
                 if (IsSteamMultiplayerAvailable)
                 {
                     StatusMessage = "Creating Steam Lobby...";
@@ -640,9 +665,28 @@ namespace CoopGame.Network
 
             string cleanCode = roomCode.Trim().ToUpperInvariant();
 
+            NetworkManager joinNm = NetworkManager.Singleton;
+            if (joinNm != null && !joinNm.IsListening && !IsLocalSession)
+            {
+                try
+                {
+                    StatusMessage = $"Connecting to Room {cleanCode}...";
+                    EnsureTransports();
+                    await RelayConnection.PrepareClientAsync(_unityTransport, cleanCode);
+                    SetTransportType(TransportType.Relay);
+                    CurrentRoomCode = cleanCode;
+                    if (joinNm.StartClient()) return;
+                    StatusMessage = "Could not connect to the room.";
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"[SteamLobbyManager] Relay join failed for '{cleanCode}': {exception.Message}");
+                }
+            }
+
             if (!IsSteamMultiplayerAvailable || IsLocalSession)
             {
-                StatusMessage = "Steam is not running or offline!";
+                StatusMessage = $"Room '{cleanCode}' not found! Check code and try again.";
                 return;
             }
 

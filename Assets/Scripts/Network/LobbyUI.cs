@@ -353,8 +353,8 @@ namespace CoopGame.Network
 
             if (_hostRoomMenuButton != null) _hostRoomMenuButton.interactable = canHost;
             if (_hostButton         != null) _hostButton.interactable         = canHost;
-            if (_joinButton         != null) _joinButton.interactable         = steamReady;
-            if (_confirmJoinButton  != null) _confirmJoinButton.interactable  = steamReady;
+            if (_joinButton         != null) _joinButton.interactable         = mgr != null;
+            if (_confirmJoinButton  != null) _confirmJoinButton.interactable  = mgr != null;
 
             if (_steamStatusLabel != null)
             {
