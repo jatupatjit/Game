@@ -60,7 +60,16 @@ namespace CoopGame.Network
                 image.raycastTarget = false;
                 if (_panel == null && !image.name.Contains("Divider")) _panel = image.rectTransform;
             }
-            if (_panel == null) return;
+            if (_panel == null)
+            {
+                var panelGo = new GameObject("SessionPanel", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup));
+                panelGo.transform.SetParent(transform, false);
+                _panel = (RectTransform)panelGo.transform;
+                _panel.anchorMin = _panel.anchorMax = new Vector2(0f, 1f);
+                _panel.pivot = new Vector2(0f, 1f);
+                _panel.anchoredPosition = new Vector2(20f, -20f);
+                panelGo.GetComponent<Image>().raycastTarget = false;
+            }
             UITheme.StylePanel(_panel.GetComponent<Image>());
             foreach (Transform child in _panel) child.gameObject.SetActive(false); // old header/count/names
 

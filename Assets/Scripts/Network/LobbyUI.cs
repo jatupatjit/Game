@@ -81,7 +81,7 @@ namespace CoopGame.Network
             if (_canvas == null) _canvas = GetComponent<Canvas>();
             if (_canvas == null) _canvas = gameObject.AddComponent<Canvas>();
 
-            if (_lobbyRoot == null)
+            if (_lobbyRoot == null || _mainPanel == null)
                 BuildRuntime();
             ApplyTheme();
         }

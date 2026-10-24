@@ -45,7 +45,7 @@ namespace CoopGame.Network
             if (_canvas == null) _canvas = GetComponent<Canvas>();
             if (_canvas == null) _canvas = gameObject.AddComponent<Canvas>();
 
-            if (_hudGroup == null)
+            if (_hudGroup == null || _roomCodeText == null)
                 BuildRuntime();
             ApplyTheme();
             // The room code and player list now live in the Pause menu (PauseMenu room-code section).

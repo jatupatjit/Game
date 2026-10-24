@@ -987,17 +987,7 @@ public static class AutoSceneUIInstaller
 
     static AutoSceneUIInstaller()
     {
-        EditorApplication.delayCall += () =>
-        {
-            if (!EditorApplication.isPlayingOrWillChangePlaymode &&
-                IsLobbyScene())
-            {
-                if (NeedsBuild())
-                {
-                    BuildAll();
-                }
-            }
-        };
+        // Runtime UI self-builds cleanly in Awake(), so we do not auto-bake UI children into Edit Mode scenes.
     }
 
     public static bool NeedsBuild()
@@ -1005,13 +995,13 @@ public static class AutoSceneUIInstaller
         if (!IsLobbyScene()) return false;
 
         var lobby = FindInLobbyScene<LobbyUI>();
-        if (lobby == null || lobby.transform.childCount == 0) return true;
+        if (lobby == null) return true;
 
         var pause = FindInLobbyScene<PauseMenu>();
-        if (pause == null || pause.transform.childCount == 0) return true;
+        if (pause == null) return true;
 
         var hud = FindInLobbyScene<RoomCodeHUD>();
-        if (hud == null || hud.transform.childCount == 0) return true;
+        if (hud == null) return true;
 
         var es = FindInLobbyScene<UnityEngine.EventSystems.EventSystem>();
         if (es == null) return true;
