@@ -444,10 +444,19 @@ namespace CoopGame.Network
             HideSettingsPanel();
             HideConfirmDialog();
 
+            if (UnityEngine.EventSystems.EventSystem.current != null)
+                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+
+            if (_pauseRoot != null)
+            {
+                _pauseRoot.interactable = false;
+                _pauseRoot.blocksRaycasts = false;
+            }
+
             StopAllCoroutines();
             if (instant)
             {
-                if (_pauseRoot != null) { _pauseRoot.alpha = 0f; _pauseRoot.interactable = false; _pauseRoot.blocksRaycasts = false; }
+                if (_pauseRoot != null) _pauseRoot.alpha = 0f;
                 return;
             }
 
@@ -456,6 +465,21 @@ namespace CoopGame.Network
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible   = false;
             CoopGame.Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);
+            StartCoroutine(EnsureCursorLockedNextFrames());
+        }
+
+        private IEnumerator EnsureCursorLockedNextFrames()
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                yield return null;
+                if (_isPaused || IsPaused || LobbyCharacterCustomizationUI.IsVisible ||
+                    CoopGame.CarrySystem.MissionFailUI.IsVisible || ExpeditionHUD.BlocksGameplayInput)
+                    yield break;
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible   = false;
+                CoopGame.Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);
+            }
         }
 
         // ─────────────────────────────────────────── Button Handlers ──────────

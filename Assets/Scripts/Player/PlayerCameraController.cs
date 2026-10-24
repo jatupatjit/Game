@@ -273,9 +273,19 @@ namespace CoopGame.Player
         /// </summary>
         private void HandleCursorToggle()
         {
-            if (CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (CoopGame.CarrySystem.MissionFailUI.IsVisible ||
+                CoopGame.Network.ExpeditionHUD.BlocksGameplayInput ||
+                CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible ||
+                CoopGame.Network.PauseMenu.IsPaused) return;
+
+            if (_isCursorLocked && (Cursor.lockState != CursorLockMode.Locked || Cursor.visible))
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+            }
+
             // If game is not paused and cursor is currently unlocked, clicking on the game viewport re-locks cursor
-            if (Cursor.lockState != CursorLockMode.Locked && !CoopGame.Network.PauseMenu.IsPaused)
+            if (Cursor.lockState != CursorLockMode.Locked)
             {
                 if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
                 {
