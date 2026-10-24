@@ -50,7 +50,7 @@ namespace CoopGame.Network
         [SerializeField] private float _cardWidth = 340f;
         [SerializeField] private float _cardHeight = 480f;
         [SerializeField] private float _cardSpacing = 390f;
-        [SerializeField] private float _cardsY = -86f;
+        [SerializeField] private float _cardsY = -36f;
         [Header("Card view (H)")]
         [SerializeField] private Vector2 _viewPanelSize = new Vector2(1500, 940);
         private RectTransform _rMission, _rChip, _rRun, _rInv, _rHints, _rOwn;
@@ -584,26 +584,26 @@ namespace CoopGame.Network
             var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1100, 700), Color.clear);
             panel.GetComponent<Image>().raycastTarget = false;
             Backdrop(panel.transform);
-            var banner = Box("Banner", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 330), new Vector2(620, 92), UITheme.MissionRed, UITheme.SmallSprite);
-            var leftBack = Box("BannerCardLeft", panel.transform, new Vector2(.5f, .5f), new Vector2(-340, 330), new Vector2(58, 88), Color.white);
+            var banner = Box("Banner", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 375), new Vector2(620, 92), UITheme.MissionRed, UITheme.SmallSprite);
+            var leftBack = Box("BannerCardLeft", panel.transform, new Vector2(.5f, .5f), new Vector2(-340, 375), new Vector2(58, 88), Color.white);
             UITheme.StyleIcon(leftBack.GetComponent<Image>(), UITheme.CardBack(1));
             leftBack.transform.localRotation = Quaternion.Euler(0, 0, 10f);
-            var rightBack = Box("BannerCardRight", panel.transform, new Vector2(.5f, .5f), new Vector2(340, 330), new Vector2(58, 88), Color.white);
+            var rightBack = Box("BannerCardRight", panel.transform, new Vector2(.5f, .5f), new Vector2(340, 375), new Vector2(58, 88), Color.white);
             UITheme.StyleIcon(rightBack.GetComponent<Image>(), UITheme.CardBack(2));
             rightBack.transform.localRotation = Quaternion.Euler(0, 0, -10f);
             _title = Label(banner.transform, "Title", "", 40, Vector2.zero, new Vector2(600, 80), TextAnchor.MiddleCenter);
             UITheme.SetWeight(_title, UITheme.FontBold);
-            var strip = Box("MessageStrip", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 255), new Vector2(760, 56), UITheme.SolidPanel, UITheme.SmallSprite);
+            var strip = Box("MessageStrip", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 300), new Vector2(760, 56), UITheme.SolidPanel, UITheme.SmallSprite);
             strip.GetComponent<Image>().raycastTarget = false;
             _message = Label(strip.transform, "Message", "", 22, Vector2.zero, new Vector2(740, 52), TextAnchor.MiddleCenter);
 
             _cards = new GameObject("Cards", typeof(RectTransform)); _cards.transform.SetParent(panel.transform, false);
             for (int slot = 0; slot < 3; slot++)
                 CardButton(_cards.transform, slot, new Vector2((slot - 1) * CardSpacing, _cardsY));
-            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -430), new Vector2(320, 70), ConfirmCard, UIButtonStyle.Primary);
+            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -385), new Vector2(320, 70), ConfirmCard, UIButtonStyle.Primary);
 
             _shop = new GameObject("Shop", typeof(RectTransform)); _shop.transform.SetParent(panel.transform, false);
-            ((RectTransform)_shop.transform).anchoredPosition = new Vector2(0, 50); // shop sits under the raised banner
+            ((RectTransform)_shop.transform).anchoredPosition = new Vector2(0, 95); // shop sits under the raised banner
             var shopPanel = Box("ShopPanel", _shop.transform, new Vector2(.5f, .5f), new Vector2(0, -40), new Vector2(1060, 420), UITheme.Panel, UITheme.PanelSprite);
             shopPanel.GetComponent<Image>().raycastTarget = false;
             _shopWallet = Label(_shop.transform, "Wallet", "", 22, new Vector2(0, 110), new Vector2(1020, 50), TextAnchor.MiddleCenter, UITextRole.Secondary);
@@ -624,7 +624,7 @@ namespace CoopGame.Network
         /// <summary>Large dark rounded panel (themed panel sprite) behind the card UI, sibling index 0.</summary>
         private void Backdrop(Transform parent, Vector2? size = null, Vector2? offset = null)
         {
-            var go = Box("Backdrop", parent, new Vector2(.5f, .5f), offset ?? new Vector2(0, -45), size ?? new Vector2(1280, 930), UITheme.Panel, UITheme.PanelSprite);
+            var go = Box("Backdrop", parent, new Vector2(.5f, .5f), offset ?? Vector2.zero, size ?? new Vector2(1280, 930), UITheme.Panel, UITheme.PanelSprite);
             go.GetComponent<Image>().raycastTarget = false;
             go.transform.SetAsFirstSibling();
         }
@@ -744,7 +744,7 @@ namespace CoopGame.Network
             _cardArt[slot].preserveAspect = true;
             _cardArt[slot].raycastTarget = false;
 
-            var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(CardWidth * 1.2f, CardHeight * 1.22f), Color.white);
+            var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), new Vector2(0, -6f), new Vector2(CardWidth * 1.2f, CardHeight * 1.22f), Color.white);
             _cardFrames[slot] = frame.GetComponent<Image>();
             UITheme.StyleIcon(_cardFrames[slot], UITheme.CardFrameSprite);
             _cardFrames[slot].preserveAspect = false;

@@ -510,9 +510,11 @@ namespace CoopGame.CarrySystem
             }
             else
             {
-                Vector3 toCargo = (_currentCargoRigidbody != null ? _currentCargoRigidbody.position : _currentCarryable.transform.position) - transform.position;
+                Vector3 cargoPos = _currentCargoRigidbody != null ? PredictedServerCargoPosition() : _currentCarryable.transform.position;
+                Vector3 toCargo = cargoPos - transform.position;
                 toCargo.y = 0f;
-                if (toCargo.sqrMagnitude > .0025f) _carryFacingTarget = toCargo.normalized;
+                if (toCargo.sqrMagnitude > .04f) _carryFacingTarget = toCargo.normalized;
+                if (!IsServer) turnSpeed = 360f;
             }
             if (!_hasCarryFacing)
             {
@@ -538,8 +540,11 @@ namespace CoopGame.CarrySystem
             PublishCarryBodyPose(true);
             float excess = _leftHandGripping ? GripOverreach(true) : 0f;
             if (_rightHandGripping) excess = Mathf.Max(excess, GripOverreach(false));
-            _overreachTime = excess > .2f ? _overreachTime + Time.fixedDeltaTime : 0f;
-            if (_overreachTime > .65f && Time.time - _attachedAt > 1.1f) DropForRespawn();
+            bool coopCarry = _currentCarryable != null && _currentCarryable.CurrentCarrierCount >= 2;
+            float overreachThreshold = coopCarry ? .26f : .2f;
+            float overreachLimit = coopCarry ? .95f : .65f;
+            _overreachTime = excess > overreachThreshold ? _overreachTime + Time.fixedDeltaTime : 0f;
+            if (_overreachTime > overreachLimit && Time.time - _attachedAt > 1.1f) DropForRespawn();
             LogCarryDiagnostics(excess);
         }
 
@@ -774,7 +779,7 @@ namespace CoopGame.CarrySystem
             rightPoint = Vector3.zero; rightNormal = Vector3.up;
             return FindSurfaceContact(target, grip - rightDir * spread, approach, grip, out leftPoint, out leftNormal) &&
                 FindSurfaceContact(target, grip + rightDir * spread, approach, grip, out rightPoint, out rightNormal) &&
-                IsContactReachable(true, leftPoint) && IsContactReachable(false, rightPoint);
+                IsContactReachable(true, leftPoint, rightDir) && IsContactReachable(false, rightPoint, rightDir);
         }
 
         private static float BoundsTop(CarryableObject target)
@@ -793,11 +798,20 @@ namespace CoopGame.CarrySystem
             return axis.sqrMagnitude > .01f ? axis.normalized : fallback;
         }
 
-        private bool IsContactReachable(bool left, Vector3 point)
+        private bool IsContactReachable(bool left, Vector3 point, Vector3 rightDir = default)
         {
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
             float maximum = reach + LocalContactSlack;
-            return (point - shoulder).sqrMagnitude <= maximum * maximum;
+            float maxSqr = maximum * maximum;
+            if ((point - shoulder).sqrMagnitude <= maxSqr) return true;
+            if (rightDir.sqrMagnitude > .001f)
+            {
+                GetArmGeometry(!left, out Vector3 otherShoulder, out _);
+                Vector3 chestCenter = (shoulder + otherShoulder) * .5f;
+                Vector3 facingShoulder = chestCenter + rightDir.normalized * (left ? -.18f : .18f);
+                if ((point - facingShoulder).sqrMagnitude <= maxSqr) return true;
+            }
+            return false;
         }
 
         private bool CaptureCenteredGrip(CarryableObject target)
@@ -1256,11 +1270,62 @@ namespace CoopGame.CarrySystem
             // climbing flag, which can arrive on a different network tick.
             Transform cargo = _currentCarryable.transform;
             if (LeftHandGripping)
-                ApplyHandTarget(true, cargo.TransformPoint(_currentLocalContactLeft), cargo.rotation * _currentLocalRotationLeft);
+            {
+                Vector3 leftTarget = AdjustClientVisualHandTarget(true, cargo.TransformPoint(_currentLocalContactLeft));
+                ApplyHandTarget(true, leftTarget, cargo.rotation * _currentLocalRotationLeft);
+            }
             else RelaxFreeHand(true);
             if (RightHandGripping)
-                ApplyHandTarget(false, cargo.TransformPoint(_currentLocalContactRight), cargo.rotation * _currentLocalRotationRight);
+            {
+                Vector3 rightTarget = AdjustClientVisualHandTarget(false, cargo.TransformPoint(_currentLocalContactRight));
+                ApplyHandTarget(false, rightTarget, cargo.rotation * _currentLocalRotationRight);
+            }
             else RelaxFreeHand(false);
+        }
+
+        private Vector3 AdjustClientVisualHandTarget(bool left, Vector3 worldContact)
+        {
+            if (!IsNetworked || !IsOwner || IsServer) return worldContact;
+
+            if (_currentCargoRigidbody != null)
+            {
+                Vector3 lagOffset = PredictedServerCargoPosition() - _currentCargoRigidbody.position;
+                lagOffset.y = 0f;
+                worldContact += Vector3.ClampMagnitude(lagOffset, 0.22f);
+            }
+
+            GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            GetBodyClearance(out Vector3 bodyCenter, out float bodyRadius);
+            Vector3 flatForward = Flat(transform.forward);
+            if (flatForward.sqrMagnitude < 0.001f) flatForward = Vector3.forward;
+
+            // Keep hands outside the carrier's torso cylinder so replica lag never folds elbows backward into the chest.
+            Vector3 fromBody = worldContact - bodyCenter;
+            Vector3 flatFromBody = new Vector3(fromBody.x, 0f, fromBody.z);
+            float minBodyDist = bodyRadius + 0.06f;
+            if (flatFromBody.sqrMagnitude < minBodyDist * minBodyDist)
+            {
+                Vector3 pushDir = flatFromBody.sqrMagnitude > 0.0001f ? flatFromBody.normalized : flatForward;
+                if (Vector3.Dot(pushDir, flatForward) < 0.25f)
+                    pushDir = (flatForward + pushDir * 0.5f).normalized;
+                worldContact.x = bodyCenter.x + pushDir.x * minBodyDist;
+                worldContact.z = bodyCenter.z + pushDir.z * minBodyDist;
+            }
+
+            // Clamp shoulder-to-hand distance within comfortable bent-elbow range so arms never hyper-extend straight (1.25x) or collapse.
+            Vector3 fromShoulder = worldContact - shoulder;
+            float dist = fromShoulder.magnitude;
+            float minArmDist = reach * 0.48f;
+            float maxArmDist = reach * 0.80f;
+            if (dist > maxArmDist && dist > 0.0001f)
+                worldContact = shoulder + fromShoulder * (maxArmDist / dist);
+            else if (dist < minArmDist)
+            {
+                Vector3 dir = dist > 0.0001f ? fromShoulder / dist : flatForward;
+                worldContact = shoulder + dir * minArmDist;
+            }
+
+            return worldContact;
         }
 
         private void ApplyHandTarget(bool left, Vector3 position, Quaternion rotation)
@@ -1395,10 +1460,11 @@ namespace CoopGame.CarrySystem
         private void ConstrainHand(bool left, ref Vector3 displacement)
         {
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            float effectiveReach = IsNetworked && !IsServer ? reach + .18f : reach;
             Vector3 anchor = GetPhysicalContact(left);
             Vector3 proposed = shoulder + displacement;
             float vertical = proposed.y - anchor.y;
-            float horizontalReach = Mathf.Sqrt(Mathf.Max(.0025f, reach * reach * .96f - vertical * vertical));
+            float horizontalReach = Mathf.Sqrt(Mathf.Max(.0025f, effectiveReach * effectiveReach * .96f - vertical * vertical));
             Vector3 delta = proposed - anchor;
             delta.y = 0f;
             if (delta.sqrMagnitude > horizontalReach * horizontalReach)
@@ -1412,6 +1478,7 @@ namespace CoopGame.CarrySystem
             Quaternion poseCorrection = _currentCargoRigidbody != null
                 ? _currentCargoRigidbody.rotation * Quaternion.Inverse(cargo.rotation) : Quaternion.identity;
             Vector3 cargoPosition = _currentCargoRigidbody != null ? PredictedServerCargoPosition() : cargo.position;
+            float replicaTolerance = IsNetworked && !IsServer ? .12f : 0f;
             for (int i = 0; i < _currentCargoColliders.Length; i++)
             {
                 Collider collider = _currentCargoColliders[i];
@@ -1421,12 +1488,15 @@ namespace CoopGame.CarrySystem
                 if (!Physics.ComputePenetration(_bodyCapsule, transform.position + displacement, transform.rotation,
                     collider, colliderPosition, colliderRotation, out Vector3 direction, out float depth)) continue;
 
+                float effectiveDepth = depth - replicaTolerance;
+                if (effectiveDepth <= 0f) continue;
+
                 // Use the finite collider volume, including top grips and rotated
                 // crates. CharacterController.Move resolves floors and overhead hits.
                 Vector3 horizontal = new Vector3(direction.x, 0f, direction.z);
                 float horizontalLength = horizontal.magnitude;
                 if (horizontalLength > .15f)
-                    displacement += horizontal / horizontalLength * ((depth + .01f) / horizontalLength);
+                    displacement += horizontal / horizontalLength * ((effectiveDepth + .01f) / horizontalLength);
             }
         }
 
@@ -1552,7 +1622,16 @@ namespace CoopGame.CarrySystem
             Vector3 position = _currentCargoRigidbody.position;
             if (IsServer || !_currentCarryable.IsSpawned) return position;
             SampleCargoReplica();
-            return position + _cargoReplicaVelocity * ReplicaLeadSeconds();
+            Vector3 leadVelocity = _cargoReplicaVelocity;
+            if (HasLocalInput && _movement != null)
+            {
+                Vector3 localVel = new Vector3(_movement.Velocity.x, 0f, _movement.Velocity.z);
+                float carrierShare = _currentCarryable.CurrentCarrierCount > 1 ? .75f : 1f;
+                Vector3 expectedVel = localVel * carrierShare;
+                if (Vector3.Dot(expectedVel, leadVelocity) < expectedVel.sqrMagnitude * .6f)
+                    leadVelocity = Vector3.Lerp(leadVelocity, expectedVel, .75f);
+            }
+            return position + leadVelocity * ReplicaLeadSeconds();
         }
 
         /// <summary>Cargo rotation for the same reach limits. A turning cargo (a solo carrier steering it, or a
@@ -1676,12 +1755,20 @@ namespace CoopGame.CarrySystem
             if (!Finite(local) || !Finite(rotation)) return false;
             Vector3 point = cargo.transform.TransformPoint(local);
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
-            float maximumDistance = reach + ServerContactSlack;
-            if ((point - shoulder).sqrMagnitude > maximumDistance * maximumDistance) return false;
+            GetArmGeometry(!left, out Vector3 otherShoulder, out _);
+            Vector3 chestCenter = (shoulder + otherShoulder) * .5f;
+            Vector3 toCargo = cargo.ApproximateBoundsCenter - transform.position;
+            toCargo.y = 0f;
+            Vector3 facingRight = toCargo.sqrMagnitude > .0001f ? Vector3.Cross(Vector3.up, toCargo.normalized).normalized : transform.right;
+            Vector3 facingShoulder = chestCenter + facingRight * (left ? -.18f : .18f);
+            float maximumDistance = reach + ServerContactSlack + .10f;
+            float maxSqr = maximumDistance * maximumDistance;
+            if ((point - shoulder).sqrMagnitude > maxSqr && (point - facingShoulder).sqrMagnitude > maxSqr) return false;
             Quaternion worldRot = cargo.transform.rotation * rotation.normalized;
-            if (!FindSurfaceContact(cargo, point, worldRot * Vector3.forward, shoulder, out Vector3 surface, out Vector3 normal) ||
+            Vector3 refShoulder = (point - facingShoulder).sqrMagnitude < (point - shoulder).sqrMagnitude ? facingShoulder : shoulder;
+            if (!FindSurfaceContact(cargo, point, worldRot * Vector3.forward, refShoulder, out Vector3 surface, out Vector3 normal) ||
                 Vector3.Distance(point, surface) > .15f ||
-                (surface - shoulder).sqrMagnitude > maximumDistance * maximumDistance) return false;
+                ((surface - shoulder).sqrMagnitude > maxSqr && (surface - facingShoulder).sqrMagnitude > maxSqr)) return false;
             Vector3 fingers = Vector3.ProjectOnPlane(worldRot * Vector3.up, normal);
             if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(Vector3.up, normal);
             if (fingers.sqrMagnitude < .001f) fingers = Vector3.ProjectOnPlane(Vector3.forward, normal);

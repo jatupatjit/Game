@@ -39,7 +39,17 @@ namespace CoopGame.CarrySystem
         public bool TryPlaceGently(ulong carrierId)
         {
             if ((IsSpawned && !IsServer) || IsSecured || IsPlacing || !HasCarrier(carrierId)) return false;
-            if (_activeCarriers.Count > 1) { DetachCarrier(carrierId); return true; }
+            if (_activeCarriers.Count > 1)
+            {
+                // When one co-op carrier sets their side down first, capture the floor below and protect
+                // the crate briefly so the remaining carrier's transition never slams or scrapes for damage.
+                _placingCarrierColliders = _activeCarriers.TryGetValue(carrierId, out var coPlacer) ? coPlacer.PlayerColliders : null;
+                if (TryPlacementTarget(out _))
+                    _supportProtectionEnd = Mathf.Max(_supportProtectionEnd, Time.fixedTime + .65f);
+                _placingCarrierColliders = null;
+                DetachCarrier(carrierId);
+                return true;
+            }
             // The carrier setting it down stands against the cargo; their own body must not
             // block the spot (their collision with it stays ignored until they step apart).
             _placingCarrierColliders = _activeCarriers.TryGetValue(carrierId, out var placer) ? placer.PlayerColliders : null;
@@ -158,7 +168,7 @@ namespace CoopGame.CarrySystem
 
         protected bool IsGentleSupportContact(Collider other, Vector3 normal, Vector3 point)
         {
-            if (_activeCarriers.Count > 0 || _throwPending || Time.fixedTime >= _supportProtectionEnd ||
+            if (_throwPending || Time.fixedTime >= _supportProtectionEnd ||
                 normal.y < .8660254f || point.y > SolidBounds().min.y + .12f) return false;
             for (int i = 0; i < _placementFloorCount; i++)
                 if (_placementFloors[i] == other) return true;

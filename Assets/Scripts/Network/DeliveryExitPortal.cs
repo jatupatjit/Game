@@ -19,6 +19,7 @@ namespace CoopGame.Network
         [SerializeField] private TextMesh _statusText;
         [SerializeField] private string _destinationSceneName = "Level02";
         [SerializeField, Min(0.1f)] private float _entryDelaySeconds = 0.5f;
+        [SerializeField, Min(0.5f)] private float _coopPartialWaitSeconds = 5.0f;
 
         private const byte Locked = 0;
         private const byte Ready = 1;
@@ -33,6 +34,7 @@ namespace CoopGame.Network
         private float _transitionAt;
         private float _retryAfter;
         private bool _loadStarted;
+        private bool _allPlayersWereInside;
 
         public bool IsOpen => IsSpawned && (_state.Value == Ready || _state.Value == Loading);
 
@@ -82,16 +84,44 @@ namespace CoopGame.Network
                 _retryAfter = Time.unscaledTime + 0.75f;
             }
 
-            if (_state.Value == Ready && Time.unscaledTime >= _retryAfter && HasPlayerInside())
+            CountPlayersInside(out int insideCount, out int totalPlayers);
+            bool allInside = totalPlayers > 0 && insideCount >= totalPlayers;
+
+            if (_state.Value == Ready && Time.unscaledTime >= _retryAfter && insideCount > 0)
             {
                 _state.Value = Loading;
-                _transitionAt = Time.unscaledTime + _entryDelaySeconds;
+                _allPlayersWereInside = allInside;
+                _transitionAt = Time.unscaledTime + (allInside ? _entryDelaySeconds : _coopPartialWaitSeconds);
+            }
+
+            if (_state.Value == Loading)
+            {
+                if (insideCount <= 0)
+                {
+                    _state.Value = Ready;
+                    _allPlayersWereInside = false;
+                    return;
+                }
+
+                // Speed up transition immediately if the second co-op player joins inside the portal.
+                if (allInside && !_allPlayersWereInside)
+                {
+                    _allPlayersWereInside = true;
+                    _transitionAt = Mathf.Min(_transitionAt, Time.unscaledTime + _entryDelaySeconds);
+                }
+
+                if (_statusText != null)
+                {
+                    _statusText.text = allInside
+                        ? _loadingText
+                        : $"รอเพื่อนเข้าประตู ({insideCount}/{totalPlayers})...\nไป {_destinationSceneName} ใน {Mathf.CeilToInt(Mathf.Max(0f, _transitionAt - Time.unscaledTime))} วิ";
+                }
             }
 
             if (_state.Value != Loading || Time.unscaledTime < _transitionAt) return;
 
             // A player who entered may have disconnected or left during the short entry delay.
-            if (!HasPlayerInside())
+            if (insideCount <= 0)
             {
                 _state.Value = Ready;
                 return;
@@ -110,10 +140,13 @@ namespace CoopGame.Network
             Debug.LogWarning($"[DeliveryExitPortal] Scene transition could not start: {result}. Will retry on entry.", this);
         }
 
-        private bool HasPlayerInside()
+        private void CountPlayersInside(out int insideCount, out int totalPlayers)
         {
-            if (_entryVolume == null || !_entryVolume.enabled || !_entryVolume.gameObject.activeInHierarchy)
-                return false;
+            insideCount = 0;
+            totalPlayers = 0;
+            if (_entryVolume == null || !_entryVolume.enabled || !_entryVolume.gameObject.activeInHierarchy ||
+                NetworkManager == null)
+                return;
 
             var clients = NetworkManager.ConnectedClientsList;
             Vector3 half = _entryVolume.size * 0.5f;
@@ -122,13 +155,19 @@ namespace CoopGame.Network
                 NetworkObject player = clients[i].PlayerObject;
                 if (player == null || !player.IsSpawned || !player.TryGetComponent<NetworkPlayer>(out _))
                     continue;
+                totalPlayers++;
                 // Remote controllers are disabled, so inspect their replicated positions.
                 Vector3 local = _entryVolume.transform.InverseTransformPoint(player.transform.position)
                     - _entryVolume.center;
                 if (Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.y) <= half.y && Mathf.Abs(local.z) <= half.z)
-                    return true;
+                    insideCount++;
             }
-            return false;
+        }
+
+        private bool HasPlayerInside()
+        {
+            CountPlayersInside(out int insideCount, out _);
+            return insideCount > 0;
         }
 
         private void ApplyState(byte state)

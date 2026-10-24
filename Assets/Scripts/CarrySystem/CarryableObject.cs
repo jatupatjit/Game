@@ -159,7 +159,7 @@ namespace CoopGame.CarrySystem
         private const float DragSpeedMultiplier = .4f;
         public bool IsSoloDragging => _requiresTwoCarriers && CurrentCarrierCount == 1;
         public float GetSpeedMultiplier() => IsSoloDragging ? DragSpeedMultiplier :
-            SoloAssistActive ? .85f : CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : _soloSpeedMultiplier;
+            CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : SoloAssistActive ? .85f : _soloSpeedMultiplier;
 
         protected virtual void Awake()
         {
@@ -329,6 +329,8 @@ namespace CoopGame.CarrySystem
                 _rigidbody.angularVelocity = Vector3.zero;
                 _rigidbody.position = _deliveryPlacementPosition;
                 _rigidbody.rotation = _deliveryPlacementRotation;
+                if (isNetworked && IsServer && TryGetComponent<Unity.Netcode.Components.NetworkTransform>(out var netTransform))
+                    netTransform.Teleport(_deliveryPlacementPosition, _deliveryPlacementRotation, transform.localScale);
                 _rigidbody.Sleep();
             }
 
@@ -429,9 +431,10 @@ namespace CoopGame.CarrySystem
             {
                 float speed = 5f * GetSpeedMultiplier();
                 Vector3 horizontalVelocity = Vector3.ProjectOnPlane(_rigidbody.linearVelocity, Vector3.up);
+                float coopBoost = supportingCarrierCount >= 2 ? 1.25f : 1f;
                 // Dragging a far end along the ground needs a much stronger pull to overcome friction.
-                Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * (soloDrag ? 6f * DragTractionScale : 6f),
-                    _carryTractionAcceleration * (SoloAssistActive ? 1.5f : 1f) * (soloDrag ? DragTractionScale : 1f));
+                Vector3 acceleration = Vector3.ClampMagnitude((sharedIntent * speed - horizontalVelocity) * (soloDrag ? 6f * DragTractionScale : 6f * coopBoost),
+                    _carryTractionAcceleration * (SoloAssistActive ? 1.5f : coopBoost) * (soloDrag ? DragTractionScale : 1f));
                 _rigidbody.AddForce(acceleration, ForceMode.Acceleration);
                 LogTractionDiagnostics(sharedIntent, speed, horizontalVelocity, acceleration, supportingCarrierCount);
             }
@@ -858,6 +861,9 @@ namespace CoopGame.CarrySystem
         /// <summary>Attachment lifecycle hook; called before the next support physics step.</summary>
         protected virtual void OnCarrierAttached(bool firstCarrier) { _supportProtectionEnd = -1f; _placementFloorCount = 0; }
 
+        /// <summary>Detachment lifecycle hook; called when a carrier releases the object.</summary>
+        protected virtual void OnCarrierDetached(int remainingCarriers) { }
+
         // Shared by authority and owner prediction so collision policy cannot differ.
         internal static bool ShouldIgnoreCarryCollision(Collider playerCollider)
         {
@@ -943,7 +949,7 @@ namespace CoopGame.CarrySystem
                 }
 
                 UpdateAllCarriersSpeedMultiplier();
-
+                OnCarrierDetached(_activeCarriers.Count);
 
                 Debug.Log($"[CarryableObject] Client {clientId} detached. Remaining: {_activeCarriers.Count}");
             }
@@ -1045,7 +1051,7 @@ namespace CoopGame.CarrySystem
 
         private void UpdateAllCarriersSpeedMultiplier()
         {
-            float mult = (_activeCarriers.Count >= 2) ? _coopSpeedMultiplier : _soloSpeedMultiplier;
+            float mult = GetSpeedMultiplier();
             foreach (var carrier in _activeCarriers.Values)
             {
                 if (carrier.Movement != null)

@@ -470,6 +470,13 @@ namespace CoopGame.Player
         /// </summary>
         private void ApplyPlayerColor()
         {
+            PlayerAppearance appearance = GetComponent<PlayerAppearance>();
+            if (appearance != null)
+            {
+                appearance.ApplyColor(appearance.CurrentColor);
+                return;
+            }
+
             if (_playerRenderer == null)
             {
                 _playerRenderer = GetComponentInChildren<Renderer>();
@@ -505,11 +512,11 @@ namespace CoopGame.Player
             float y = 1.05f;
             switch (slot)
             {
-                case 0: return new Vector3(0f, y, 0f);
+                case 0: return new Vector3(0f, y, -2f);
                 case 1: return new Vector3(2f, y, 0f);
                 case 2: return new Vector3(-2f, y, 0f);
                 case 3: return new Vector3(0f, y, 2f);
-                default: return new Vector3(0f, y, 0f);
+                default: return new Vector3(0f, y, -2f);
             }
         }
     }

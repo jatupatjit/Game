@@ -70,6 +70,8 @@ public static class UITheme
     public static Sprite BeigeSprite => Kit("PanelBeige");
     public static Sprite ButtonPrimarySprite => Kit("ButtonPrimary");
     public static Sprite ButtonSecondarySprite => Kit("ButtonSecondary");
+    public static Sprite ButtonCustomizePinkSprite => Kit("ButtonCustomizePink");
+    public static Sprite ButtonCustomizePurpleSprite => Kit("ButtonCustomizePurple");
     public static Sprite CardFrameSprite => Kit("CardSelectedFrame");
     public static Sprite StaminaFrameSprite => Kit("StaminaFrame");
     public static Sprite StaminaInnerSprite => Kit("StaminaInner");

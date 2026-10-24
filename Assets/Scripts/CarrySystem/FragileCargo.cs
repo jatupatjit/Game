@@ -274,6 +274,21 @@ namespace CoopGame.CarrySystem
             if (firstCarrier) _isThrown = false;
         }
 
+        protected override void OnCarrierDetached(int remainingCarriers)
+        {
+            base.OnCarrierDetached(remainingCarriers);
+            if (_isDestroyed || IsSecured || _isThrown) return;
+            // When 1 of 2+ co-op carriers releases the crate, give the remaining carrier a short
+            // settle window so the sudden load shift onto one end does not register as a drop impact.
+            if (remainingCarriers >= 1)
+            {
+                float now = Time.fixedTime;
+                _pickupGraceEndsAtFixedTime = Mathf.Max(_pickupGraceEndsAtFixedTime, now + 0.45f);
+                _pickupFallbackGraceEndsAtFixedTime = Mathf.Max(_pickupFallbackGraceEndsAtFixedTime, now + 0.25f);
+                _scrapeStartedAtFixedTime = -1f;
+            }
+        }
+
         public override void ThrowObject(ulong clientId, Vector3 linearVelocity, Vector3 angularVelocity)
         {
             if (_isDestroyed || IsSecured ||

@@ -29,6 +29,8 @@ public static class UIKitImporter
         new Entry("Button Long.png",            "ButtonSecondary",   0.40f, new Vector4(16, 14, 16, 14), 512),
         new Entry("Selected Button Long.png",   "ButtonPrimary",     0.40f, new Vector4(16, 14, 16, 14), 512),
         new Entry("Selected Button.png",        "ButtonPrimaryWide", 0.55f, new Vector4(16, 14, 16, 14), 512),
+        new Entry("CustomizeButtonPink.png",    "ButtonCustomizePink", 0.55f, new Vector4(18, 16, 18, 16), 512),
+        new Entry("CustomizeButtonPurple.png",  "ButtonCustomizePurple", 0.55f, new Vector4(18, 16, 18, 16), 512),
         new Entry("Card Selected LineGrow.png", "CardSelectedFrame", 0.60f, Vector4.zero, 512),
         new Entry("Stamina Bar.png",            "StaminaBar",        0.40f, new Vector4(52, 0, 14, 0), 512),
         new Entry("Stamina Bar U.png",          "StaminaFrame",      0.40f, new Vector4(52, 0, 14, 0), 512),

@@ -174,12 +174,29 @@ namespace CoopGame.CarrySystem
                 _deliveryCollider == null || cargoCollider == null ||
                 !_deliveryCollider.bounds.Intersects(cargoCollider.bounds))
                 return;
-            if (_deliveryZone != null &&
-                (!_deliveryZone.IsTargetCollider(cargoCollider) ||
-                 !_deliveryZone.ContainsPosition(cargo.transform.position)))
-                return;
+            Vector3 cargoCenter = cargo.ApproximateBoundsCenter;
+            if (_deliveryZone != null)
+            {
+                if (!_deliveryZone.IsTargetCollider(cargoCollider) ||
+                    (!_deliveryZone.ContainsPosition(cargoCenter) && !_deliveryZone.ContainsPosition(cargo.transform.position)))
+                    return;
+
+                // If players are still holding the crate at the outer rim of the 3.5m zone,
+                // wait until they either place/release it inside the green ring OR carry it
+                // into the inner core (<= 65% radius) so it doesn't yank out of their hands early.
+                if (cargo.IsCarried && !IsWithinInnerCore(cargoCenter, 0.65f))
+                    return;
+            }
 
             ProcessDelivery(cargo);
+        }
+
+        private bool IsWithinInnerCore(Vector3 worldPosition, float radiusRatio)
+        {
+            if (_deliveryZone == null) return true;
+            Vector3 local = _deliveryZone.transform.InverseTransformPoint(worldPosition);
+            float innerRadius = _deliveryZone.Radius * Mathf.Clamp(radiusRatio, 0.2f, 1f);
+            return local.x * local.x + local.z * local.z <= innerRadius * innerRadius;
         }
 
         /// <summary>
