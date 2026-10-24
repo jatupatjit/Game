@@ -454,8 +454,8 @@ namespace CoopGame.Network
             objective.GetComponent<Image>().raycastTarget = false;
             _objective = Label(objective.transform, "Goal", "นำลังไม้ไปส่งที่ปราสาท", 26, new Vector2(0, 26), new Vector2(516, 40));
             UITheme.SetWeight(_objective, UITheme.FontSemiBold);
-            var cube = Box("CargoIcon", objective.transform, new Vector2(.5f, .5f), new Vector2(-234, -22), new Vector2(46, 46), Color.white);
-            UITheme.StyleIcon(cube.GetComponent<Image>(), UITheme.IconCube);
+            var cube = Box("CargoIcon", objective.transform, new Vector2(.5f, .5f), new Vector2(-230, -22), new Vector2(54, 54), Color.white);
+            UITheme.StyleIcon(cube.GetComponent<Image>(), UITheme.IconCargoHud);
             _hpText = Label(objective.transform, "CargoHP", "HP --", 30, new Vector2(-78, -22), new Vector2(250, 44));
             UITheme.SetWeight(_hpText, UITheme.FontBold);
             _carriersText = Label(objective.transform, "Carriers", "", 17, new Vector2(122, -22), new Vector2(262, 40), TextAnchor.MiddleRight);
@@ -536,7 +536,7 @@ namespace CoopGame.Network
             hintLayout.childForceExpandWidth = hintLayout.childForceExpandHeight = false;
             var hintFit = _hintBar.AddComponent<ContentSizeFitter>();
             hintFit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-            _hintBar.AddComponent<CanvasGroup>().alpha = 0.9f;
+            _hintBar.AddComponent<CanvasGroup>().alpha = 1f;
             Hint("คลิกซ้าย", "จับ", true);
             Hint("คลิกขวา", "วาง");
             Hint("Q", "โยน");
@@ -696,12 +696,14 @@ namespace CoopGame.Network
             image.raycastTarget = false;
             var label = UITheme.MakeText(cap.transform, "Label", key, 17, UITextRole.OnPrimary, TextAnchor.MiddleCenter);
             ProceduralUIUtility.StretchFull(label.rectTransform);
+            float fittedWidth = Mathf.Ceil(label.preferredWidth) + 20f;
+            element.preferredWidth = element.minWidth = Mathf.Max(width, fittedWidth);
         }
 
         private void Hint(string key, string action, bool wide = false)
         {
             KeyCap(_hintBar.transform, key, wide ? 56f : 32f, 35f);
-            var text = UITheme.MakeText(_hintBar.transform, "Hint " + key, action, 18, UITextRole.Primary);
+            var text = UITheme.MakeText(_hintBar.transform, "Hint " + key, action, 20, UITextRole.Primary);
             text.horizontalOverflow = HorizontalWrapMode.Overflow;
             UITheme.AddOutline(text);
             var element = text.gameObject.AddComponent<LayoutElement>();

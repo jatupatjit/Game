@@ -77,6 +77,7 @@ public static class UITheme
     public static Sprite IconCarrier => Kit("IconCarrier");
     public static Sprite IconStrength => Kit("IconStrength");
     public static Sprite IconCube => Kit("IconCube");
+    public static Sprite IconCargoHud => Kit("IconCargoHud");
     /// <summary>Tintable rounded shape with a darker rim (chips, tracks, banners, tooltips).</summary>
     public static Sprite SmallSprite => ProceduralUIUtility.GetRoundedSprite(10, 2, 0.55f);
     /// <summary>Tintable rounded fill without rim (bar fills).</summary>
