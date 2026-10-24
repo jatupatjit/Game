@@ -1,6 +1,7 @@
 using System;
 using CoopGame.CarrySystem;
 using CoopGame.Player;
+using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -694,8 +695,19 @@ namespace CoopGame.Network
             var image = cap.GetComponent<Image>();
             UITheme.StyleShape(image, width > height * 1.3f ? UITheme.Kit("KeyCapLong") : UITheme.KeyCapSprite, Color.white);
             image.raycastTarget = false;
-            var label = UITheme.MakeText(cap.transform, "Label", key, 17, UITextRole.OnPrimary, TextAnchor.MiddleCenter);
+            var labelObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            labelObject.transform.SetParent(cap.transform, false);
+            var label = labelObject.GetComponent<TextMeshProUGUI>();
+            label.font = UITheme.TmpFont;
+            label.fontSize = 17f;
+            label.text = key;
+            label.color = UITheme.TextColor(UITextRole.OnPrimary);
+            label.alignment = TextAlignmentOptions.Center;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Overflow;
+            label.raycastTarget = false;
             ProceduralUIUtility.StretchFull(label.rectTransform);
+            label.ForceMeshUpdate();
             float fittedWidth = Mathf.Ceil(label.preferredWidth) + 20f;
             element.preferredWidth = element.minWidth = Mathf.Max(width, fittedWidth);
         }

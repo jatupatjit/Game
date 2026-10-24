@@ -337,13 +337,13 @@ public static class LobbyUIBuilder
         cardLayout.childForceExpandHeight = false;
 
         // 4. Header: Game Title & Subtitle
-        var titleText = ProceduralUIUtility.MakeText(cardGO, "TitleLabel", "DONT DROP IT", 32, FontStyle.Bold, UITextRole.Primary, TextAnchor.MiddleCenter);
+        var titleText = ProceduralUIUtility.MakeText(cardGO, "TitleLabel", "DON'T DROP IT", 32, FontStyle.Bold, UITextRole.Primary, TextAnchor.MiddleCenter);
         var titleLE = titleText.gameObject.AddComponent<LayoutElement>();
         titleLE.preferredHeight = 40;
 
-        var subTitleText = ProceduralUIUtility.MakeText(cardGO, "SubTitleLabel", "CO-OP PHYSICS ADVENTURE", 11, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
+        var subTitleText = ProceduralUIUtility.MakeText(cardGO, "SubTitleLabel", "", 11, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
         var subLE = subTitleText.gameObject.AddComponent<LayoutElement>();
-        subLE.preferredHeight = 16;
+        subLE.preferredHeight = 0;
 
         // Status Message Label (errors / warnings only, hidden when empty)
         var statusMsgText = ProceduralUIUtility.MakeText(cardGO, "StatusMessageLabel", "", 12, FontStyle.Italic, UITextRole.Danger, TextAnchor.MiddleCenter);
@@ -365,8 +365,8 @@ public static class LobbyUIBuilder
         mainVL.childForceExpandHeight = false;
         mainVL.childAlignment = TextAnchor.MiddleCenter;
 
-        var (_, hostRoomBtn) = ProceduralUIUtility.MakeButton(mainPanel, "HostRoomMenuButton", "▶   PLAY", UIButtonStyle.Primary, 58, 16);
-        var (_, settingsBtn) = ProceduralUIUtility.MakeButton(mainPanel, "SettingsMenuButton", "⚙   SETTINGS", UIButtonStyle.Secondary, 52, 15);
+        var (_, hostRoomBtn) = ProceduralUIUtility.MakeButton(mainPanel, "HostRoomMenuButton", "เล่นเกม", UIButtonStyle.Primary, 58, 16);
+        var (_, settingsBtn) = ProceduralUIUtility.MakeButton(mainPanel, "SettingsMenuButton", "ตั้งค่า", UIButtonStyle.Secondary, 52, 15);
 
         // Controlled breathing spacer before quit button
         var mainSpacer = ProceduralUIUtility.MakeEmpty(mainPanel, "MainSpacer");
@@ -374,7 +374,7 @@ public static class LobbyUIBuilder
         mainSpacerLE.preferredHeight = 32;
         mainSpacerLE.flexibleHeight = 0;
 
-        var (_, quitBtn)     = ProceduralUIUtility.MakeButton(mainPanel, "QuitGameButton", "✕   QUIT GAME", UIButtonStyle.Secondary, 48, 14);
+        var (_, quitBtn)     = ProceduralUIUtility.MakeButton(mainPanel, "QuitGameButton", "ออกจากเกม", UIButtonStyle.Secondary, 48, 14);
         var quitLE = quitBtn.GetComponent<LayoutElement>();
         if (quitLE != null) { quitLE.preferredHeight = 48; quitLE.flexibleHeight = 0; }
 
@@ -393,13 +393,13 @@ public static class LobbyUIBuilder
         hostRoomVL.childForceExpandHeight = false;
         hostRoomVL.childAlignment = TextAnchor.MiddleCenter;
 
-        var subTitle1 = ProceduralUIUtility.MakeText(hostRoomPanel, "SubTitle", "SELECT PLAY MODE", 13, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
+        var subTitle1 = ProceduralUIUtility.MakeText(hostRoomPanel, "SubTitle", "เลือกโหมดการเล่น", 13, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
         var subTitle1LE = subTitle1.gameObject.AddComponent<LayoutElement>();
         subTitle1LE.preferredHeight = 26;
         subTitle1LE.flexibleHeight = 0;
 
-        var (_, hostGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "HostButton", "★   HOST ROOM", UIButtonStyle.Primary, 58, 16);
-        var (_, joinGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "JoinButton", "→   JOIN WITH CODE", UIButtonStyle.Secondary, 54, 15);
+        var (_, hostGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "HostButton", "สร้างห้อง", UIButtonStyle.Primary, 58, 16);
+        var (_, joinGameBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "JoinButton", "เข้าห้องด้วยรหัส", UIButtonStyle.Secondary, 54, 15);
 
         // Controlled breathing spacer before Back button
         var hostSpacer = ProceduralUIUtility.MakeEmpty(hostRoomPanel, "HostSpacer");
@@ -407,7 +407,7 @@ public static class LobbyUIBuilder
         hostSpacerLE.preferredHeight = 28;
         hostSpacerLE.flexibleHeight = 0;
 
-        var (_, backFromHostBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "BackFromHostRoomButton", "←   BACK", UIButtonStyle.Secondary, 48, 14);
+        var (_, backFromHostBtn) = ProceduralUIUtility.MakeButton(hostRoomPanel, "BackFromHostRoomButton", "ย้อนกลับ", UIButtonStyle.Secondary, 48, 14);
         var backHostLE = backFromHostBtn.GetComponent<LayoutElement>();
         if (backHostLE != null) { backHostLE.preferredHeight = 48; backHostLE.flexibleHeight = 0; }
         hostRoomPanel.SetActive(false);
@@ -427,7 +427,7 @@ public static class LobbyUIBuilder
         joinVL.childForceExpandHeight = false;
         joinVL.childAlignment = TextAnchor.MiddleCenter;
 
-        var subTitle2 = ProceduralUIUtility.MakeText(joinPanel, "JoinTitle", "ENTER 6-DIGIT ROOM CODE", 13, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
+        var subTitle2 = ProceduralUIUtility.MakeText(joinPanel, "JoinTitle", "กรอกรหัสห้อง 6 หลัก", 13, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
         var subTitle2LE = subTitle2.gameObject.AddComponent<LayoutElement>();
         subTitle2LE.preferredHeight = 26;
         subTitle2LE.flexibleHeight = 0;
@@ -444,21 +444,21 @@ public static class LobbyUIBuilder
         inputRowHL.childForceExpandWidth = false;
         inputRowHL.childForceExpandHeight = true;
 
-        var (inputGO, codeInput) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "ROOM CODE", 54);
+        var (inputGO, codeInput) = ProceduralUIUtility.MakeInputField(inputRow, "RoomCodeInput", "รหัสห้อง", 54);
         var inputRT = inputGO.GetComponent<RectTransform>();
         inputRT.sizeDelta = new Vector2(270, 54);
         var inputLE = inputGO.AddComponent<LayoutElement>();
         inputLE.preferredWidth = 270;
         inputLE.preferredHeight = 54;
 
-        var (pasteGO, pasteBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "Paste", UIButtonStyle.Secondary, 54, 13);
+        var (pasteGO, pasteBtn) = ProceduralUIUtility.MakeButton(inputRow, "PasteCodeButton", "วาง", UIButtonStyle.Secondary, 54, 13);
         var pasteRT = pasteGO.GetComponent<RectTransform>();
         pasteRT.sizeDelta = new Vector2(110, 54);
         var pasteLE = pasteGO.GetComponent<LayoutElement>();
         if (pasteLE != null) { pasteLE.preferredWidth = 110; pasteLE.preferredHeight = 54; }
 
         // Primary Join Button (Full width)
-        var (_, confirmJoinBtn) = ProceduralUIUtility.MakeButton(joinPanel, "ConfirmJoinButton", "✓   JOIN ROOM", UIButtonStyle.Primary, 54, 15);
+        var (_, confirmJoinBtn) = ProceduralUIUtility.MakeButton(joinPanel, "ConfirmJoinButton", "เข้าห้อง", UIButtonStyle.Primary, 54, 15);
         var confirmLE = confirmJoinBtn.GetComponent<LayoutElement>();
         if (confirmLE != null) { confirmLE.preferredHeight = 54; confirmLE.flexibleHeight = 0; }
 
@@ -469,7 +469,7 @@ public static class LobbyUIBuilder
         joinSpacerLE.flexibleHeight = 0;
 
         // Back Button
-        var (_, backFromJoinBtn)= ProceduralUIUtility.MakeButton(joinPanel, "BackFromJoinButton", "←   BACK", UIButtonStyle.Secondary, 48, 14);
+        var (_, backFromJoinBtn)= ProceduralUIUtility.MakeButton(joinPanel, "BackFromJoinButton", "ย้อนกลับ", UIButtonStyle.Secondary, 48, 14);
         var backJoinLE = backFromJoinBtn.GetComponent<LayoutElement>();
         if (backJoinLE != null) { backJoinLE.preferredHeight = 48; backJoinLE.flexibleHeight = 0; }
         joinPanel.SetActive(false);
@@ -489,7 +489,7 @@ public static class LobbyUIBuilder
         settingsVL.childForceExpandHeight = false;
         settingsVL.childAlignment = TextAnchor.MiddleCenter;
 
-        var sTitle = ProceduralUIUtility.MakeText(settingsPanel, "SettingsTitle", "SETTINGS", 18, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
+        var sTitle = ProceduralUIUtility.MakeText(settingsPanel, "SettingsTitle", "ตั้งค่า", 18, FontStyle.Bold, UITextRole.Accent, TextAnchor.MiddleCenter);
         var sTitleLE = sTitle.gameObject.AddComponent<LayoutElement>();
         sTitleLE.preferredHeight = 28;
         sTitleLE.flexibleHeight = 0;
@@ -498,7 +498,7 @@ public static class LobbyUIBuilder
         var blankLE = blankArea.AddComponent<LayoutElement>();
         blankLE.preferredHeight = 110;
         blankLE.flexibleHeight = 0;
-        var blankText = ProceduralUIUtility.MakeText(blankArea, "BlankNote", "Game audio and control settings will be configured here.", 13, FontStyle.Italic, UITextRole.Secondary, TextAnchor.MiddleCenter);
+        var blankText = ProceduralUIUtility.MakeText(blankArea, "BlankNote", "การตั้งค่าเสียงและการควบคุมกำลังพัฒนา", 13, FontStyle.Italic, UITextRole.Secondary, TextAnchor.MiddleCenter);
         ProceduralUIUtility.StretchFull(blankText.GetComponent<RectTransform>());
 
         // Controlled breathing spacer before Back button
@@ -507,7 +507,7 @@ public static class LobbyUIBuilder
         settingsSpacerLE.preferredHeight = 28;
         settingsSpacerLE.flexibleHeight = 0;
 
-        var (_, backFromSettingsBtn) = ProceduralUIUtility.MakeButton(settingsPanel, "BackFromSettingsButton", "←   BACK", UIButtonStyle.Secondary, 48, 14);
+        var (_, backFromSettingsBtn) = ProceduralUIUtility.MakeButton(settingsPanel, "BackFromSettingsButton", "ย้อนกลับ", UIButtonStyle.Secondary, 48, 14);
         var backSettingsLE = backFromSettingsBtn.GetComponent<LayoutElement>();
         if (backSettingsLE != null) { backSettingsLE.preferredHeight = 48; backSettingsLE.flexibleHeight = 0; }
         settingsPanel.SetActive(false);
@@ -544,19 +544,19 @@ public static class LobbyUIBuilder
         spinnerGO.gameObject.AddComponent<SpinnerAnimator>();
 
         // Title
-        var connTitle = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingTitle", "ENTERING GAME...", 17, FontStyle.Bold, UITextRole.Primary, TextAnchor.MiddleCenter);
+        var connTitle = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingTitle", "กำลังเข้าเกม", 17, FontStyle.Bold, UITextRole.Primary, TextAnchor.MiddleCenter);
         var connTitleLE = connTitle.gameObject.AddComponent<LayoutElement>();
         connTitleLE.preferredHeight = 28;
         connTitleLE.flexibleHeight = 0;
 
         // Dynamic status text
-        var connectingText = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingLabel", "Creating room...", 15, FontStyle.Normal, UITextRole.Accent, TextAnchor.MiddleCenter);
+        var connectingText = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingLabel", "กำลังสร้างห้อง", 15, FontStyle.Normal, UITextRole.Accent, TextAnchor.MiddleCenter);
         var connTextLE = connectingText.gameObject.AddComponent<LayoutElement>();
         connTextLE.preferredHeight = 24;
         connTextLE.flexibleHeight = 0;
 
         // Subtitle / hint
-        var connSub = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingSub", "Initializing Steam relay network and starting host server", 12, FontStyle.Italic, UITextRole.Secondary, TextAnchor.MiddleCenter);
+        var connSub = ProceduralUIUtility.MakeText(connectingPanel, "ConnectingSub", "กำลังเตรียมระบบเครือข่ายและเปิดห้อง", 12, FontStyle.Italic, UITextRole.Secondary, TextAnchor.MiddleCenter);
         var connSubLE = connSub.gameObject.AddComponent<LayoutElement>();
         connSubLE.preferredHeight = 22;
         connSubLE.flexibleHeight = 0;
@@ -568,7 +568,7 @@ public static class LobbyUIBuilder
         btmSpacerLE.flexibleHeight = 0;
 
         // Cancel button
-        var (_, cancelConnBtn) = ProceduralUIUtility.MakeButton(connectingPanel, "CancelConnectingButton", "←   CANCEL", UIButtonStyle.Secondary, 48, 14);
+        var (_, cancelConnBtn) = ProceduralUIUtility.MakeButton(connectingPanel, "CancelConnectingButton", "ยกเลิก", UIButtonStyle.Secondary, 48, 14);
         var cancelLE = cancelConnBtn.GetComponent<LayoutElement>();
         if (cancelLE != null) { cancelLE.preferredHeight = 48; cancelLE.flexibleHeight = 0; }
 

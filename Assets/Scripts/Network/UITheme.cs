@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -109,6 +110,9 @@ public static class UITheme
     private static UIFontSet _fontSet;
     private static bool _fontSetLoaded;
     private static Font _fallback;
+    private static readonly Dictionary<Font, TMP_FontAsset> _tmpFonts = new Dictionary<Font, TMP_FontAsset>();
+    private static TMP_FontAsset _thaiTmpFont;
+    private static bool _thaiTmpFontLoaded;
 
     private static Font Weight(System.Func<UIFontSet, Font> pick)
     {
@@ -134,6 +138,37 @@ public static class UITheme
     public static Font FontSemiBold => Weight(s => s.SemiBold);
     /// <summary>Big headers: PAUSE, banners, HP number (Mitr Bold).</summary>
     public static Font FontBold => Weight(s => s.Bold);
+
+    /// <summary>Runtime SDF font for small Thai labels where legacy UI.Text cannot apply Thai mark positioning reliably.</summary>
+    public static TMP_FontAsset TmpFont
+    {
+        get { return GetTmpFont(Font); }
+    }
+
+    /// <summary>Returns one cached dynamic TMP font per legacy font weight.</summary>
+    public static TMP_FontAsset GetTmpFont(Font source)
+    {
+        if (!_thaiTmpFontLoaded)
+        {
+            _thaiTmpFontLoaded = true;
+            _thaiTmpFont = Resources.Load<TMP_FontAsset>("Fonts/MitrThai SDF");
+            if (_thaiTmpFont == null)
+                Debug.LogWarning("[UITheme] Fonts/MitrThai SDF missing; using an uncorrected runtime TMP font.");
+        }
+        if (_thaiTmpFont != null) return _thaiTmpFont;
+
+        if (source == null) source = Font;
+        if (_tmpFonts.TryGetValue(source, out TMP_FontAsset cached) && cached != null) return cached;
+
+        TMP_FontAsset asset = TMP_FontAsset.CreateFontAsset(source);
+        if (asset != null)
+        {
+            asset.name = source.name + " Runtime SDF";
+            asset.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+            _tmpFonts[source] = asset;
+        }
+        return asset;
+    }
 
     /// <summary>Applies a real font weight (no synthesized bold).</summary>
     public static void SetWeight(Text text, Font weight)
@@ -222,6 +257,7 @@ public static class UITheme
         text.font = Font;
         text.fontStyle = FontStyle.Normal; // regular weight only (no Bold file in the project)
         text.color = TextColor(role);
+        ThaiTextMeshProBridge.Attach(text);
     }
 
     /// <summary>Dark outline around text (kit titles: white text with dark outline).</summary>
@@ -317,6 +353,7 @@ public static class UITheme
         text.raycastTarget = false;
         text.horizontalOverflow = HorizontalWrapMode.Wrap;
         text.verticalOverflow = VerticalWrapMode.Overflow;
+        ThaiTextMeshProBridge.Attach(text);
         return text;
     }
 
@@ -394,9 +431,9 @@ public static class UITheme
     private static readonly string[,] _emojiSwaps =
     {
         { "📋 ", "" }, { "📋", "" },      // clipboard: label text already says Copy/Paste
-        { "👑", "★" },                     // host
-        { "🔑", "→" },                     // join
-        { "🎮", "▶" },                     // play / host room
+        { "👑", "" }, { "🔑", "" }, { "🎮", "" },
+        { "▶", "" }, { "⚙", "" }, { "✕", "" }, { "✓", "" },
+        { "←", "" }, { "→", "" }, { "★", "" },
     };
 
     /// <summary>Replaces emoji the theme font cannot draw with renderable symbols (or drops them).</summary>
