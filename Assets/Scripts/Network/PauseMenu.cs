@@ -462,6 +462,7 @@ namespace CoopGame.Network
 
             StartCoroutine(FadeTo(0f));
 
+            CoopGame.Player.PlayerCameraController.ForceEditorCursorLockIfNeeded(true);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible   = false;
             CoopGame.Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);
@@ -476,6 +477,7 @@ namespace CoopGame.Network
                 if (_isPaused || IsPaused || LobbyCharacterCustomizationUI.IsVisible ||
                     CoopGame.CarrySystem.MissionFailUI.IsVisible || ExpeditionHUD.BlocksGameplayInput)
                     yield break;
+                CoopGame.Player.PlayerCameraController.ForceEditorCursorLockIfNeeded(true);
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible   = false;
                 CoopGame.Player.PlayerCameraController.LocalInstance?.SetCursorLock(true);

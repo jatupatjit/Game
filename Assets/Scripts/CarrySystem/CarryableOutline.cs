@@ -261,6 +261,89 @@ namespace CoopGame.CarrySystem
             _outlineMaterial.SetFloat("_OutlineWidth", _currentWidth);
         }
 
+        // A material appended to a renderer only draws its LAST sub-mesh, so a model with several sub-meshes
+        // (the wooden crate has 20: frame, panels, bottles) got an outline on one bottle only. Those renderers
+        // get a hidden child "shell" instead: the whole mesh merged into one sub-mesh, drawn with the outline.
+        private readonly Dictionary<Renderer, MeshRenderer> _shells = new Dictionary<Renderer, MeshRenderer>();
+
+        private static bool NeedsShell(Renderer r) =>
+            r is MeshRenderer && r.TryGetComponent(out MeshFilter filter) && filter.sharedMesh != null && filter.sharedMesh.subMeshCount > 1;
+
+        private MeshRenderer GetOrCreateShell(Renderer source)
+        {
+            if (_shells.TryGetValue(source, out MeshRenderer shell) && shell != null) return shell;
+            // A boxy prop with a BoxCollider (the wooden crate) gets one clean box outline around its drawn mesh;
+            // tracing the merged mesh would also outline every bottle inside it. A depth mask the size of the box
+            // hides the outline hull's inside (seen through the crate's open top), leaving only a clean rim.
+            if (source.TryGetComponent(out BoxCollider _))
+            {
+                Bounds bounds = source.GetComponent<MeshFilter>().sharedMesh.bounds;
+                Mesh boxMesh = BoxShellMesh();
+                shell = CreateShell(source.transform, boxMesh, bounds.center, bounds.size, _outlineMaterial, "OutlineShell");
+                _masks[source] = CreateShell(source.transform, boxMesh, bounds.center, bounds.size, GetMaskMaterial(), "OutlineMask");
+                return _shells[source] = shell;
+            }
+            Mesh mesh = source.GetComponent<MeshFilter>().sharedMesh;
+            var merged = new Mesh { name = mesh.name + " (Outline)", indexFormat = mesh.indexFormat };
+            merged.SetVertices(mesh.vertices);
+            merged.SetNormals(mesh.normals);
+            var smooth = new List<Vector3>();
+            mesh.GetUVs(1, smooth);
+            if (smooth.Count == mesh.vertexCount) merged.SetUVs(1, smooth);
+            var triangles = new List<int>();
+            for (int i = 0; i < mesh.subMeshCount; i++) triangles.AddRange(mesh.GetTriangles(i));
+            merged.SetTriangles(triangles, 0);
+            merged.bounds = mesh.bounds;
+            return _shells[source] = CreateShell(source.transform, merged, Vector3.zero, Vector3.one, _outlineMaterial, "OutlineShell");
+        }
+
+        private readonly Dictionary<Renderer, MeshRenderer> _masks = new Dictionary<Renderer, MeshRenderer>();
+        private Material _maskMaterial;
+
+        /// <summary>Same shader as the outline, drawn one queue earlier: front faces, depth only, no extrusion.</summary>
+        private Material GetMaskMaterial()
+        {
+            if (_maskMaterial != null) return _maskMaterial;
+            _maskMaterial = new Material(_outlineMaterial) { name = "M_CarryableOutlineMask (Runtime)", hideFlags = HideFlags.DontSave };
+            _maskMaterial.SetFloat("_ColorMask", 0f);
+            _maskMaterial.SetFloat("_ZWrite", 1f);
+            _maskMaterial.SetFloat("_Extrude", 0f);
+            _maskMaterial.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Back);
+            _maskMaterial.renderQueue = _outlineMaterial.renderQueue - 1;
+            return _maskMaterial;
+        }
+
+        private void SetShellsEnabled(bool enabled)
+        {
+            foreach (var shell in _shells.Values) if (shell != null) shell.enabled = enabled;
+            foreach (var mask in _masks.Values) if (mask != null) mask.enabled = enabled;
+        }
+
+        private MeshRenderer CreateShell(Transform parent, Mesh mesh, Vector3 localPosition, Vector3 localScale, Material material, string name)
+        {
+            var go = new GameObject(name) { hideFlags = HideFlags.DontSave };
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPosition;
+            go.transform.localScale = localScale;
+            go.layer = parent.gameObject.layer;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var shell = go.AddComponent<MeshRenderer>();
+            shell.sharedMaterial = material;
+            shell.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            shell.receiveShadows = false;
+            shell.enabled = false;
+            return shell;
+        }
+
+        /// <summary>Unit cube with smoothed normals in UV2, so the outline extrudes without corner cracks.</summary>
+        private Mesh BoxShellMesh()
+        {
+            Mesh cube = Instantiate(Resources.GetBuiltinResource<Mesh>("Cube.fbx"));
+            cube.name = "Box (Outline)";
+            cube.SetUVs(1, ComputeSmoothNormals(cube));
+            return cube;
+        }
+
         private void AddOutlineMaterialToRenderers()
         {
             if (_outlineMaterial == null || _renderers == null) return;
@@ -268,6 +351,12 @@ namespace CoopGame.CarrySystem
             foreach (var r in _renderers)
             {
                 if (r == null) continue;
+                if (NeedsShell(r))
+                {
+                    GetOrCreateShell(r);
+                    SetShellsEnabled(true);
+                    continue;
+                }
 
                 Material[] currentMats = r.sharedMaterials;
                 // Avoid duplicate outline material entries
@@ -288,11 +377,12 @@ namespace CoopGame.CarrySystem
 
         private void RemoveOutlineMaterialFromRenderers()
         {
+            SetShellsEnabled(false);
             if (_outlineMaterial == null || _renderers == null) return;
 
             foreach (var r in _renderers)
             {
-                if (r == null) continue;
+                if (r == null || _shells.ContainsKey(r)) continue;
 
                 Material[] currentMats = r.sharedMaterials;
                 int countWithoutOutline = 0;
@@ -331,6 +421,17 @@ namespace CoopGame.CarrySystem
         private void OnDestroy()
         {
             RemoveOutlineMaterialFromRenderers();
+            foreach (var shell in _shells.Values)
+            {
+                if (shell == null) continue;
+                var filter = shell.GetComponent<MeshFilter>();
+                if (filter != null && filter.sharedMesh != null) Destroy(filter.sharedMesh);
+                Destroy(shell.gameObject);
+            }
+            _shells.Clear();
+            foreach (var mask in _masks.Values) if (mask != null) Destroy(mask.gameObject);
+            _masks.Clear();
+            if (_maskMaterial != null) Destroy(_maskMaterial);
 
             if (_outlineMaterial != null)
             {

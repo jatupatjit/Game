@@ -243,9 +243,37 @@ namespace CoopGame.Player
 
 
 
+#if UNITY_EDITOR
+        private static System.Type _gameViewType;
+        private static System.Reflection.MethodInfo _allowCursorLockMethod;
+#endif
+
+        public static void ForceEditorCursorLockIfNeeded(bool locked)
+        {
+#if UNITY_EDITOR
+            if (!locked) return;
+            try
+            {
+                if (_gameViewType == null)
+                    _gameViewType = typeof(UnityEditor.Editor).Assembly.GetType("UnityEditor.GameView");
+                if (_gameViewType != null && _allowCursorLockMethod == null)
+                    _allowCursorLockMethod = _gameViewType.GetMethod("AllowCursorLockAndHide",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (_gameViewType != null && _allowCursorLockMethod != null)
+                {
+                    var views = Resources.FindObjectsOfTypeAll(_gameViewType);
+                    foreach (var v in views)
+                        _allowCursorLockMethod.Invoke(v, new object[] { true });
+                }
+            }
+            catch { }
+#endif
+        }
+
         public void SetCursorLock(bool locked)
         {
             _isCursorLocked = locked;
+            ForceEditorCursorLockIfNeeded(locked);
             Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !locked;
         }
@@ -320,6 +348,9 @@ namespace CoopGame.Player
             {
                 scroll = Mouse.current.scroll.ReadValue().y;
             }
+
+            // While carrying, the wheel raises/lowers the cargo instead (PlayerCarry.CalculateHoldHeight).
+            if (_playerCarry != null && _playerCarry.IsCarrying) scroll = 0f;
 
             if (Mathf.Abs(scroll) > 0.01f)
             {

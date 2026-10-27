@@ -136,6 +136,7 @@ namespace CoopGame.CarrySystem
         // Allow a small owner-position replication delay at server acceptance.
         private const float ServerContactSlack = .15f;
         private float _currentHoldHeight = 1.05f;
+        private int _liftSteps;
         private bool _grabPending;
         private bool _releasePending;
         private byte _pendingToggleMask;
@@ -232,7 +233,13 @@ namespace CoopGame.CarrySystem
         private const float CarryFacingTurnSpeed = 900f;
         // Slower than free walking so a held load swings round with some weight.
         private const float SoloCarryTurnSpeed = 140f;
+        // 1/s: how quickly the carry facing closes the remaining angle (about 90% in 0.25 s).
+        private const float CarryTurnSmoothing = 9f;
 
+        /// <summary>The vector with its height removed (not normalised, unlike <see cref="Flat"/>).</summary>
+        private static Vector3 Horizontal(Vector3 v) => new(v.x, 0f, v.z);
+
+        /// <summary>Flat unit direction; forward when the flat part is ~zero.</summary>
         private static Vector3 Flat(Vector3 v)
         {
             v.y = 0f;
@@ -250,11 +257,12 @@ namespace CoopGame.CarrySystem
         public bool RightHandGripping => HasLocalInput
             ? _rightHandGripping
             : (_netGripState.Value.Attached && (_netGripState.Value.Hands & 2) != 0);
+        // Left click is the two-handed lift, so it raises both arms; E (interact) reaches with the right hand only.
         public bool LeftHandReaching => HasLocalInput
-            ? (_inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld))
+            ? (_inputReader != null && _inputReader.GrabLeftHeld)
             : ((_netHandState.Value & (1 << 2)) != 0);
         public bool RightHandReaching => HasLocalInput
-            ? (_inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld))
+            ? (_inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.GrabRightHeld || _inputReader.InteractHeld))
             : ((_netHandState.Value & (1 << 3)) != 0);
         public CarryableObject CurrentCarryable => _currentCarryable;
         public float CurrentThrowCharge => _currentThrowCharge;
@@ -391,6 +399,8 @@ namespace CoopGame.CarrySystem
 
             if (IsOwner)
             {
+                s_localCarrier = this;
+                if (!IsServer && GetComponent<CargoDrawShifter>() == null) gameObject.AddComponent<CargoDrawShifter>();
                 if (GetComponent<PlayerStaminaUI>() == null)
                 {
                     gameObject.AddComponent<PlayerStaminaUI>();
@@ -401,6 +411,7 @@ namespace CoopGame.CarrySystem
         public override void OnNetworkDespawn()
         {
             _netGripState.OnValueChanged -= OnGripStateChanged;
+            if (s_localCarrier == this) s_localCarrier = null;
             if (IsServer && _currentCarryable != null) _currentCarryable.DetachCarrier(OwnerClientId);
             _pendingServerGripKind = 0;
             _grabRequestId++;
@@ -452,6 +463,27 @@ namespace CoopGame.CarrySystem
             _carryFacingTarget = Vector3.forward;
         }
 
+        // A co-op client's cargo replica is drawn one network delay behind the server, so the carrier's own body
+        // looks sunk into it while walking towards it. While this player carries, CargoDrawShifter draws the cargo
+        // where the server has it now (the same prediction the movement limit uses).
+        private const float CargoRenderShiftLimit = .6f;
+
+        private static PlayerCarry s_localCarrier;
+
+        /// <summary>Extra offset to add to points on <paramref name="cargo"/> read from its transform this frame. Zero
+        /// once <see cref="CargoDrawShifter"/> has moved the transform itself; before that (or with no shifter) the
+        /// shift a client carrier's drawing uses, so a team-mate's hands and body stay on the drawn crate.</summary>
+        public static Vector3 CargoDrawShift(CarryableObject cargo) =>
+            !CargoDrawShifter.Applied && s_localCarrier != null && cargo != null && s_localCarrier._currentCarryable == cargo
+                ? s_localCarrier.ClientCargoLagOffset() : Vector3.zero;
+
+        /// <summary>Client carrier only: how far the server's cargo is ahead of its replica (flat, clamped).</summary>
+        internal Vector3 ClientCargoLagOffset()
+        {
+            if (!IsNetworked || !IsOwner || IsServer || _currentCargoRigidbody == null || !IsCarrying) return Vector3.zero;
+            return Vector3.ClampMagnitude(Horizontal(PredictedServerCargoPosition() - _currentCargoRigidbody.position), CargoRenderShiftLimit);
+        }
+
         private bool _placeIntent, _serverPlaceIntent;
         private float _placeFeedbackUntil;
         public string PlacementFeedback => Time.unscaledTime < _placeFeedbackUntil ? "ตรงนี้ยังวางไม่ได้" : null;
@@ -498,13 +530,15 @@ namespace CoopGame.CarrySystem
                 Vector2 input = _inputReader != null ? _inputReader.MoveInput : Vector2.zero;
                 direction = Vector3.ClampMagnitude(forward * input.y + right * input.x, 1f);
             }
-            // A solo carrier steers: body and cargo turn toward where they walk, leaving the
-            // camera free. Co-op carriers keep facing the shared cargo from their own side.
+            // A solo carrier faces the camera's heading while walking: A/D strafe and S backs up with the cargo
+            // held still in front, only turning the camera turns the cargo. Co-op carriers keep facing the shared
+            // cargo from their own side.
             bool soloSteering = HasLocalInput && _currentCarryable.CurrentCarrierCount <= 1;
             float turnSpeed = CarryFacingTurnSpeed;
             if (soloSteering)
             {
-                if (direction.sqrMagnitude > .01f) _carryFacingTarget = direction.normalized;
+                Vector3 cameraHeading = _cameraController != null ? _cameraController.HorizontalForward : transform.forward;
+                if (direction.sqrMagnitude > .01f) _carryFacingTarget = Flat(cameraHeading);
                 else if (!_hasCarryFacing) _carryFacingTarget = Flat(transform.forward);
                 turnSpeed = SoloCarryTurnSpeed;
             }
@@ -521,8 +555,14 @@ namespace CoopGame.CarrySystem
                 _carryFacing = _carryFacingTarget.sqrMagnitude > .01f ? _carryFacingTarget : transform.forward;
                 _hasCarryFacing = true;
             }
-            else _carryFacing = Vector3.RotateTowards(_carryFacing, _carryFacingTarget,
-                turnSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f).normalized;
+            else
+            {
+                // Ease in and out of a turn (exponential approach) instead of a constant-rate snap; the turn
+                // speed stays the upper limit.
+                float easedStep = Vector3.Angle(_carryFacing, _carryFacingTarget) * (1f - Mathf.Exp(-CarryTurnSmoothing * Time.fixedDeltaTime));
+                float step = Mathf.Min(easedStep, turnSpeed * Time.fixedDeltaTime);
+                _carryFacing = Vector3.RotateTowards(_carryFacing, _carryFacingTarget, step * Mathf.Deg2Rad, 0f).normalized;
+            }
             if (!HasLocalInput) return;
             // Carry traction aims at the speed this player actually requests (sprint, tiredness,
             // charge, cards), not a fixed walk speed, so cargo and carrier targets agree.
@@ -698,6 +738,14 @@ namespace CoopGame.CarrySystem
 
         private float CalculateHoldHeight()
         {
+            // Hold-pose carry: the mouse wheel raises or lowers the held cargo in steps; each grab starts level.
+            if (IsCarrying && _currentCarryable != null && !_currentCarryable.IsSoloDragging)
+            {
+                if (_inputReader != null && _inputReader.ScrollStep != 0)
+                    _liftSteps = Mathf.Clamp(_liftSteps + _inputReader.ScrollStep, -CarryableObject.HoldLowerSteps, CarryableObject.HoldRaiseSteps);
+                return CarryableObject.NeutralHoldHeight + _liftSteps * CarryableObject.HoldStepHeight;
+            }
+            _liftSteps = 0;
             if (_cameraController == null) return _normalLiftHeight;
             float pitch = _cameraController.Pitch;
             // The default third-person camera looks slightly down. Treat that
@@ -1269,15 +1317,18 @@ namespace CoopGame.CarrySystem
             // A confirmed cargo attachment takes priority over an older replicated
             // climbing flag, which can arrive on a different network tick.
             Transform cargo = _currentCarryable.transform;
+            // A team-mate's hands go where this peer draws the crate (the owner's own hands get the same shift
+            // inside AdjustClientVisualHandTarget).
+            Vector3 drawShift = IsNetworked && !IsOwner ? CargoDrawShift(_currentCarryable) : Vector3.zero;
             if (LeftHandGripping)
             {
-                Vector3 leftTarget = AdjustClientVisualHandTarget(true, cargo.TransformPoint(_currentLocalContactLeft));
+                Vector3 leftTarget = AdjustClientVisualHandTarget(true, cargo.TransformPoint(_currentLocalContactLeft)) + drawShift;
                 ApplyHandTarget(true, leftTarget, cargo.rotation * _currentLocalRotationLeft);
             }
             else RelaxFreeHand(true);
             if (RightHandGripping)
             {
-                Vector3 rightTarget = AdjustClientVisualHandTarget(false, cargo.TransformPoint(_currentLocalContactRight));
+                Vector3 rightTarget = AdjustClientVisualHandTarget(false, cargo.TransformPoint(_currentLocalContactRight)) + drawShift;
                 ApplyHandTarget(false, rightTarget, cargo.rotation * _currentLocalRotationRight);
             }
             else RelaxFreeHand(false);
@@ -1287,12 +1338,8 @@ namespace CoopGame.CarrySystem
         {
             if (!IsNetworked || !IsOwner || IsServer) return worldContact;
 
-            if (_currentCargoRigidbody != null)
-            {
-                Vector3 lagOffset = PredictedServerCargoPosition() - _currentCargoRigidbody.position;
-                lagOffset.y = 0f;
-                worldContact += Vector3.ClampMagnitude(lagOffset, 0.22f);
-            }
+            // Same shift as the cargo's own drawing (CargoDrawShifter), so the hands stay on the drawn crate.
+            worldContact += CargoDrawShift(_currentCarryable);
 
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
             GetBodyClearance(out Vector3 bodyCenter, out float bodyRadius);
@@ -1445,6 +1492,18 @@ namespace CoopGame.CarrySystem
             Vector3 requestedHorizontal = new(original.x, 0f, original.z);
             float requestedSqr = requestedHorizontal.sqrMagnitude;
             // Grip/cargo motion may limit walking, but must never walk the player.
+            if (!_currentCarryable.IsSoloDragging && TryGetCarryFacing(out Vector3 facing))
+            {
+                // Hold-pose carry: the cargo moves with the team's walking intent and each carrier keeps to their
+                // stance. A carrier left outside it (a partner who stopped) is drawn back at walking pace.
+                ConstrainToHoldStance(Flat(facing).normalized, ref displacement);
+                Vector3 horizontal = Vector3.ClampMagnitude(Horizontal(displacement),
+                    Mathf.Max(Mathf.Sqrt(requestedSqr), StancePullSpeed * Time.fixedDeltaTime));
+                LastCarryAllowedRatio = requestedSqr < .0000001f ? 1f
+                    : Mathf.Clamp01(Vector3.Dot(horizontal, requestedHorizontal) / requestedSqr);
+                LogStanceCorrection(requestedHorizontal, horizontal, facing);
+                return horizontal + Vector3.up * original.y;
+            }
             if (requestedSqr < .0000001f) return original;
             for (int pass = 0; pass < 3; pass++)
             {
@@ -1460,7 +1519,7 @@ namespace CoopGame.CarrySystem
         private void ConstrainHand(bool left, ref Vector3 displacement)
         {
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
-            float effectiveReach = IsNetworked && !IsServer ? reach + .18f : reach;
+            float effectiveReach = HasCarrierSlack() ? reach + .18f : reach;
             Vector3 anchor = GetPhysicalContact(left);
             Vector3 proposed = shoulder + displacement;
             float vertical = proposed.y - anchor.y;
@@ -1471,6 +1530,56 @@ namespace CoopGame.CarrySystem
                 displacement += Vector3.ClampMagnitude(delta, horizontalReach) - delta;
         }
 
+        // Hold-pose carry: how far a carrier may stray from their stance behind the grip. Stepping towards the
+        // cargo is allowed much less than stepping back or sideways, so the body never enters the crate.
+        private const float StanceSlack = .22f;
+        private const float StanceNetworkSlack = .15f;
+        private const float StanceTowardCargo = .03f;
+        private const float StancePullSpeed = 4f;
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private float _nextStanceLogAt;
+
+        /// <summary>Diagnostics: a stance step that moves a carrier who asked to stand still (at most 5 lines/s).</summary>
+        private void LogStanceCorrection(Vector3 requested, Vector3 applied, Vector3 facing)
+        {
+            if (requested.sqrMagnitude > .0001f || applied.sqrMagnitude < .0004f || Time.unscaledTime < _nextStanceLogAt) return;
+            _nextStanceLogAt = Time.unscaledTime + .2f;
+            Vector3 grip = (GetPhysicalContact(true) + GetPhysicalContact(false)) * .5f;
+            Vector3 stance = CarryableObject.StanceFor(grip, Flat(facing).normalized);
+            Debug.Log($"[StanceDiag] pos={transform.position:F3} stance={stance:F3} grip={grip:F3} facing={facing:F2} " +
+                      $"applied={applied:F3} L={_leftHandGripping} R={_rightHandGripping} contactL={_currentLocalContactLeft:F2} contactR={_currentLocalContactRight:F2}");
+        }
+#else
+        private void LogStanceCorrection(Vector3 requested, Vector3 applied, Vector3 facing) { }
+#endif
+
+        /// <summary>Hold-pose carry: keep this carrier near the place behind their grip from which the hands reach
+        /// it at chest height (<see cref="CarryableObject.HoldReach"/>). A step outside the limits is cut back to them.</summary>
+        private void ConstrainToHoldStance(Vector3 facing, ref Vector3 displacement)
+        {
+            if (facing.sqrMagnitude < .5f) return;
+            Vector3 grip;
+            if (_leftHandGripping && _rightHandGripping) grip = (GetPhysicalContact(true) + GetPhysicalContact(false)) * .5f;
+            else if (_leftHandGripping) grip = GetPhysicalContact(true);
+            else if (_rightHandGripping) grip = GetPhysicalContact(false);
+            else return;
+
+            Vector3 stance = CarryableObject.StanceFor(grip, facing);
+            Vector3 offset = Horizontal(transform.position + displacement - stance);
+            float along = Vector3.Dot(offset, facing);
+            Vector3 side = offset - facing * along;
+            float slack = StanceSlack + (HasCarrierSlack() ? StanceNetworkSlack : 0f);
+            Vector3 limited = facing * Mathf.Clamp(along, -slack, StanceTowardCargo) + Vector3.ClampMagnitude(side, slack);
+            displacement += limited - offset;
+        }
+
+        /// <summary>A co-op client limits its steps against a predicted cargo with this slack. The host carrier in a
+        /// co-op team gets the same slack: without it the host is held to the real cargo (which only moves once the
+        /// springs pull it) while the client walks at full speed, so the team squeezes together or tears apart.</summary>
+        private bool HasCarrierSlack() =>
+            IsNetworked && (!IsServer || _currentCarryable.CurrentCarrierCount > 1);
+
         private void ConstrainBodyOverlap(ref Vector3 displacement)
         {
             if (_bodyCapsule == null || !_bodyCapsule.enabled || _currentCargoColliders == null) return;
@@ -1478,7 +1587,12 @@ namespace CoopGame.CarrySystem
             Quaternion poseCorrection = _currentCargoRigidbody != null
                 ? _currentCargoRigidbody.rotation * Quaternion.Inverse(cargo.rotation) : Quaternion.identity;
             Vector3 cargoPosition = _currentCargoRigidbody != null ? PredictedServerCargoPosition() : cargo.position;
-            float replicaTolerance = IsNetworked && !IsServer ? .12f : 0f;
+            // A co-op host pressed against the cargo would be stopped until the other carrier's pull starts it,
+            // while the client walks on and tears the grip: treat the cargo as already moving with the host's walk.
+            // Only the body limit leads; the hand reach still uses the real cargo.
+            if (IsServer && HasCarrierSlack() && _movement != null)
+                cargoPosition += new Vector3(_movement.Velocity.x, 0f, _movement.Velocity.z) * CoopHostLeadSeconds;
+            float replicaTolerance = HasCarrierSlack() ? .12f : 0f;
             for (int i = 0; i < _currentCargoColliders.Length; i++)
             {
                 Collider collider = _currentCargoColliders[i];
@@ -1559,7 +1673,8 @@ namespace CoopGame.CarrySystem
             {
                 Transform cargo = _currentCarryable.transform;
                 float cargoYaw = FlatYaw(cargo.rotation);
-                Vector3 target = cargo.position + Quaternion.Euler(0f, cargoYaw, 0f) * new Vector3(pose.Offset.x, 0f, pose.Offset.y);
+                Vector3 target = cargo.position + CargoDrawShift(_currentCarryable) +
+                    Quaternion.Euler(0f, cargoYaw, 0f) * new Vector3(pose.Offset.x, 0f, pose.Offset.y);
                 Vector3 correction = target - position;
                 correction.y = 0f;
                 active = correction.sqrMagnitude <= MaxRemoteCarryRenderCorrection * MaxRemoteCarryRenderCorrection;
@@ -1590,7 +1705,7 @@ namespace CoopGame.CarrySystem
                 local = left ? state.LeftPoint : state.RightPoint;
             }
             else local = left ? _currentLocalContactLeft : _currentLocalContactRight;
-            contact = _currentCarryable.transform.TransformPoint(local);
+            contact = _currentCarryable.transform.TransformPoint(local) + CargoDrawShift(_currentCarryable);
             return true;
         }
 
@@ -1633,6 +1748,8 @@ namespace CoopGame.CarrySystem
             }
             return position + leadVelocity * ReplicaLeadSeconds();
         }
+
+        private const float CoopHostLeadSeconds = .12f;
 
         /// <summary>Cargo rotation for the same reach limits. A turning cargo (a solo carrier steering it, or a
         /// team swinging it round) sits one network delay behind on a client, so the grip points swing away from

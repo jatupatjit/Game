@@ -374,7 +374,6 @@ namespace CoopGame.Player
             if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
             {
                 ClearMovementInput();
-                return;
             }
 
             bool jump = _jumpPending && (_wallclimb == null || !_wallclimb.IsClimbing);
@@ -398,13 +397,18 @@ namespace CoopGame.Player
         private bool SetRespawnPointForScene(Scene scene)
         {
             GameObject start = null;
+            // PlayerStart may sit under an organizer group (e.g. Level01's Spawn_And_Cargo), so search the whole scene.
             foreach (GameObject root in scene.GetRootGameObjects())
             {
-                if (root.name == "PlayerStart")
+                foreach (Transform child in root.GetComponentsInChildren<Transform>(true))
                 {
-                    start = root;
-                    break;
+                    if (child.name == "PlayerStart")
+                    {
+                        start = child.gameObject;
+                        break;
+                    }
                 }
+                if (start != null) break;
             }
 
             if (start != null)

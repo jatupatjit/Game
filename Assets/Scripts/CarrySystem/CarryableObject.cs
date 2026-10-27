@@ -114,6 +114,10 @@ namespace CoopGame.CarrySystem
             public Vector3 LocalContactRight = new Vector3(0.25f, 0f, -0.4f);
             public bool LeftHandActive = true;
             public bool RightHandActive = true;
+
+            // Hold-pose scratch (CarryableObject.HoldPose.cs): this step's grip anchor and cargo-local grip middle.
+            public Vector3 HoldAnchor;
+            public Vector3 HoldGrip;
         }
 
         private readonly Dictionary<ulong, CarrierInfo> _activeCarriers = new Dictionary<ulong, CarrierInfo>();
@@ -323,10 +327,13 @@ namespace CoopGame.CarrySystem
             if (_deliveryPlacementPending)
             {
                 _deliveryPlacementPending = false;
+                if (!_rigidbody.isKinematic)
+                {
+                    _rigidbody.linearVelocity = Vector3.zero;
+                    _rigidbody.angularVelocity = Vector3.zero;
+                }
                 _rigidbody.isKinematic = true;
                 _rigidbody.useGravity = false;
-                _rigidbody.linearVelocity = Vector3.zero;
-                _rigidbody.angularVelocity = Vector3.zero;
                 _rigidbody.position = _deliveryPlacementPosition;
                 _rigidbody.rotation = _deliveryPlacementRotation;
                 if (isNetworked && IsServer && TryGetComponent<Unity.Netcode.Components.NetworkTransform>(out var netTransform))
@@ -417,6 +424,15 @@ namespace CoopGame.CarrySystem
             // Big cargo held by one person: no weightless support and no levelling, so the far end
             // swings down and rests on the ground (drags) until a second carrier helps.
             bool soloDrag = _requiresTwoCarriers && supportingCarrierCount == 1;
+
+            // Held cargo follows the carriers' hold pose (CarryableObject.HoldPose.cs). Only a big crate dragged
+            // by one person keeps the spring support below, so its far end can rest on the ground.
+            if (!soloDrag)
+            {
+                DriveHeldPose(isNetworked);
+                return;
+            }
+
             if (!soloDrag)
                 _rigidbody.AddForce(-Physics.gravity * (1f - handLoad), ForceMode.Acceleration);
 
@@ -656,7 +672,7 @@ namespace CoopGame.CarrySystem
         // The per-step plausibility bound above is normally far tighter.
         private const float MaxRemoteCarrierLead = MaxReportedCarrierSpeed * NetworkMotionDelay.MaxDelay;
 
-        /// <summary>Horizontal pull acts at the grip (steers and turns the cargo); vertical support acts
+        /// <summary>Horizontal pull acts at the grip's footprint (steers and turns the cargo); vertical support acts
         /// through the centre of mass so it lifts without pitching deep cargo held by one face.</summary>
         private void ApplyHandSupport(Vector3 target, Vector3 contact, Vector3 carrierVelocity,
             float springStrength, float dampingStrength, float maximumForce, bool liftAtGrip = false)
@@ -667,7 +683,11 @@ namespace CoopGame.CarrySystem
                 new Vector3(relativeVelocity.x, 0f, relativeVelocity.z) * dampingStrength;
             float vertical = delta.y * springStrength * VerticalStiffnessScale +
                 relativeVelocity.y * dampingStrength * VerticalDampingScale;
-            _rigidbody.AddForceAtPosition(Vector3.ClampMagnitude(horizontal, maximumForce), contact, ForceMode.Force);
+            // Pull at the grip's horizontal position but at centre-of-mass height: it still steers/yaws the cargo,
+            // but carriers whose grips sit at different heights can no longer pitch it with opposing pulls.
+            Vector3 pullPoint = contact;
+            if (!liftAtGrip) pullPoint.y = _rigidbody.worldCenterOfMass.y;
+            _rigidbody.AddForceAtPosition(Vector3.ClampMagnitude(horizontal, maximumForce), pullPoint, ForceMode.Force);
             Vector3 lift = Vector3.up * Mathf.Clamp(vertical, -maximumForce, maximumForce);
             // Dragged cargo is lifted at the grip only, so just the carried end rises.
             if (liftAtGrip) _rigidbody.AddForceAtPosition(lift, contact, ForceMode.Force);

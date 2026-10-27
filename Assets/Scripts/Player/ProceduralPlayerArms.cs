@@ -708,11 +708,12 @@ namespace CoopGame.Player
             // Manual user grab input (reaching arms to aim)
             if (_inputReader != null && (_networkObject == null || !_networkObject.IsSpawned || _networkObject.IsOwner))
             {
-                if (_inputReader.GrabLeftHeld || _inputReader.InteractHeld)
+                // Left click lifts with both hands; E (interact) reaches with the right hand only.
+                if (_inputReader.GrabLeftHeld)
                 {
                     leftActive = true; // Reaching arm to aim
                 }
-                if (_inputReader.GrabRightHeld || _inputReader.InteractHeld)
+                if (_inputReader.GrabLeftHeld || _inputReader.GrabRightHeld || _inputReader.InteractHeld)
                 {
                     rightActive = true; // Reaching arm to aim
                 }

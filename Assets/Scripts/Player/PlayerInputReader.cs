@@ -12,7 +12,7 @@ namespace CoopGame.Player
     /// - Two-handed grab controls like Human Fall Flat:
     ///   * Left Hand: Left Mouse Button / Gamepad Left Trigger
     ///   * Right Hand: Right Mouse Button / Gamepad Right Trigger
-    ///   * Dual Grab: 'E' key / Gamepad West Button
+    ///   * Interact (one hand, does not pick up cargo): 'E' key / Gamepad West Button
     /// - Continuous polling of button hold states for interactive physical lifting.
     /// </summary>
     [DisallowMultipleComponent]
@@ -46,6 +46,8 @@ namespace CoopGame.Player
         public bool GrabLeftPressed { get; private set; }
         public bool GrabRightPressed { get; private set; }
         public bool InteractPressed { get; private set; }
+        /// <summary>Mouse wheel this frame: +1 up, -1 down, 0 none.</summary>
+        public int ScrollStep { get; private set; }
 
         // Throwing controls (Hold-to-charge, release-to-throw)
         public bool ThrowHeld { get; private set; }
@@ -90,6 +92,7 @@ namespace CoopGame.Player
             GrabLeftPressed = false;
             GrabRightPressed = false;
             InteractPressed = false;
+            ScrollStep = 0;
             // 1. If game is paused, suppress ALL gameplay inputs completely
             if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
             {
@@ -151,6 +154,11 @@ namespace CoopGame.Player
             {
                 ThrowHeld = !pointerOverUI && _throwAction.IsPressed();
             }
+
+            // Mouse wheel this frame: +1 up, -1 down, 0 none (raises/lowers held cargo).
+            float scroll = !pointerOverUI && UnityEngine.InputSystem.Mouse.current != null
+                ? UnityEngine.InputSystem.Mouse.current.scroll.y.ReadValue() : 0f;
+            ScrollStep = scroll > .01f ? 1 : scroll < -.01f ? -1 : 0;
 
 
             // Detect transition between Grabbing and Released

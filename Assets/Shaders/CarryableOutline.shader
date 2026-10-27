@@ -6,6 +6,12 @@ Shader "Custom/CarryableOutline"
         _OutlineColor("Outline Color", Color) = (0.2, 1.0, 0.4, 1.0)
         _OutlineWidth("Outline Width", Range(0, 10)) = 3.5
         [Enum(UnityEngine.Rendering.CompareFunction)] _ZTest("ZTest", Float) = 4 // LessEqual
+        // Depth-mask variant (CarryableOutline box shells): no colour, writes depth, no extrusion. Drawn just before
+        // the outline, it hides the hull's inside so only the ring outside the silhouette shows.
+        _ColorMask("Color Mask", Float) = 15
+        _ZWrite("ZWrite", Float) = 0
+        _Extrude("Extrude", Float) = 1
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull("Cull", Float) = 1 // Front (inverted hull); the mask uses Back
     }
     SubShader
     {
@@ -20,9 +26,10 @@ Shader "Custom/CarryableOutline"
         Pass
         {
             Name "Outline"
-            Cull Front
-            ZWrite Off
+            Cull [_Cull]
+            ZWrite [_ZWrite]
             ZTest [_ZTest]
+            ColorMask [_ColorMask]
             Blend SrcAlpha OneMinusSrcAlpha
 
             HLSLPROGRAM
@@ -47,6 +54,7 @@ Shader "Custom/CarryableOutline"
             CBUFFER_START(UnityPerMaterial)
                 half4 _OutlineColor;
                 float _OutlineWidth;
+                float _Extrude;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -72,7 +80,7 @@ Shader "Custom/CarryableOutline"
                 {
                     float2 extDir = screenDir / screenDirLen;
                     // Extrude in 2D clip space (multiplied by posCS.w for perspective consistency)
-                    posCS.xy += extDir * (_OutlineWidth * 0.0018 * posCS.w);
+                    posCS.xy += extDir * (_OutlineWidth * _Extrude * 0.0018 * posCS.w);
                 }
 
                 output.positionCS = posCS;

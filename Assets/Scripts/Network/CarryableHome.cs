@@ -37,7 +37,7 @@ namespace CoopGame.Network
             if (!_resetPending && transform.position.y >= _killY) return;
             _resetPending = false;
             _carryable.DetachAllCarriers();
-            if (_body != null) { _body.linearVelocity = Vector3.zero; _body.angularVelocity = Vector3.zero; }
+            if (_body != null && !_body.isKinematic) { _body.linearVelocity = Vector3.zero; _body.angularVelocity = Vector3.zero; }
             var networkTransform = GetComponent<NetworkTransform>();
             if (networkTransform != null) networkTransform.Teleport(_homePosition, _homeRotation, transform.localScale);
             else transform.SetPositionAndRotation(_homePosition, _homeRotation);
