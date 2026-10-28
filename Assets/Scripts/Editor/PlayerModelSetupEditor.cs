@@ -13,7 +13,9 @@ public static class PlayerModelSetupEditor
     public static void Setup()
     {
         EnsurePauseMenuPrefab();
-        SetupPlayerPrefab();
+        // The old Rigged_Hand_character setup below is kept for reference; the player model now
+        // comes from PlayerCharacterSetup (Humanoid model + Animator + NetworkAnimator).
+        PlayerCharacterSetup.SetupPlayerCharacter();
         EnsurePauseMenuInCurrentScene();
     }
 

@@ -103,6 +103,8 @@ namespace CoopGame.CarrySystem
         private CoopGame.Network.PlayerExpeditionState _expedition;
         /// <summary>Launch speed (m/s, before body momentum) of the last throw; for tuning/verification.</summary>
         public float LastThrowSpeed { get; private set; }
+        /// <summary>Raised on the owner when a throw leaves the hands (animation hook).</summary>
+        public event System.Action Thrown;
         private Collider[] _playerColliders;
         private Camera _cachedCamera;
         private Wallclimb _wallClimb;
@@ -133,6 +135,13 @@ namespace CoopGame.CarrySystem
         private Vector3 _lastAimLeftNormal = Vector3.up;
         private Vector3 _lastAimRightNormal = Vector3.up;
         private const float LocalContactSlack = .04f;
+        // Two-hand pickup grip: how low on the cargo (0 bottom, 1 top), how far apart on a wide face,
+        // and the widest cargo whose side faces both palms can reach.
+        private const float GripLowFraction = .3f;
+        private const float MaxGripSpread = .34f;
+        private const float SideGripMaxHalfWidth = .36f;
+        private const float SideGripInset = .07f;
+        private const float PickupLeanAllowance = .4f;
         // Allow a small owner-position replication delay at server acceptance.
         private const float ServerContactSlack = .15f;
         private float _currentHoldHeight = 1.05f;
@@ -567,7 +576,14 @@ namespace CoopGame.CarrySystem
             // Carry traction aims at the speed this player actually requests (sprint, tiredness,
             // charge, cards), not a fixed walk speed, so cargo and carrier targets agree.
             float cargoSpeed = 5f * _currentCarryable.GetSpeedMultiplier();
-            if (_movement != null && cargoSpeed > .01f && direction.sqrMagnitude > .0001f)
+            if (soloSteering && !_currentCarryable.IsSoloDragging && _movement != null && cargoSpeed > .01f)
+            {
+                // Alone, the cargo moves with the body's real (accelerated) velocity. The raw input reverses
+                // instantly on A <-> D while the body takes ~0.5 s to turn round, which pulled the cargo
+                // sideways out of the hands and then yanked the body after it.
+                direction = Vector3.ClampMagnitude(Horizontal(_movement.Velocity) / cargoSpeed, 2f);
+            }
+            else if (_movement != null && cargoSpeed > .01f && direction.sqrMagnitude > .0001f)
                 direction *= Mathf.Clamp(_movement.RequestedSpeed / cargoSpeed, .25f, 2f);
             // Report where this simulation really has the carrier: the server only sees a late copy.
             Vector3 position = transform.position;
@@ -804,12 +820,14 @@ namespace CoopGame.CarrySystem
             Vector3 approach = Mathf.Abs(dotA) >= Mathf.Abs(dotB) ? axisA * Mathf.Sign(dotA) : axisB * Mathf.Sign(dotB);
             Vector3 rightDir = Vector3.Cross(Vector3.up, -approach).normalized;
 
-            // Stay horizontally centred; start at mid-height and rise toward the top edge
-            // only as far as needed for both hands to reach (cargo resting on the floor).
-            float top = Mathf.Max(center.y, BoundsTop(target) - .04f);
-            for (int step = 0; step <= 6; step++)
+            // Stay horizontally centred; hold low on the face (GripLowFraction of its height, so the cargo rides
+            // on the hands) and rise toward the top edge only as far as needed for both hands to reach.
+            // Never above the middle of the cargo: the hands go no higher than its centre (George, 2026-10-28).
+            float top = center.y;
+            float low = Mathf.Min(top, Mathf.Lerp(BoundsBottom(target), BoundsTop(target), GripLowFraction));
+            for (int step = 0; step <= 8; step++)
             {
-                Vector3 grip = new Vector3(center.x, Mathf.Lerp(center.y, top, step / 6f), center.z);
+                Vector3 grip = new Vector3(center.x, Mathf.Lerp(low, top, step / 8f), center.z);
                 if (TryGripAtHeight(target, grip, approach, rightDir,
                     out leftPoint, out leftNormal, out rightPoint, out rightNormal)) return true;
             }
@@ -823,11 +841,35 @@ namespace CoopGame.CarrySystem
             bool sidesFound = FindSurfaceContact(target, grip, -rightDir, grip, out Vector3 leftSide, out _) &
                 FindSurfaceContact(target, grip, rightDir, grip, out Vector3 rightSide, out _);
             float halfWidth = sidesFound ? Vector3.Dot(rightSide - leftSide, rightDir) * .5f : .3f;
-            float spread = Mathf.Min(.2f, halfWidth * .75f);
             rightPoint = Vector3.zero; rightNormal = Vector3.up;
+            leftPoint = Vector3.zero; leftNormal = Vector3.up;
+
+            // Cargo no wider than the arms can hug: palms on the two side faces, just behind the near edge.
+            if (sidesFound && halfWidth <= SideGripMaxHalfWidth)
+            {
+                FindSurfaceContact(target, grip, approach, grip, out Vector3 front, out _);
+                Vector3 inset = -approach * SideGripInset + Vector3.Project(front - grip, approach);
+                if (FindSurfaceContact(target, grip + inset - rightDir * halfWidth, -rightDir, grip, out leftPoint, out leftNormal) &&
+                    FindSurfaceContact(target, grip + inset + rightDir * halfWidth, rightDir, grip, out rightPoint, out rightNormal) &&
+                    IsContactReachable(true, leftPoint, rightDir, true) && IsContactReachable(false, rightPoint, rightDir, true))
+                    return true;
+            }
+
+            // Wider cargo: the near face, hands out toward its left and right edges.
+            float spread = Mathf.Min(MaxGripSpread, Mathf.Max(halfWidth * .75f, halfWidth - .05f));
             return FindSurfaceContact(target, grip - rightDir * spread, approach, grip, out leftPoint, out leftNormal) &&
                 FindSurfaceContact(target, grip + rightDir * spread, approach, grip, out rightPoint, out rightNormal) &&
-                IsContactReachable(true, leftPoint, rightDir) && IsContactReachable(false, rightPoint, rightDir);
+                IsContactReachable(true, leftPoint, rightDir, true) && IsContactReachable(false, rightPoint, rightDir, true);
+        }
+
+        private static float BoundsBottom(CarryableObject target)
+        {
+            float bottom = float.PositiveInfinity;
+            var colliders = target.CollisionColliders;
+            if (colliders != null)
+                foreach (var col in colliders)
+                    if (col != null && col.enabled && !col.isTrigger) bottom = Mathf.Min(bottom, col.bounds.min.y);
+            return float.IsInfinity(bottom) ? target.ApproximateBoundsCenter.y : bottom;
         }
 
         private static float BoundsTop(CarryableObject target)
@@ -846,9 +888,12 @@ namespace CoopGame.CarrySystem
             return axis.sqrMagnitude > .01f ? axis.normalized : fallback;
         }
 
-        private bool IsContactReachable(bool left, Vector3 point, Vector3 rightDir = default)
+        private bool IsContactReachable(bool left, Vector3 point, Vector3 rightDir = default, bool leanDown = false)
         {
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
+            // A pickup grip below the shoulders may count a torso lean toward reach (the server's ValidateContact
+            // allows the same); the hold pose then lifts the cargo up to the hands.
+            if (leanDown) shoulder = Vector3.MoveTowards(shoulder, point, Mathf.Clamp(shoulder.y - point.y, 0f, PickupLeanAllowance));
             float maximum = reach + LocalContactSlack;
             float maxSqr = maximum * maximum;
             if ((point - shoulder).sqrMagnitude <= maxSqr) return true;
@@ -1533,6 +1578,7 @@ namespace CoopGame.CarrySystem
         // Hold-pose carry: how far a carrier may stray from their stance behind the grip. Stepping towards the
         // cargo is allowed much less than stepping back or sideways, so the body never enters the crate.
         private const float StanceSlack = .22f;
+        private const float StanceSoloSideSlack = .05f;
         private const float StanceNetworkSlack = .15f;
         private const float StanceTowardCargo = .03f;
         private const float StancePullSpeed = 4f;
@@ -1570,7 +1616,11 @@ namespace CoopGame.CarrySystem
             float along = Vector3.Dot(offset, facing);
             Vector3 side = offset - facing * along;
             float slack = StanceSlack + (HasCarrierSlack() ? StanceNetworkSlack : 0f);
-            Vector3 limited = facing * Mathf.Clamp(along, -slack, StanceTowardCargo) + Vector3.ClampMagnitude(side, slack);
+            // Carrying alone, the body stays squarely behind the grip: A/D carries the cargo across with the
+            // player instead of letting it slide to one side of the body.
+            float sideSlack = _currentCarryable.CurrentCarrierCount <= 1
+                ? StanceSoloSideSlack + (HasCarrierSlack() ? StanceNetworkSlack : 0f) : slack;
+            Vector3 limited = facing * Mathf.Clamp(along, -slack, StanceTowardCargo) + Vector3.ClampMagnitude(side, sideSlack);
             displacement += limited - offset;
         }
 
@@ -1873,6 +1923,10 @@ namespace CoopGame.CarrySystem
             Vector3 point = cargo.transform.TransformPoint(local);
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
             GetArmGeometry(!left, out Vector3 otherShoulder, out _);
+            // Same torso-lean allowance as the owner's pickup check, for grips below the shoulders.
+            float lean = Mathf.Clamp(shoulder.y - point.y, 0f, PickupLeanAllowance);
+            shoulder = Vector3.MoveTowards(shoulder, point, lean);
+            otherShoulder = Vector3.MoveTowards(otherShoulder, point, lean);
             Vector3 chestCenter = (shoulder + otherShoulder) * .5f;
             Vector3 toCargo = cargo.ApproximateBoundsCenter - transform.position;
             toCargo.y = 0f;
@@ -2164,6 +2218,7 @@ namespace CoopGame.CarrySystem
             float throwSpeed = Mathf.Lerp(_minThrowSpeed, _maxThrowSpeed, charge) *
                 (_expedition != null ? _expedition.CardMagnitude(CoopGame.Network.CardEffect.LongThrow) : 1f);
             LastThrowSpeed = throwSpeed;
+            Thrown?.Invoke();
             Vector3 playerVel = (_movement != null) ? _movement.Velocity : Vector3.zero;
             Vector3 finalVelocity = throwDir * throwSpeed + playerVel * _momentumTransfer;
 

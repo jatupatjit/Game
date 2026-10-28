@@ -49,6 +49,8 @@ namespace CoopGame.Player
         [Tooltip("Rigged model used only if this prefab is missing CharacterVisual. Assign it from the Player Model setup menu.")]
         [SerializeField] private GameObject _characterModelPrefab;
 
+        public const string DefaultCharacterModelPath = "Assets/Models/Characters/PlayerCharacter.fbx";
+
         // Distinct colors for players 0, 1, 2, 3
         private static readonly Color[] PlayerColors = new Color[]
         {
@@ -87,12 +89,7 @@ namespace CoopGame.Player
 #if UNITY_EDITOR
                 if (modelAsset == null)
                 {
-                    string handModelPath = "Assets/Models/Rigged_Hand_character_ (2).fbx";
-                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(handModelPath);
-                    if (modelAsset == null)
-                    {
-                        modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Rigged_character_.fbx");
-                    }
+                    modelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DefaultCharacterModelPath);
                 }
 #endif
                 if (modelAsset != null)
@@ -131,22 +128,12 @@ namespace CoopGame.Player
 
             if (visualT != null)
             {
-                // Locate the main body renderer (body.002) for player color tinting
-                Renderer[] childRends = visualT.GetComponentsInChildren<Renderer>();
-                Renderer bodyRend = null;
-                foreach (var r in childRends)
-                {
-                    if (r.name.Contains("body") || r.name.Contains("BODY"))
-                    {
-                        bodyRend = r;
-                        break;
-                    }
-                }
-                if (bodyRend == null && childRends.Length > 0)
-                {
-                    bodyRend = childRends[0];
-                }
+                // CharacterRig finds the bones and body/face renderers for every other player script.
+                CharacterRig rig = GetComponent<CharacterRig>();
+                if (rig == null) rig = gameObject.AddComponent<CharacterRig>();
+                rig.SetVisual(visualT);
 
+                Renderer bodyRend = rig.BodyRenderer;
                 if (bodyRend != null)
                 {
                     _playerRenderer = bodyRend;

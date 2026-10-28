@@ -66,6 +66,9 @@ namespace CoopGame.Player
         [Tooltip("Backward lean angle when carrying an object")]
         [SerializeField] private float _carryLeanBackAngle = 8.0f;
 
+        [Tooltip("Share of the waddle roll, strafe/turn bank and hip bob kept while carrying (0 = none)")]
+        [SerializeField, Range(0f, 1f)] private float _carryRollScale = 0.15f;
+
         [Tooltip("Body swing angle when hanging on a wall with one hand")]
         [SerializeField] private float _climbHangSwingAngle = 12.0f;
 
@@ -251,6 +254,8 @@ namespace CoopGame.Player
                 verticalBob = Mathf.Lerp(verticalBob, 0f, dt * 10f);
             }
 
+            if (_playerCarry != null && _playerCarry.IsCarrying) verticalBob *= _carryRollScale;
+
             // Apply vertical bobbing offset + ground squash offset (keeps feet on ground when squashed)
             float soleFromPivot = _characterController != null
                 ? _characterController.center.y - _characterController.height * 0.5f -
@@ -272,10 +277,15 @@ namespace CoopGame.Player
             float strafeBank = Mathf.Clamp(-localVelocity.x * 1.5f, -_bankAngle, _bankAngle);
             float totalBank = strafeBank + turnBank;
 
-            // Carry reaction: Lean backward when carrying heavy objects
-            if (_playerCarry != null && _playerCarry.IsCarrying)
+            // Carry reaction: Lean backward when carrying heavy objects. The cargo is held level and steady,
+            // so a body rolling under it (pivoting at the feet) swings the shoulders sideways past the fixed
+            // grips and twists the arms: keep the side-to-side roll and bob small while carrying.
+            bool carrying = _playerCarry != null && _playerCarry.IsCarrying;
+            if (carrying)
             {
                 forwardLean -= _carryLeanBackAngle;
+                totalBank *= _carryRollScale;
+                rollWaddle *= _carryRollScale;
             }
 
             // Climb reaction: Swing towards gripping hand

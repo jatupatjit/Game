@@ -22,7 +22,7 @@ namespace CoopGame.CarrySystem
         // the grip anchor moves by the difference. Lowering is shorter: the arms (0.40 m) run out of reach sooner.
         public const float NeutralHoldHeight = 1.3f;
         public const float HoldStepHeight = .06f;
-        public const int HoldRaiseSteps = 4, HoldLowerSteps = 2;
+        public const int HoldRaiseSteps = 6, HoldLowerSteps = 2;
 
         // Fraction of the remaining pose error closed per physics step, and the ramp-in after a grab.
         private const float HoldTrackGain = .35f;
@@ -129,7 +129,15 @@ namespace CoopGame.CarrySystem
             intent *= 5f * GetSpeedMultiplier();
 
             Vector3 error = targetPosition - _rigidbody.position;
-            Vector3 velocity = intent * settle + new Vector3(error.x * HoldGroundGain, error.y * HoldTrackGain, error.z * HoldGroundGain) * (settle / dt);
+            Vector3 correction = new Vector3(error.x * HoldGroundGain, error.y * HoldTrackGain, error.z * HoldGroundGain);
+            if (count == 1)
+            {
+                // A solo carrier strafing (A/D) keeps the cargo centred in front: close the sideways error as
+                // firmly as the height, so it does not trail to one side and twist the arms.
+                Vector3 side = Vector3.Cross(Vector3.up, soloHeading);
+                correction += side * (Vector3.Dot(error, side) * (HoldTrackGain - HoldGroundGain));
+            }
+            Vector3 velocity = intent * settle + correction * (settle / dt);
 
             _rigidbody.useGravity = false;
             _rigidbody.constraints = RigidbodyConstraints.None;

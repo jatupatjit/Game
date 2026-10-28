@@ -144,6 +144,7 @@ namespace CoopGame.Player
 
         public void ApplyFace(int value)
         {
+            if (_faceRenderer == null && TryGetComponent(out CharacterRig rig)) _faceRenderer = rig.FaceRenderer;
             if (_faceRenderer == null || _faceTextures == null || _faceTextures.Length < FaceCount) return;
             _properties ??= new MaterialPropertyBlock();
             _faceRenderer.GetPropertyBlock(_properties);
@@ -155,7 +156,8 @@ namespace CoopGame.Player
         public void ApplyColor(int value)
         {
             Color chosenColor = GetPastelColor(value);
-            Transform visual = transform.Find("CharacterVisual");
+            if (_faceRenderer == null && TryGetComponent(out CharacterRig rig)) _faceRenderer = rig.FaceRenderer;
+            Transform visual = transform.Find(CharacterRig.VisualName);
             Renderer[] renderers = visual != null
                 ? visual.GetComponentsInChildren<Renderer>(true)
                 : GetComponentsInChildren<Renderer>(true);

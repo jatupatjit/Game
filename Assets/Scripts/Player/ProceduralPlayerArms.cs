@@ -1,88 +1,26 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 namespace CoopGame.Player
 {
     /// <summary>
-    /// ProceduralPlayerArms drives the actual rigged skeleton arms (UpperArm -> LowerArm -> Wrist)
-    /// and finger bones of Rigged_character_.fbx using analytic Two-Bone Inverse Kinematics (IK)
-    /// with bounded carry-contact attachment and natural procedural finger flexion / fist clenching (การกำมือ).
-    /// 
+    /// ProceduralPlayerArms drives the player model's arms (upper arm -> forearm -> hand) and
+    /// fingers with analytic two-bone IK, bounded carry-contact attachment and a procedural
+    /// fist (การกำมือ). Bones come from <see cref="CharacterRig"/>, so any Humanoid model works;
+    /// each bone's own axes are measured at bind pose instead of assumed.
+    ///
     /// Features:
     /// 1. Pole-directed two-bone IK with a continuous anterior reference for stable shoulders.
-    /// 2. Selective Finger Grip (กำมือเฉพาะเวลาปีนหรือยกของจริง):
-    ///    - When raising arms in air / aiming: Hands stay OPEN and relaxed (แบมือ).
-    ///    - When ACTUALLY climbing a wall or carrying an object: Fingers smoothly CLENCH A FIST (กำมือ).
-    /// 3. Solid Palm Integrity:
-    ///    - Metacarpal bones (handL..., handR...) stay locked at rest pose, preserving solid palm topology.
-    ///    - Only knuckle (joint1) and distal (joint2) phalanges curl along natural -X hinge axis.
-    /// 4. Smooth Natural Rest & Reach:
-    ///    - When idle (weight = 0), bones sit 100% in natural rest pose beside hips with open hands.
-    ///    - When reaching / gripping, smoothly blends from rest pose to target with zero snapping.
-    /// 5. Full Multiplayer & Color Tinting:
-    ///    - Tints the SkinnedMeshRenderer (body + gloves) to match player ID colors.
+    /// 2. Fingers close only while really climbing or carrying; reaching keeps the hand open.
+    /// 3. Each finger joint curls around the axis its avatar closes it on.
+    /// 4. At weight 0 the arms hang beside the hips (or play the Animator's clip once one exists)
+    ///    and reaching blends from that pose without snapping.
+    /// 5. Tints the body SkinnedMeshRenderer to the player's colour.
     /// </summary>
     [DisallowMultipleComponent]
     [DefaultExecutionOrder(110)]
     public class ProceduralPlayerArms : MonoBehaviour
     {
-        [System.Serializable]
-        public class FingerPhalanges
-        {
-            public string fingerName;
-            public Transform joint1; // e.g. L.Index1 (Knuckle)
-            public Transform joint2; // e.g. L.Index2 (Distal)
-            public bool isThumb = false;
-            public bool isLeftHand = true;
-
-            private Quaternion _initRot1 = Quaternion.identity;
-            private Quaternion _initRot2 = Quaternion.identity;
-            private bool _initialized = false;
-
-            public void CacheInitialRotations()
-            {
-                if (joint1 != null) _initRot1 = joint1.localRotation;
-                if (joint2 != null) _initRot2 = joint2.localRotation;
-                _initialized = true;
-            }
-
-            public void ApplyCurl(float gripWeight, float maxAngle)
-            {
-                if (!_initialized) CacheInitialRotations();
-
-                if (gripWeight <= 0.001f)
-                {
-                    if (joint1 != null) joint1.localRotation = _initRot1;
-                    if (joint2 != null) joint2.localRotation = _initRot2;
-                    return;
-                }
-
-                float angle = maxAngle * gripWeight;
-
-                if (isThumb)
-                {
-                    // Thumb folds inward and across palm
-                    float thumbAngle1 = angle * 0.70f;
-                    float thumbAngle2 = angle * 0.85f;
-
-                    Vector3 curlAxis1 = isLeftHand ? new Vector3(-1f, 0f, -0.30f).normalized : new Vector3(-1f, 0f, 0.30f).normalized;
-                    Vector3 curlAxis2 = new Vector3(-1f, 0f, 0f);
-
-                    if (joint1 != null) joint1.localRotation = _initRot1 * Quaternion.AngleAxis(thumbAngle1, curlAxis1);
-                    if (joint2 != null) joint2.localRotation = _initRot2 * Quaternion.AngleAxis(thumbAngle2, curlAxis2);
-                }
-                else
-                {
-                    // Clean, natural local -X rotation (hinge flexion into palm)
-                    float curl1 = angle * 0.70f;
-                    float curl2 = angle * 0.95f;
-
-                    if (joint1 != null) joint1.localRotation = _initRot1 * Quaternion.Euler(-curl1, 0f, 0f);
-                    if (joint2 != null) joint2.localRotation = _initRot2 * Quaternion.Euler(-curl2, 0f, 0f);
-                }
-            }
-        }
-
         [Header("Rigged Skeleton Transforms")]
         [SerializeField] private Transform _characterVisual;
         [SerializeField] private Transform _upperArmL;
@@ -104,12 +42,16 @@ namespace CoopGame.Player
         [Range(0f, 1f)]
         [SerializeField] private float _rightWeight = 0f;
 
-        [Header("Hand Grab Animations (Rigged_Hand_character)")]
-        [Tooltip("Finger-only clip for the player's left hand (-X): Armature|LeftGrab, rig Wrist.R")]
+        [Header("Hand Grab Clips (old non-Humanoid rig only)")]
+        [Tooltip("Finger-only clip for the left hand. Ignored on a Humanoid model, which curls procedurally.")]
         [SerializeField] private AnimationClip _leftGrabClip;
 
-        [Tooltip("Finger-only clip for the player's right hand (+X): Armature|RightGrab, rig Wrist.L")]
+        [Tooltip("Finger-only clip for the right hand. Ignored on a Humanoid model, which curls procedurally.")]
         [SerializeField] private AnimationClip _rightGrabClip;
+
+        [Header("Rest Pose")]
+        [Tooltip("Degrees the idle arms hang out from the body's vertical")]
+        [SerializeField, Range(0f, 40f)] private float _restArmSpread = 12f;
 
         [Header("Finger Grip & Fist Settings (การกำมือ)")]
         [Tooltip("Max curl angle in degrees for Index, Middle, and Pinky fingers when gripping/lifting (procedural fallback)")]
@@ -127,9 +69,21 @@ namespace CoopGame.Player
         [Tooltip("Maximum hand twist; part of this rotation is distributed along the forearm")]
         [SerializeField, Range(0f, 90f)] private float _carryWristTwistLimit = 70f;
 
-        // Finger joint chains (4 fingers per hand)
-        private FingerPhalanges[] _leftFingers;
-        private FingerPhalanges[] _rightFingers;
+        // Finger chains come from the rig, with each joint's measured curl axis.
+        private CharacterRig _rig;
+        private CharacterRig.Finger[] _leftFingers;
+        private CharacterRig.Finger[] _rightFingers;
+
+        // Bone-local offset between the IK frame (LookRotation(anterior, bone direction))
+        // and the bone's own axes, measured at bind pose. Identity on a rig whose bones
+        // already point +Y along the limb with +Z to the front.
+        private Quaternion _axisFixUpperL = Quaternion.identity;
+        private Quaternion _axisFixLowerL = Quaternion.identity;
+        private Quaternion _axisFixUpperR = Quaternion.identity;
+        private Quaternion _axisFixLowerR = Quaternion.identity;
+        // Hand targets are LookRotation(back of hand, fingers); this turns them into the hand bone's axes.
+        private Quaternion _handTargetFixL = Quaternion.identity;
+        private Quaternion _handTargetFixR = Quaternion.identity;
 
         // Current grip weights (0 = open hand, 1 = clenched fist)
         private float _currentLeftGrip = 0f;
@@ -161,14 +115,14 @@ namespace CoopGame.Player
         private float _naturalReachLocalL;
         private float _naturalReachLocalR;
 
-        // Exact initial local rotations for rest pose from Rigged_character_.fbx
-        private Quaternion _initUpperRotL = new Quaternion(0.04446f, 0.04762f, 0.18977f, 0.97966f);
-        private Quaternion _initLowerRotL = new Quaternion(0.04222f, 0.03320f, 0.02967f, 0.99812f);
-        private Quaternion _initWristRotL = new Quaternion(0.04539f, -0.00575f, -0.01139f, 0.99889f);
+        // Bind-pose local rotations, read from the model in LocateBones.
+        private Quaternion _initUpperRotL = Quaternion.identity;
+        private Quaternion _initLowerRotL = Quaternion.identity;
+        private Quaternion _initWristRotL = Quaternion.identity;
 
-        private Quaternion _initUpperRotR = new Quaternion(0.04816f, -0.05083f, -0.18329f, 0.98056f);
-        private Quaternion _initLowerRotR = new Quaternion(0.04553f, -0.02868f, 0.00119f, 0.99855f);
-        private Quaternion _initWristRotR = new Quaternion(0.02008f, 0.01109f, -0.05448f, 0.99825f);
+        private Quaternion _initUpperRotR = Quaternion.identity;
+        private Quaternion _initLowerRotR = Quaternion.identity;
+        private Quaternion _initWristRotR = Quaternion.identity;
 
         private bool _bonesInitialized = false;
 
@@ -226,6 +180,8 @@ namespace CoopGame.Player
             _inputReader = GetComponent<PlayerInputReader>();
             _legs = GetComponent<ProceduralPlayerLegs>();
             _networkObject = GetComponent<Unity.Netcode.NetworkObject>();
+            _rig = GetComponent<CharacterRig>();
+            if (_rig == null) _rig = gameObject.AddComponent<CharacterRig>();
             EnsureTargetNodesCreated();
             LocateBones();
         }
@@ -246,6 +202,9 @@ namespace CoopGame.Player
             RestoreArmJointOffsets();
             _characterVisual = visual;
             _bonesInitialized = false;
+            if (_rig == null) _rig = GetComponent<CharacterRig>();
+            if (_rig == null) _rig = gameObject.AddComponent<CharacterRig>();
+            _rig.SetVisual(visual);
             LocateBones();
         }
 
@@ -345,172 +304,136 @@ namespace CoopGame.Player
             RestoreArmJointOffsets();
             if (_characterVisual == null)
             {
-                _characterVisual = transform.Find("CharacterVisual");
+                _characterVisual = transform.Find(CharacterRig.VisualName);
             }
+            if (_characterVisual == null) return;
+            if (_rig == null) _rig = GetComponent<CharacterRig>();
+            if (_rig == null) _rig = gameObject.AddComponent<CharacterRig>();
+            if (_rig.Visual != _characterVisual) _rig.SetVisual(_characterVisual);
 
-            if (_characterVisual != null)
+            Renderer body = _rig.BodyRenderer;
+            _skinnedMeshRenderer = body as SkinnedMeshRenderer;
+            if (_skinnedMeshRenderer == null) _skinnedMeshRenderer = _characterVisual.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (_skinnedMeshRenderer != null)
+                _skinnedMeshRenderer.updateWhenOffscreen = true;
+
+            if (!_bonesInitialized)
             {
-                _skinnedMeshRenderer = _characterVisual.GetComponentInChildren<SkinnedMeshRenderer>();
-                if (_skinnedMeshRenderer != null)
-                    _skinnedMeshRenderer.updateWhenOffscreen = true;
-
-                // Find UpperArm bones in the hierarchy
-                Transform boneL = FindChildRecursive(_characterVisual, "UpperArmL");
-                Transform boneR = FindChildRecursive(_characterVisual, "UpperArmR");
-
-                // Spatially map player's left arm (-X) and right arm (+X)
-                if (!_bonesInitialized && boneL != null && boneR != null)
-                {
-                    Transform leftBone = (transform.InverseTransformPoint(boneL.position).x < transform.InverseTransformPoint(boneR.position).x) ? boneL : boneR;
-                    Transform rightBone = (leftBone == boneL) ? boneR : boneL;
-
-                    _upperArmL = leftBone;
-                    _lowerArmL = (_upperArmL.childCount > 0) ? _upperArmL.GetChild(0) : FindChildRecursive(_characterVisual, "LowerArm.R");
-                    _wristL = (_lowerArmL != null && _lowerArmL.childCount > 0) ? _lowerArmL.GetChild(0) : FindChildRecursive(_characterVisual, "Wrist.R");
-
-                    _upperArmR = rightBone;
-                    _lowerArmR = (_upperArmR.childCount > 0) ? _upperArmR.GetChild(0) : FindChildRecursive(_characterVisual, "LowerArm.L");
-                    _wristR = (_lowerArmR != null && _lowerArmR.childCount > 0) ? _lowerArmR.GetChild(0) : FindChildRecursive(_characterVisual, "Wrist.L");
-                }
-                else if (!_bonesInitialized)
-                {
-                    if (_upperArmL == null) _upperArmL = FindChildRecursive(_characterVisual, "UpperArmR") ?? FindChildRecursive(_characterVisual, "UpperArmL");
-                    if (_lowerArmL == null) _lowerArmL = FindChildRecursive(_characterVisual, "LowerArm.R") ?? FindChildRecursive(_characterVisual, "LowerArm.L");
-                    if (_wristL == null) _wristL = FindChildRecursive(_characterVisual, "Wrist.R") ?? FindChildRecursive(_characterVisual, "Wrist.L");
-
-                    if (_upperArmR == null) _upperArmR = FindChildRecursive(_characterVisual, "UpperArmL") ?? FindChildRecursive(_characterVisual, "UpperArmR");
-                    if (_lowerArmR == null) _lowerArmR = FindChildRecursive(_characterVisual, "LowerArm.L") ?? FindChildRecursive(_characterVisual, "LowerArm.R");
-                    if (_wristR == null) _wristR = FindChildRecursive(_characterVisual, "Wrist.L") ?? FindChildRecursive(_characterVisual, "Wrist.R");
-                }
-
-                if (!_bonesInitialized && _upperArmL != null && _upperArmR != null)
-                {
-                    _initUpperRotL = _upperArmL.localRotation;
-                    if (_lowerArmL != null) _initLowerRotL = _lowerArmL.localRotation;
-                    if (_wristL != null) _initWristRotL = _wristL.localRotation;
-                    if (_lowerArmL != null) _restLowerPositionL = _lowerArmL.localPosition;
-                    if (_wristL != null) _restWristPositionL = _wristL.localPosition;
-
-                    _initUpperRotR = _upperArmR.localRotation;
-                    if (_lowerArmR != null) _initLowerRotR = _lowerArmR.localRotation;
-                    if (_wristR != null) _initWristRotR = _wristR.localRotation;
-                    if (_lowerArmR != null) _restLowerPositionR = _lowerArmR.localPosition;
-                    if (_wristR != null) _restWristPositionR = _wristR.localPosition;
-
-                    _neutralShoulderLocalL = transform.InverseTransformPoint(_upperArmL.position);
-                    _neutralShoulderLocalR = transform.InverseTransformPoint(_upperArmR.position);
-                    _naturalReachLocalL = _lowerArmL != null && _wristL != null
-                        ? transform.InverseTransformVector(_lowerArmL.position - _upperArmL.position).magnitude +
-                          transform.InverseTransformVector(_wristL.position - _lowerArmL.position).magnitude
-                        : 0f;
-                    _naturalReachLocalR = _lowerArmR != null && _wristR != null
-                        ? transform.InverseTransformVector(_lowerArmR.position - _upperArmR.position).magnitude +
-                          transform.InverseTransformVector(_wristR.position - _lowerArmR.position).magnitude
-                        : 0f;
-
-                    // Natural hanging rest rotations with comfortable clearance from hips (~28 deg)
-                    _restUpperRotL = _initUpperRotL * Quaternion.Euler(0f, 0f, 28.0f);
-                    _restUpperRotR = _initUpperRotR * Quaternion.Euler(0f, 0f, -28.0f);
-
-                    _bonesInitialized = true;
-                }
-
-                if (_upperArmL != null && _lowerArmL != null && _wristL != null)
-                {
-                    _leftUpperLen = Vector3.Distance(_upperArmL.position, _lowerArmL.position);
-                    _leftLowerLen = Vector3.Distance(_lowerArmL.position, _wristL.position);
-                    if (_leftUpperLen < 0.05f) _leftUpperLen = 0.23f;
-                    if (_leftLowerLen < 0.05f) _leftLowerLen = 0.17f;
-                }
-
-                if (_upperArmR != null && _lowerArmR != null && _wristR != null)
-                {
-                    _rightUpperLen = Vector3.Distance(_upperArmR.position, _lowerArmR.position);
-                    _rightLowerLen = Vector3.Distance(_lowerArmR.position, _wristR.position);
-                    if (_rightUpperLen < 0.05f) _rightUpperLen = 0.23f;
-                    if (_rightLowerLen < 0.05f) _rightLowerLen = 0.17f;
-                }
-
-                LocateFingerBones();
+                _upperArmL = _rig.UpperArmL;
+                _lowerArmL = _rig.LowerArmL;
+                _wristL = _rig.HandL;
+                _upperArmR = _rig.UpperArmR;
+                _lowerArmR = _rig.LowerArmR;
+                _wristR = _rig.HandR;
             }
+
+            if (!_bonesInitialized && _upperArmL != null && _upperArmR != null &&
+                _lowerArmL != null && _lowerArmR != null && _wristL != null && _wristR != null)
+            {
+                _initUpperRotL = _upperArmL.localRotation;
+                _initLowerRotL = _lowerArmL.localRotation;
+                _initWristRotL = _wristL.localRotation;
+                _restLowerPositionL = _lowerArmL.localPosition;
+                _restWristPositionL = _wristL.localPosition;
+
+                _initUpperRotR = _upperArmR.localRotation;
+                _initLowerRotR = _lowerArmR.localRotation;
+                _initWristRotR = _wristR.localRotation;
+                _restLowerPositionR = _lowerArmR.localPosition;
+                _restWristPositionR = _wristR.localPosition;
+
+                _axisFixUpperL = MeasureAxisFix(_upperArmL, _lowerArmL, _wristL, out _axisFixLowerL);
+                _axisFixUpperR = MeasureAxisFix(_upperArmR, _lowerArmR, _wristR, out _axisFixLowerR);
+                _handTargetFixL = _rig.MeasureHandTargetFix(true);
+                _handTargetFixR = _rig.MeasureHandTargetFix(false);
+
+                // Arms hang beside the hips, whatever pose (T, A) the model was exported in.
+                _restUpperRotL = HangingUpperRotation(_upperArmL, _lowerArmL, -1f);
+                _restUpperRotR = HangingUpperRotation(_upperArmR, _lowerArmR, 1f);
+
+                // Physics geometry from the hanging pose, measured with the bind pose restored after.
+                Quaternion bindL = _upperArmL.localRotation, bindR = _upperArmR.localRotation;
+                _upperArmL.localRotation = _restUpperRotL;
+                _upperArmR.localRotation = _restUpperRotR;
+                _neutralShoulderLocalL = transform.InverseTransformPoint(_upperArmL.position);
+                _neutralShoulderLocalR = transform.InverseTransformPoint(_upperArmR.position);
+                _naturalReachLocalL = transform.InverseTransformVector(_lowerArmL.position - _upperArmL.position).magnitude +
+                                      transform.InverseTransformVector(_wristL.position - _lowerArmL.position).magnitude;
+                _naturalReachLocalR = transform.InverseTransformVector(_lowerArmR.position - _upperArmR.position).magnitude +
+                                      transform.InverseTransformVector(_wristR.position - _lowerArmR.position).magnitude;
+                _upperArmL.localRotation = bindL;
+                _upperArmR.localRotation = bindR;
+
+                _bonesInitialized = true;
+            }
+
+            if (_upperArmL != null && _lowerArmL != null && _wristL != null)
+            {
+                _leftUpperLen = Vector3.Distance(_upperArmL.position, _lowerArmL.position);
+                _leftLowerLen = Vector3.Distance(_lowerArmL.position, _wristL.position);
+                if (_leftUpperLen < 0.05f) _leftUpperLen = 0.23f;
+                if (_leftLowerLen < 0.05f) _leftLowerLen = 0.17f;
+            }
+
+            if (_upperArmR != null && _lowerArmR != null && _wristR != null)
+            {
+                _rightUpperLen = Vector3.Distance(_upperArmR.position, _lowerArmR.position);
+                _rightLowerLen = Vector3.Distance(_lowerArmR.position, _wristR.position);
+                if (_rightUpperLen < 0.05f) _rightUpperLen = 0.23f;
+                if (_rightLowerLen < 0.05f) _rightLowerLen = 0.17f;
+            }
+
+            LocateFingerBones();
+        }
+
+        /// <summary>
+        /// The IK builds bone rotations as LookRotation(anterior, limb direction). Measure, at bind
+        /// pose, the fixed local rotation that turns that frame into this bone's real axes.
+        /// </summary>
+        private Quaternion MeasureAxisFix(Transform upper, Transform lower, Transform wrist, out Quaternion lowerFix)
+        {
+            Vector3 upperDir = (lower.position - upper.position).normalized;
+            Vector3 lowerDir = (wrist.position - lower.position).normalized;
+            Vector3 upperFwd = AnteriorReference(upperDir);
+            Vector3 lowerFwd = Vector3.ProjectOnPlane(upperFwd, lowerDir);
+            if (lowerFwd.sqrMagnitude < 0.001f) lowerFwd = AnteriorReference(lowerDir);
+            lowerFix = Quaternion.Inverse(Quaternion.LookRotation(lowerFwd.normalized, lowerDir)) * lower.rotation;
+            return Quaternion.Inverse(Quaternion.LookRotation(upperFwd, upperDir)) * upper.rotation;
+        }
+
+        /// <summary>Same anterior reference the IK solvers use for an upper arm pointing along <paramref name="direction"/>.</summary>
+        private Vector3 AnteriorReference(Vector3 direction)
+        {
+            float verticalBlend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 0.95f, Mathf.Abs(direction.y)));
+            Vector3 verticalRef = direction.y >= 0f ? -transform.forward : transform.forward;
+            Vector3 anterior = Vector3.ProjectOnPlane(Vector3.Slerp(transform.up, verticalRef, verticalBlend), direction);
+            if (anterior.sqrMagnitude < 0.001f) anterior = Vector3.ProjectOnPlane(transform.forward, direction);
+            if (anterior.sqrMagnitude < 0.001f) anterior = Vector3.ProjectOnPlane(transform.right, direction);
+            return anterior.normalized;
+        }
+
+        /// <summary>Upper-arm local rotation that hangs the arm <see cref="_restArmSpread"/> degrees out from vertical.</summary>
+        private Quaternion HangingUpperRotation(Transform upper, Transform lower, float side)
+        {
+            Vector3 bindDir = (lower.position - upper.position).normalized;
+            float spread = _restArmSpread * Mathf.Deg2Rad;
+            Vector3 hangDir = transform.TransformDirection(new Vector3(side * Mathf.Sin(spread), -Mathf.Cos(spread), 0f));
+            Quaternion world = Quaternion.FromToRotation(bindDir, hangDir) * upper.rotation;
+            return upper.parent != null ? Quaternion.Inverse(upper.parent.rotation) * world : world;
         }
 
         private void LocateFingerBones()
         {
-            if (_characterVisual == null) return;
+            if (_rig == null) return;
+            _leftFingers = _rig.FingersL;
+            _rightFingers = _rig.FingersR;
 
-            // Locate Left Hand finger phalanges (under _wristL)
-            _leftFingers = new FingerPhalanges[]
+            // Finger clips were authored on the old rig's bone names; a Humanoid model curls procedurally.
+            if (_rig.IsHumanoid)
             {
-                CreateFingerPhalanges(_wristL, "Index", false, true),
-                CreateFingerPhalanges(_wristL, "Middle", false, true),
-                CreateFingerPhalanges(_wristL, "Pinky", false, true),
-                CreateFingerPhalanges(_wristL, "thumb", true, true)
-            };
-
-            // Locate Right Hand finger phalanges (under _wristR)
-            _rightFingers = new FingerPhalanges[]
-            {
-                CreateFingerPhalanges(_wristR, "Index", false, false),
-                CreateFingerPhalanges(_wristR, "Middle", false, false),
-                CreateFingerPhalanges(_wristR, "Pinky", false, false),
-                CreateFingerPhalanges(_wristR, "thumb", true, false)
-            };
-
-            foreach (var f in _leftFingers) if (f != null) f.CacheInitialRotations();
-            foreach (var f in _rightFingers) if (f != null) f.CacheInitialRotations();
-
-#if UNITY_EDITOR
-            if (_leftGrabClip == null)
-            {
-                _leftGrabClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/Animations/HandGrab_Left.anim");
+                _leftGrabClip = null;
+                _rightGrabClip = null;
             }
-            if (_rightGrabClip == null)
-            {
-                _rightGrabClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/Animations/HandGrab_Right.anim");
-            }
-#endif
-        }
-
-        private FingerPhalanges CreateFingerPhalanges(Transform wrist, string keyword, bool isThumb, bool isLeft)
-        {
-            if (wrist == null) return null;
-
-            // Find joint 1 and joint 2 by name under the wrist
-            Transform j1 = FindChildContaining(wrist, keyword + "1");
-            Transform j2 = FindChildContaining(wrist, keyword + "2");
-
-            return new FingerPhalanges
-            {
-                fingerName = keyword,
-                joint1 = j1,
-                joint2 = j2,
-                isThumb = isThumb,
-                isLeftHand = isLeft
-            };
-        }
-
-        private static Transform FindChildContaining(Transform parent, string keyword)
-        {
-            if (parent == null) return null;
-            if (parent.name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0) return parent;
-            foreach (Transform child in parent)
-            {
-                Transform found = FindChildContaining(child, keyword);
-                if (found != null) return found;
-            }
-            return null;
-        }
-
-        private static Transform FindChildRecursive(Transform parent, string name)
-        {
-            if (parent.name.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0) return parent;
-            foreach (Transform child in parent)
-            {
-                Transform found = FindChildRecursive(child, name);
-                if (found != null) return found;
-            }
-            return null;
         }
 
         /// <summary>
@@ -603,8 +526,21 @@ namespace CoopGame.Player
             Quaternion idleUpperR = _restUpperRotR;
             Quaternion idleLowerL = _initLowerRotL;
             Quaternion idleLowerR = _initLowerRotR;
+            Quaternion idleWristL = _initWristRotL;
+            Quaternion idleWristR = _initWristRotR;
 
-            if (_walkSwingWeight > 0.001f)
+            // A playing clip owns the idle pose; IK reaches out from wherever the clip put the arm.
+            bool animated = _rig != null && _rig.HasAnimation;
+            if (animated)
+            {
+                idleUpperL = _upperArmL.localRotation;
+                idleUpperR = _upperArmR.localRotation;
+                idleLowerL = _lowerArmL.localRotation;
+                idleLowerR = _lowerArmR.localRotation;
+                idleWristL = _wristL.localRotation;
+                idleWristR = _wristR.localRotation;
+            }
+            else if (_walkSwingWeight > 0.001f)
             {
                 if (_legs != null)
                 {
@@ -628,26 +564,27 @@ namespace CoopGame.Player
                 float lateralL = Mathf.Clamp01(sin) * 3.0f * _walkSwingWeight;
                 float lateralR = Mathf.Clamp01(-sin) * 3.0f * _walkSwingWeight;
 
-                // Apply upper arm swing
-                Quaternion restWorldL = transform.rotation * _restUpperRotL;
-                Quaternion idleWorldL = Quaternion.AngleAxis(swingAngleL, transform.right) * Quaternion.AngleAxis(-lateralL, transform.forward) * restWorldL;
-                idleUpperL = Quaternion.Inverse(transform.rotation) * idleWorldL;
+                // Swing in world space around the body's axes, then back into each bone's parent space
+                // (a shoulder or clavicle parent is rarely aligned with the player root).
+                Quaternion parentL = _upperArmL.parent != null ? _upperArmL.parent.rotation : transform.rotation;
+                Quaternion idleWorldL = Quaternion.AngleAxis(swingAngleL, transform.right) *
+                    Quaternion.AngleAxis(-lateralL, transform.forward) * (parentL * _restUpperRotL);
+                idleUpperL = Quaternion.Inverse(parentL) * idleWorldL;
 
-                Quaternion restWorldR = transform.rotation * _restUpperRotR;
-                Quaternion idleWorldR = Quaternion.AngleAxis(swingAngleR, transform.right) * Quaternion.AngleAxis(lateralR, transform.forward) * restWorldR;
-                idleUpperR = Quaternion.Inverse(transform.rotation) * idleWorldR;
+                Quaternion parentR = _upperArmR.parent != null ? _upperArmR.parent.rotation : transform.rotation;
+                Quaternion idleWorldR = Quaternion.AngleAxis(swingAngleR, transform.right) *
+                    Quaternion.AngleAxis(lateralR, transform.forward) * (parentR * _restUpperRotR);
+                idleUpperR = Quaternion.Inverse(parentR) * idleWorldR;
 
                 // Natural forearm elbow flexion when arm swings forward
                 float elbowFlexL = Mathf.Max(0f, -sin) * 16.0f * _walkSwingWeight;
                 float elbowFlexR = Mathf.Max(0f, sin) * 16.0f * _walkSwingWeight;
 
-                Quaternion restWorldMidL = transform.rotation * _initLowerRotL;
-                Quaternion idleWorldMidL = Quaternion.AngleAxis(elbowFlexL, transform.right) * restWorldMidL;
-                idleLowerL = Quaternion.Inverse(transform.rotation) * idleWorldMidL;
+                Quaternion idleWorldMidL = Quaternion.AngleAxis(elbowFlexL, transform.right) * (idleWorldL * _initLowerRotL);
+                idleLowerL = Quaternion.Inverse(idleWorldL) * idleWorldMidL;
 
-                Quaternion restWorldMidR = transform.rotation * _initLowerRotR;
-                Quaternion idleWorldMidR = Quaternion.AngleAxis(elbowFlexR, transform.right) * restWorldMidR;
-                idleLowerR = Quaternion.Inverse(transform.rotation) * idleWorldMidR;
+                Quaternion idleWorldMidR = Quaternion.AngleAxis(elbowFlexR, transform.right) * (idleWorldR * _initLowerRotR);
+                idleLowerR = Quaternion.Inverse(idleWorldR) * idleWorldMidR;
             }
 
             // 1. Arm Reaching / Aiming IK Weights
@@ -744,7 +681,7 @@ namespace CoopGame.Player
             {
                 SolveCarryTwoBoneIK(_upperArmL, _lowerArmL, _wristL,
                     _targetLeftPos, _targetLeftRot, poleL,
-                    idleUpperL, idleLowerL, _initWristRotL, _leftWeight, true);
+                    idleUpperL, idleLowerL, idleWristL, _leftWeight, true);
             }
             else
             {
@@ -752,7 +689,7 @@ namespace CoopGame.Player
                     _upperArmL, _lowerArmL, _wristL,
                     _targetLeftPos, _targetLeftRot, LeftOverrideWrist, poleL,
                     _leftUpperLen, _leftLowerLen,
-                    idleUpperL, idleLowerL, _initWristRotL,
+                    idleUpperL, idleLowerL, idleWristL,
                     _leftWeight,
                     true
                 );
@@ -766,7 +703,7 @@ namespace CoopGame.Player
             {
                 SolveCarryTwoBoneIK(_upperArmR, _lowerArmR, _wristR,
                     _targetRightPos, _targetRightRot, poleR,
-                    idleUpperR, idleLowerR, _initWristRotR, _rightWeight, false);
+                    idleUpperR, idleLowerR, idleWristR, _rightWeight, false);
             }
             else
             {
@@ -774,14 +711,14 @@ namespace CoopGame.Player
                     _upperArmR, _lowerArmR, _wristR,
                     _targetRightPos, _targetRightRot, RightOverrideWrist, poleR,
                     _rightUpperLen, _rightLowerLen,
-                    idleUpperR, idleLowerR, _initWristRotR,
+                    idleUpperR, idleLowerR, idleWristR,
                     _rightWeight,
                     false
                 );
             }
 
             // 3. Apply Anatomically Correct Finger Flexion / Fist Clench (การกำมือ)
-            UpdateFingerGrips(leftGripping, rightGripping, deltaTime);
+            UpdateFingerGrips(leftGripping, rightGripping, deltaTime, animated);
         }
 
         /// <summary>
@@ -864,20 +801,23 @@ namespace CoopGame.Player
                 lowerForward = Vector3.ProjectOnPlane(transform.right, lowerDirection);
             lowerForward.Normalize();
 
-            Quaternion solvedLowerRotation = Quaternion.LookRotation(lowerForward, lowerDirection);
+            Quaternion fixUpper = isLeftArm ? _axisFixUpperL : _axisFixUpperR;
+            Quaternion fixLower = isLeftArm ? _axisFixLowerL : _axisFixLowerR;
+            Quaternion solvedLowerRotation = Quaternion.LookRotation(lowerForward, lowerDirection) * fixLower;
             Quaternion neutralWrist = solvedLowerRotation * baseRotTip;
             Quaternion wristRotation = neutralWrist;
             float rotationMagnitude = Quaternion.Dot(targetRot, targetRot);
             if (IsFinite(targetRot) && IsFinite(rotationMagnitude) && rotationMagnitude > 0.0001f)
             {
-                wristRotation = LimitCarryWristRotation(neutralWrist, Quaternion.Normalize(targetRot), out float forearmTwist);
+                Quaternion handFix = isLeftArm ? _handTargetFixL : _handTargetFixR;
+                wristRotation = LimitCarryWristRotation(neutralWrist, Quaternion.Normalize(targetRot) * handFix, out float forearmTwist);
                 // Rotate about the forearm's length, keeping elbow and contact
                 // positions fixed while sharing pronation away from the wrist seam.
                 solvedLowerRotation = Quaternion.AngleAxis(forearmTwist, lowerDirection) * solvedLowerRotation;
             }
 
             root.rotation = Quaternion.Slerp(restUpperRotation,
-                Quaternion.LookRotation(upperForward, upperDirection), weight);
+                Quaternion.LookRotation(upperForward, upperDirection) * fixUpper, weight);
             mid.position = Vector3.Lerp(restElbow, elbow, weight);
             mid.rotation = Quaternion.Slerp(restLowerRotation,
                 solvedLowerRotation, weight);
@@ -910,45 +850,51 @@ namespace CoopGame.Player
         private static bool IsFinite(Quaternion value) =>
             IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z) && IsFinite(value.w);
 
-        private void UpdateFingerGrips(bool leftGripping, bool rightGripping, float deltaTime)
+        private void UpdateFingerGrips(bool leftGripping, bool rightGripping, float deltaTime, bool animated)
         {
             // Persistent grip states hold the final pose. Releasing or reversing
             // a hand advances from its current pose without restarting the clip.
             float step = Mathf.Max(0f, deltaTime) / Mathf.Max(0.01f, _gripTransitionSeconds);
             _currentLeftGrip = Mathf.MoveTowards(_currentLeftGrip, leftGripping ? 1f : 0f, step);
             _currentRightGrip = Mathf.MoveTowards(_currentRightGrip, rightGripping ? 1f : 0f, step);
-            ApplyFingerGrips();
+            ApplyFingerGrips(animated);
         }
 
-        private void ApplyFingerGrips()
+        private void ApplyFingerGrips(bool animated)
         {
             EnsureGrabSamplingAnimator();
 
-            // 1. Left Hand: Sample custom grab animation from Rigged_Hand_character
             if (_leftGrabClip != null && _characterVisual != null)
-            {
-                float evalTime = Mathf.Clamp01(_currentLeftGrip) * _leftGrabClip.length;
-                _leftGrabClip.SampleAnimation(_characterVisual.gameObject, evalTime);
-            }
-            else if (_leftFingers != null)
-            {
-                foreach (var f in _leftFingers)
-                {
-                    if (f != null) f.ApplyCurl(_currentLeftGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
-                }
-            }
+                _leftGrabClip.SampleAnimation(_characterVisual.gameObject, Mathf.Clamp01(_currentLeftGrip) * _leftGrabClip.length);
+            else
+                CurlFingers(_leftFingers, _currentLeftGrip, animated);
 
-            // 2. Right Hand: Sample custom grab animation from Rigged_Hand_character
             if (_rightGrabClip != null && _characterVisual != null)
+                _rightGrabClip.SampleAnimation(_characterVisual.gameObject, Mathf.Clamp01(_currentRightGrip) * _rightGrabClip.length);
+            else
+                CurlFingers(_rightFingers, _currentRightGrip, animated);
+        }
+
+        /// <summary>
+        /// Closes every joint of each finger around its measured curl axis. The base is the bind
+        /// pose, or this frame's clip pose when an animation is playing (an open hand then leaves the clip alone).
+        /// </summary>
+        private void CurlFingers(CharacterRig.Finger[] fingers, float grip, bool animated)
+        {
+            if (fingers == null) return;
+            if (animated && grip <= 0.001f) return;
+            foreach (var f in fingers)
             {
-                float evalTime = Mathf.Clamp01(_currentRightGrip) * _rightGrabClip.length;
-                _rightGrabClip.SampleAnimation(_characterVisual.gameObject, evalTime);
-            }
-            else if (_rightFingers != null)
-            {
-                foreach (var f in _rightFingers)
+                float maxAngle = (f.IsThumb ? _thumbCurlAngle : _fingerCurlAngle) * grip;
+                for (int j = 0; j < f.Joints.Length; j++)
                 {
-                    if (f != null) f.ApplyCurl(_currentRightGrip, f.isThumb ? _thumbCurlAngle : _fingerCurlAngle);
+                    Transform joint = f.Joints[j];
+                    if (joint == null) continue;
+                    Quaternion baseRotation = animated ? joint.localRotation : f.RestRotations[j];
+                    float share = j == 0 ? 0.70f : (f.IsThumb ? 0.85f : 0.95f);
+                    joint.localRotation = grip <= 0.001f
+                        ? baseRotation
+                        : baseRotation * Quaternion.AngleAxis(maxAngle * share, f.CurlAxes[j]);
                 }
             }
         }
@@ -1069,7 +1015,8 @@ namespace CoopGame.Player
             if (upperBoneFwd.sqrMagnitude < 0.001f)
                 upperBoneFwd = Vector3.ProjectOnPlane(transform.right, desiredUpperDir);
             upperBoneFwd.Normalize();
-            Quaternion targetWorldRoot = Quaternion.LookRotation(upperBoneFwd, desiredUpperDir);
+            Quaternion targetWorldRoot = Quaternion.LookRotation(upperBoneFwd, desiredUpperDir) *
+                (isLeftArm ? _axisFixUpperL : _axisFixUpperR);
 
             root.rotation = Quaternion.Slerp(restWorldRoot, targetWorldRoot, weight);
 
@@ -1085,14 +1032,16 @@ namespace CoopGame.Player
             if (lowerBoneFwd.sqrMagnitude < 0.001f)
                 lowerBoneFwd = Vector3.ProjectOnPlane(transform.right, desiredLowerDir);
             lowerBoneFwd.Normalize();
-            Quaternion targetWorldMid = Quaternion.LookRotation(lowerBoneFwd, desiredLowerDir);
+            Quaternion targetWorldMid = Quaternion.LookRotation(lowerBoneFwd, desiredLowerDir) *
+                (isLeftArm ? _axisFixLowerL : _axisFixLowerR);
 
             mid.rotation = Quaternion.Slerp(restWorldMid, targetWorldMid, weight);
 
             // 3. Wrist / Palm Surface rotation (only when actively gripping surface)
             if (overrideWrist && targetRot != Quaternion.identity && weight > 0.01f)
             {
-                tip.rotation = Quaternion.Slerp(tip.rotation, targetRot, weight);
+                tip.rotation = Quaternion.Slerp(tip.rotation,
+                    targetRot * (isLeftArm ? _handTargetFixL : _handTargetFixR), weight);
             }
         }
     }
