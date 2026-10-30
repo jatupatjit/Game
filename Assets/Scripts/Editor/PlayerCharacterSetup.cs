@@ -62,6 +62,8 @@ public static class PlayerCharacterSetup
             networkAnimator.Animator = animator;
             networkAnimator.AuthorityMode = NetworkAnimator.AuthorityModes.Owner;
             Ensure<PlayerAnimatorDriver>(root);
+            Ensure<RagdollPoseSync>(root);
+            Ensure<ActiveRagdoll>(root);
 
             ClearSerializedRefs(root.GetComponent<ProceduralPlayerArms>(), "_characterVisual",
                 "_upperArmL", "_lowerArmL", "_wristL", "_upperArmR", "_lowerArmR", "_wristR",

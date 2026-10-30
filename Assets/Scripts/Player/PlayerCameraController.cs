@@ -87,6 +87,8 @@ namespace CoopGame.Player
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
         private CoopGame.CarrySystem.PlayerCarry _playerCarry;
         private BonelessCharacterPhysics _bodyMotion;
+        private ActiveRagdoll _ragdoll;
+        private RagdollCharacter _fullRagdoll;
 
         /// <summary>
         /// Current vertical pitch angle in degrees (-35 = looking up, +70 = looking down).
@@ -103,6 +105,9 @@ namespace CoopGame.Player
         /// True if currently in First-Person perspective.
         /// </summary>
         public bool IsFirstPerson => _currentDistance < _firstPersonThreshold;
+
+        /// <summary>True while the camera is in first person or pressed into the body by a wall (the body is hidden).</summary>
+        public bool BodyHidden { get; private set; }
 
         /// <summary>
         /// Camera forward vector projected onto the horizontal X-Z plane.
@@ -127,6 +132,8 @@ namespace CoopGame.Player
 
         private void Awake()
         {
+            _ragdoll = GetComponentInParent<ActiveRagdoll>();
+            _fullRagdoll = GetComponentInParent<RagdollCharacter>();
             if (_playerCamera == null)
             {
                 _playerCamera = GetComponentInChildren<Camera>(true);
@@ -351,6 +358,7 @@ namespace CoopGame.Player
 
             // While carrying, the wheel raises/lowers the cargo instead (PlayerCarry.CalculateHoldHeight).
             if (_playerCarry != null && _playerCarry.IsCarrying) scroll = 0f;
+            if (_fullRagdoll != null && _fullRagdoll.FullRagdoll && _fullRagdoll.HoldingCargo) scroll = 0f;
 
             if (Mathf.Abs(scroll) > 0.01f)
             {
@@ -386,8 +394,18 @@ namespace CoopGame.Player
             Vector3 pivotPosition = _cameraPivot.position + (Vector3.up * _pivotHeightOffset);
             if (_bodyMotion == null)
                 _bodyMotion = GetComponentInChildren<BonelessCharacterPhysics>(true);
-            if (_bodyMotion != null && _bodyMotion.HasRenderedRootPosition)
+            if (_bodyMotion != null && _bodyMotion.isActiveAndEnabled && _bodyMotion.HasRenderedRootPosition)
                 pivotPosition += _bodyMotion.RenderedRootPosition - transform.position;
+
+            // Full physics body: the root bobs with the hips, so follow it smoothed, and keep the pivot itself
+            // out of walls (backing into a wall puts the body right against it).
+            bool physicsBody = _fullRagdoll != null && _fullRagdoll.FullRagdoll;
+            if (physicsBody)
+            {
+                pivotPosition = SmoothPivot(pivotPosition);
+                pivotPosition = PushOutOfWalls(pivotPosition, _collisionRadius);
+                if (_playerCamera.nearClipPlane > _ragdollNearClip) _playerCamera.nearClipPlane = _ragdollNearClip;
+            }
 
             // 3. Smoothly interpolate zoom distance
             _currentDistance = Mathf.Lerp(_currentDistance, _desiredDistance, Time.deltaTime * _zoomSpeed);
@@ -415,22 +433,7 @@ namespace CoopGame.Player
                 float closestValidHitDistance = float.MaxValue;
                 foreach (RaycastHit hit in hits)
                 {
-                    if (_selfColliders.Contains(hit.collider)) continue;
-                    if (hit.collider.transform.root == transform.root) continue;
-
-                    // Ignore any carried object belonging to this player
-                    if (_playerCarry == null)
-                    {
-                        _playerCarry = GetComponentInParent<CoopGame.CarrySystem.PlayerCarry>() ?? GetComponent<CoopGame.CarrySystem.PlayerCarry>();
-                    }
-                    if (_playerCarry != null && _playerCarry.CurrentCarryable != null)
-                    {
-                        if (hit.collider.transform.root == _playerCarry.CurrentCarryable.transform.root) continue;
-                    }
-
-                    // Ignore any CarryableObject currently being carried
-                    var carryable = hit.collider.GetComponentInParent<CoopGame.CarrySystem.CarryableObject>();
-                    if (carryable != null && carryable.IsCarried) continue;
+                    if (IsIgnoredObstacle(hit.collider)) continue;
 
                     if (hit.distance < closestValidHitDistance)
                     {
@@ -451,12 +454,96 @@ namespace CoopGame.Player
                 hideBody = _resolvedDistance < _firstPersonThreshold;
 
                 finalPosition = pivotPosition + (desiredCameraDirection * _resolvedDistance);
+                if (physicsBody) finalPosition = PushOutOfWalls(finalPosition, _collisionRadius);
             }
 
             if (inFirstPerson) _resolvedDistance = _currentDistance;
+            BodyHidden = hideBody;
             UpdatePlayerBodyVisibility(hideBody);
             _playerCamera.transform.position = finalPosition;
             _playerCamera.transform.rotation = targetRotation;
+        }
+
+        private bool IsIgnoredObstacle(Collider collider)
+        {
+            if (_selfColliders.Contains(collider)) return true;
+            if (collider.transform.root == transform.root) return true;
+            // The knocked-down body's own limbs (they live outside the player hierarchy).
+            if (_ragdoll != null && _ragdoll.OwnsCollider(collider)) return true;
+            if (_fullRagdoll != null && _fullRagdoll.OwnsCollider(collider)) return true;
+
+            // Ignore any carried object belonging to this player
+            if (_playerCarry == null)
+            {
+                _playerCarry = GetComponentInParent<CoopGame.CarrySystem.PlayerCarry>() ?? GetComponent<CoopGame.CarrySystem.PlayerCarry>();
+            }
+            if (_playerCarry != null && _playerCarry.CurrentCarryable != null &&
+                collider.transform.root == _playerCarry.CurrentCarryable.transform.root) return true;
+
+            // Ignore any CarryableObject currently being carried
+            var carryable = collider.GetComponentInParent<CoopGame.CarrySystem.CarryableObject>();
+            return carryable != null && carryable.IsCarried;
+        }
+
+        [Header("Full Physics Body")]
+        [Tooltip("Seconds the pivot lags the hips horizontally / vertically")]
+        [SerializeField] private float _ragdollPivotSmoothXZ = .05f;
+        [SerializeField] private float _ragdollPivotSmoothY = .12f;
+        [SerializeField] private float _ragdollNearClip = .05f;
+
+        private Vector3 _smoothedPivot, _pivotVelocity;
+        private bool _hasSmoothedPivot;
+        private readonly Collider[] _wallOverlaps = new Collider[16];
+        private SphereCollider _wallProbe;
+
+        private Vector3 SmoothPivot(Vector3 target)
+        {
+            if (!_hasSmoothedPivot || (target - _smoothedPivot).sqrMagnitude > 4f) // first frame or teleport
+            {
+                _smoothedPivot = target;
+                _pivotVelocity = Vector3.zero;
+                _hasSmoothedPivot = true;
+                return target;
+            }
+            float dt = Time.deltaTime;
+            _smoothedPivot.x = Mathf.SmoothDamp(_smoothedPivot.x, target.x, ref _pivotVelocity.x, _ragdollPivotSmoothXZ, Mathf.Infinity, dt);
+            _smoothedPivot.z = Mathf.SmoothDamp(_smoothedPivot.z, target.z, ref _pivotVelocity.z, _ragdollPivotSmoothXZ, Mathf.Infinity, dt);
+            _smoothedPivot.y = Mathf.SmoothDamp(_smoothedPivot.y, target.y, ref _pivotVelocity.y, _ragdollPivotSmoothY, Mathf.Infinity, dt);
+            return _smoothedPivot;
+        }
+
+        /// <summary>Moves a sphere of this radius at the point out of any wall it overlaps.</summary>
+        private Vector3 PushOutOfWalls(Vector3 point, float radius)
+        {
+            if (_wallProbe == null)
+            {
+                // ComputePenetration needs an enabled collider; the probe is a trigger parked far away and only its
+                // shape is used.
+                var go = new GameObject("CameraWallProbe") { hideFlags = HideFlags.HideAndDontSave, layer = 2 };
+                go.transform.position = new Vector3(0f, -10000f, 0f);
+                _wallProbe = go.AddComponent<SphereCollider>();
+                _wallProbe.isTrigger = true;
+            }
+            _wallProbe.radius = radius;
+            for (int pass = 0; pass < 3; pass++)
+            {
+                int count = Physics.OverlapSphereNonAlloc(point, radius, _wallOverlaps, _obstacleLayers, QueryTriggerInteraction.Ignore);
+                bool moved = false;
+                for (int i = 0; i < count; i++)
+                {
+                    Collider c = _wallOverlaps[i];
+                    if (c == null || IsIgnoredObstacle(c)) continue;
+                    if (c.attachedRigidbody != null && !c.attachedRigidbody.isKinematic) continue; // loose props, cargo
+                    if (Physics.ComputePenetration(_wallProbe, point, Quaternion.identity, c, c.transform.position, c.transform.rotation,
+                            out Vector3 direction, out float distance))
+                    {
+                        point += direction * (distance + .01f);
+                        moved = true;
+                    }
+                }
+                if (!moved) break;
+            }
+            return point;
         }
 
         /// <summary>
@@ -492,6 +579,7 @@ namespace CoopGame.Player
             {
                 Destroy(_playerCamera.gameObject);
             }
+            if (_wallProbe != null) Destroy(_wallProbe.gameObject);
         }
     }
 }

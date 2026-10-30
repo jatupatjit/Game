@@ -49,6 +49,8 @@ namespace CoopGame.Player
         [Tooltip("Rigged model used only if this prefab is missing CharacterVisual. Assign it from the Player Model setup menu.")]
         [SerializeField] private GameObject _characterModelPrefab;
 
+        private ActiveRagdoll _ragdoll;
+
         public const string DefaultCharacterModelPath = "Assets/Models/Characters/PlayerCharacter.fbx";
 
         // Distinct colors for players 0, 1, 2, 3
@@ -68,6 +70,7 @@ namespace CoopGame.Player
             if (_characterController == null) _characterController = GetComponent<CharacterController>();
             if (_playerCarry == null) _playerCarry = GetComponent<CoopGame.CarrySystem.PlayerCarry>();
             _wallclimb = GetComponent<Wallclimb>();
+            _ragdoll = GetComponent<ActiveRagdoll>();
 
             EnsureCharacterModelAttached();
         }
@@ -230,8 +233,10 @@ namespace CoopGame.Player
                     }
                 }
 
-                _characterController.enabled = true;
-                _movement.enabled = true;
+                // The full-ragdoll mode (RagdollCharacter) moves the body itself.
+                bool fullRagdoll = TryGetComponent(out RagdollCharacter ragdoll) && ragdoll.FullRagdoll;
+                _characterController.enabled = !fullRagdoll;
+                _movement.enabled = !fullRagdoll;
                 SetRespawnPointForScene(SceneManager.GetActiveScene());
                 _sceneSpawnPending = true;
 
@@ -341,10 +346,10 @@ namespace CoopGame.Player
 
         private void FixedUpdate()
         {
-            if (!IsOwner || _movement == null || !_movement.enabled)
-                return;
+            if (!IsOwner || _movement == null) return;
             if (_spawnSlot.Value < 0) return;
 
+            // Spawn and fall-respawn also serve the full-ragdoll mode, which switches PlayerMovement off.
             if (_sceneSpawnPending)
             {
                 _sceneSpawnPending = false;
@@ -357,10 +362,18 @@ namespace CoopGame.Player
                 RespawnAtStart();
                 return;
             }
+            if (!_movement.enabled) return;
 
             if (CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
             {
                 ClearMovementInput();
+            }
+
+            // Knocked down: the body lies limp, the player can't walk or jump until it stands up.
+            if (_ragdoll != null && _ragdoll.IsKnockedDown)
+            {
+                ClearMovementInput();
+                _jumpPending = false;
             }
 
             bool jump = _jumpPending && (_wallclimb == null || !_wallclimb.IsClimbing);
@@ -434,11 +447,12 @@ namespace CoopGame.Player
             {
                 position = padPosition; rotation = padRotation;
             }
+            bool controllerWasOn = _characterController.enabled;
             _characterController.enabled = false;
             transform.SetPositionAndRotation(position, rotation);
             GetComponent<Unity.Netcode.Components.NetworkTransform>()?.Teleport(
                 position, rotation, transform.localScale);
-            _characterController.enabled = true;
+            _characterController.enabled = controllerWasOn || _movement.enabled;
             GetComponent<PlayerStamina>()?.ResetStamina();
         }
 

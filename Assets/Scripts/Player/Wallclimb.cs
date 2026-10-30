@@ -185,6 +185,10 @@ public class Wallclimb : NetworkBehaviour
         ? _isPullingUp 
         : ((_netClimbHandState.Value & (1 << 2)) != 0);
     public bool IsAimingAtWall => _isAimingAtWall;
+    /// <summary>The full-physics player carries its own momentum, so it reads the wall-jump boost here.</summary>
+    public Vector3 LastBoostImpulse { get; private set; }
+    public int BoostCount { get; private set; }
+    private RagdollCharacter _fullBody;
     public LayerMask WallLayers => _wallLayers | (Physics.DefaultRaycastLayers & ~(1 << 5));
 
     private void Awake()
@@ -197,6 +201,8 @@ public class Wallclimb : NetworkBehaviour
         _expedition = GetComponent<CoopGame.Network.PlayerExpeditionState>();
         _playerCarry = GetComponent<PlayerCarry>();
         _procArms = GetComponent<ProceduralPlayerArms>();
+        _fullBody = GetComponent<RagdollCharacter>();
+        if (_fullBody != null && !_fullBody.FullRagdoll) _fullBody = null;
 
         EnsureMarkersCreated();
     }
@@ -352,7 +358,7 @@ public class Wallclimb : NetworkBehaviour
         // 3. Read cached player inputs
         bool leftClick = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
         bool rightClick = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
-        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying);
+        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.HoldingCargo);
 
         if (carryingItem || _slipCooldownTimer > 0f)
         {
@@ -744,6 +750,8 @@ public class Wallclimb : NetworkBehaviour
 
         // Always jump STRAIGHT UP with slight forward nudge
         Vector3 boostImpulse = Vector3.up * _jumpBoostUp + wallForward * 1.5f;
+        LastBoostImpulse = boostImpulse;
+        BoostCount++;
 
         // Allow re-gripping immediately so player can grab a higher spot at the peak of the jump
         _leftRequireFreshPress = false;
@@ -1053,7 +1061,7 @@ public class Wallclimb : NetworkBehaviour
     {
         if (_leftClimbMarker == null || _rightClimbMarker == null) return;
 
-        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying);
+        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.HoldingCargo);
         if (carryingItem || _isPullingUp)
         {
             HideMarkers();

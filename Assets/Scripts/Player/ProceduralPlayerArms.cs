@@ -49,6 +49,18 @@ namespace CoopGame.Player
         [Tooltip("Finger-only clip for the right hand. Ignored on a Humanoid model, which curls procedurally.")]
         [SerializeField] private AnimationClip _rightGrabClip;
 
+        [Header("Walk Arm Swing")]
+        [Tooltip("Arm swing either side of the hip at a slow walk (degrees)")]
+        [SerializeField, Range(0f, 90f)] private float _walkArmSwing = 35f;
+        [Tooltip("Arm swing at a run (degrees)")]
+        [SerializeField, Range(0f, 90f)] private float _runArmSwing = 50f;
+        [Tooltip("Outward flare of the backswing (degrees)")]
+        [SerializeField, Range(0f, 20f)] private float _armSwingFlare = 6f;
+        [Tooltip("Elbow bend on the forward swing (degrees); small keeps the whole arm swinging from the shoulder")]
+        [SerializeField, Range(0f, 90f)] private float _armSwingElbow = 10f;
+        [Tooltip("Share of the swing the shoulder (clavicle) takes as well")]
+        [SerializeField, Range(0f, 1f)] private float _shoulderSwingShare = .1f;
+
         [Header("Rest Pose")]
         [Tooltip("Degrees the idle arms hang out from the body's vertical")]
         [SerializeField, Range(0f, 40f)] private float _restArmSpread = 12f;
@@ -158,6 +170,17 @@ namespace CoopGame.Player
         // Natural relaxed rest rotations (arms hang comfortably beside hips with clean clearance)
         private Quaternion _restUpperRotL = Quaternion.identity;
         private Quaternion _restUpperRotR = Quaternion.identity;
+
+        // Clavicles (the bone between chest and upper arm), rocked with the walk swing.
+        private Transform _clavicleL, _clavicleR;
+        private Quaternion _clavicleRestL = Quaternion.identity, _clavicleRestR = Quaternion.identity;
+
+        private void SwingClavicle(Transform clavicle, Quaternion rest, float swingAngle)
+        {
+            if (clavicle == null) return;
+            clavicle.localRotation = rest;
+            clavicle.rotation = Quaternion.AngleAxis(swingAngle * _shoulderSwingShare, transform.right) * clavicle.rotation;
+        }
 
         // Cached movement reference & walk swing
         private PlayerMovement _movement;
@@ -342,6 +365,11 @@ namespace CoopGame.Player
                 _restLowerPositionR = _lowerArmR.localPosition;
                 _restWristPositionR = _wristR.localPosition;
 
+                _clavicleL = ClavicleOf(_upperArmL);
+                _clavicleR = ClavicleOf(_upperArmR);
+                if (_clavicleL != null) _clavicleRestL = _clavicleL.localRotation;
+                if (_clavicleR != null) _clavicleRestR = _clavicleR.localRotation;
+
                 _axisFixUpperL = MeasureAxisFix(_upperArmL, _lowerArmL, _wristL, out _axisFixLowerL);
                 _axisFixUpperR = MeasureAxisFix(_upperArmR, _lowerArmR, _wristR, out _axisFixLowerR);
                 _handTargetFixL = _rig.MeasureHandTargetFix(true);
@@ -399,6 +427,14 @@ namespace CoopGame.Player
             if (lowerFwd.sqrMagnitude < 0.001f) lowerFwd = AnteriorReference(lowerDir);
             lowerFix = Quaternion.Inverse(Quaternion.LookRotation(lowerFwd.normalized, lowerDir)) * lower.rotation;
             return Quaternion.Inverse(Quaternion.LookRotation(upperFwd, upperDir)) * upper.rotation;
+        }
+
+        /// <summary>The upper arm's own shoulder bone, if the rig has one between it and the chest.</summary>
+        private Transform ClavicleOf(Transform upperArm)
+        {
+            Transform parent = upperArm != null ? upperArm.parent : null;
+            if (parent == null || _rig == null) return null;
+            return parent == _rig.Chest || parent == _rig.Spine || parent == _rig.Neck ? null : parent;
         }
 
         /// <summary>Same anterior reference the IK solvers use for an upper arm pointing along <paramref name="direction"/>.</summary>
@@ -531,6 +567,11 @@ namespace CoopGame.Player
 
             // A playing clip owns the idle pose; IK reaches out from wherever the clip put the arm.
             bool animated = _rig != null && _rig.HasAnimation;
+            if (!animated)
+            {
+                if (_clavicleL != null) _clavicleL.localRotation = _clavicleRestL;
+                if (_clavicleR != null) _clavicleR.localRotation = _clavicleRestR;
+            }
             if (animated)
             {
                 idleUpperL = _upperArmL.localRotation;
@@ -556,13 +597,17 @@ namespace CoopGame.Player
                 float sin = Mathf.Sin(_armCyclePhase);
 
                 // Keep the arm swing restrained and synchronized to the opposite leg.
-                float maxSwingAngle = Mathf.Lerp(22.0f, 36.0f, Mathf.Clamp01((currentSpeed - 2.0f) / 6.0f));
+                float maxSwingAngle = Mathf.Lerp(_walkArmSwing, _runArmSwing, Mathf.Clamp01((currentSpeed - 2.0f) / 6.0f));
                 float swingAngleL = -sin * maxSwingAngle * _walkSwingWeight;
                 float swingAngleR = sin * maxSwingAngle * _walkSwingWeight;
 
                 // Subtle organic lateral roll (arms flare slightly outward on backswing)
-                float lateralL = Mathf.Clamp01(sin) * 3.0f * _walkSwingWeight;
-                float lateralR = Mathf.Clamp01(-sin) * 3.0f * _walkSwingWeight;
+                float lateralL = Mathf.Clamp01(sin) * _armSwingFlare * _walkSwingWeight;
+                float lateralR = Mathf.Clamp01(-sin) * _armSwingFlare * _walkSwingWeight;
+
+                // The shoulder (clavicle) rocks with the arm, so the swing reads from the shoulder.
+                SwingClavicle(_clavicleL, _clavicleRestL, swingAngleL);
+                SwingClavicle(_clavicleR, _clavicleRestR, swingAngleR);
 
                 // Swing in world space around the body's axes, then back into each bone's parent space
                 // (a shoulder or clavicle parent is rarely aligned with the player root).
@@ -576,9 +621,10 @@ namespace CoopGame.Player
                     Quaternion.AngleAxis(lateralR, transform.forward) * (parentR * _restUpperRotR);
                 idleUpperR = Quaternion.Inverse(parentR) * idleWorldR;
 
-                // Natural forearm elbow flexion when arm swings forward
-                float elbowFlexL = Mathf.Max(0f, -sin) * 16.0f * _walkSwingWeight;
-                float elbowFlexR = Mathf.Max(0f, sin) * 16.0f * _walkSwingWeight;
+                // A little elbow bend on the forward swing only. A positive angle about the body's right axis
+                // carries a hanging limb backwards, so the forward swing (and the forearm bending up) is negative.
+                float elbowFlexL = -Mathf.Max(0f, sin) * _armSwingElbow * _walkSwingWeight;
+                float elbowFlexR = -Mathf.Max(0f, -sin) * _armSwingElbow * _walkSwingWeight;
 
                 Quaternion idleWorldMidL = Quaternion.AngleAxis(elbowFlexL, transform.right) * (idleWorldL * _initLowerRotL);
                 idleLowerL = Quaternion.Inverse(idleWorldL) * idleWorldMidL;
@@ -1046,3 +1092,4 @@ namespace CoopGame.Player
         }
     }
 }
+

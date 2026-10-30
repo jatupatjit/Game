@@ -27,6 +27,11 @@ namespace CoopGame.Network
             public float leftWeight, rightWeight, leftGrip, rightGrip;
             public Vector3 leftTarget, rightTarget, leftWrist, rightWrist;
             public Vector3 position, euler;
+            // Active ragdoll as drawn on this machine (owner: physics; others: the owner's stream).
+            public string ragdollSource, ragdollDiagnostics;
+            public bool ragdollKnockedDown;
+            public Vector3 drawnHead, drawnHips;
+            public int poseSent, poseReceived;
         }
         [Serializable] private sealed class Snapshot
         {
@@ -272,6 +277,12 @@ namespace CoopGame.Network
                     carry.InitiateGrab(cargo, true, true);
                     break;
                 case "drop": carry.DropForRespawn(); break;
+                case "knockdown":
+                    var full = player.GetComponent<RagdollCharacter>();
+                    var ragdoll = player.GetComponent<ActiveRagdoll>();
+                    if (full != null && full.FullRagdoll) QueuePhysicsAction(() => full.Knockdown(-player.transform.forward * 400f + Vector3.up * 60f));
+                    else if (ragdoll != null) QueuePhysicsAction(() => ragdoll.Knockdown(-player.transform.forward * 14f + Vector3.up * 2f));
+                    break;
             }
         }
 
@@ -426,7 +437,16 @@ namespace CoopGame.Network
                     leftTarget = o.GetComponent<ProceduralPlayerArms>().LeftHand.position,
                     rightTarget = o.GetComponent<ProceduralPlayerArms>().RightHand.position,
                     leftWrist = o.GetComponent<ProceduralPlayerArms>().WristLeft != null ? o.GetComponent<ProceduralPlayerArms>().WristLeft.position : Vector3.zero,
-                    rightWrist = o.GetComponent<ProceduralPlayerArms>().WristRight != null ? o.GetComponent<ProceduralPlayerArms>().WristRight.position : Vector3.zero
+                    rightWrist = o.GetComponent<ProceduralPlayerArms>().WristRight != null ? o.GetComponent<ProceduralPlayerArms>().WristRight.position : Vector3.zero,
+                    ragdollSource = o.GetComponent<ActiveRagdoll>()?.DrawnSource,
+                    ragdollDiagnostics = o.GetComponent<RagdollCharacter>() is RagdollCharacter full && full.FullRagdoll
+                        ? $"B grounded={full.IsGrounded} kd={full.IsKnockedDown} hips={full.HipsPosition:F2} head={full.HeadPosition:F2} {full.GripState}"
+                        : o.GetComponent<ActiveRagdoll>()?.Diagnostics,
+                    ragdollKnockedDown = o.GetComponent<ActiveRagdoll>() != null && o.GetComponent<ActiveRagdoll>().IsKnockedDown,
+                    drawnHead = o.GetComponent<ActiveRagdoll>() != null ? o.GetComponent<ActiveRagdoll>().DrawnHeadPosition : Vector3.zero,
+                    drawnHips = o.GetComponent<ActiveRagdoll>() != null ? o.GetComponent<ActiveRagdoll>().DrawnHipsPosition : Vector3.zero,
+                    poseSent = o.GetComponent<RagdollPoseSync>() != null ? o.GetComponent<RagdollPoseSync>().SentCount : 0,
+                    poseReceived = o.GetComponent<RagdollPoseSync>() != null ? o.GetComponent<RagdollPoseSync>().ReceivedCount : 0
                 }).ToArray()
             };
             if (player != null)

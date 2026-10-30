@@ -230,6 +230,9 @@ GameObject:
   - component: {fileID: 2678520584664889643}
   - component: {fileID: 5692836942233451198}
   - component: {fileID: 4557791827509718438}
+  - component: {fileID: 5333630983401859958}
+  - component: {fileID: 8725776826772511479}
+  - component: {fileID: 4102790693013993052}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -502,6 +505,9 @@ MonoBehaviour:
   _obstacleLayers:
     serializedVersion: 2
     m_Bits: 4294967295
+  _ragdollPivotSmoothXZ: 0.05
+  _ragdollPivotSmoothY: 0.12
+  _ragdollNearClip: 0.05
 --- !u!114 &8488112399802155468
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -640,6 +646,11 @@ MonoBehaviour:
   _rightWeight: 0
   _leftGrabClip: {fileID: 0}
   _rightGrabClip: {fileID: 0}
+  _walkArmSwing: 35
+  _runArmSwing: 50
+  _armSwingFlare: 6
+  _armSwingElbow: 10
+  _shoulderSwingShare: 0.1
   _restArmSpread: 12
   _fingerCurlAngle: 48
   _thumbCurlAngle: 32
@@ -835,6 +846,99 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.PlayerAnimatorDriver
   ShowTopMostFoldoutHeaderGroup: 1
   _dampTime: 0.1
+--- !u!114 &5333630983401859958
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8343822966637116645}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ddbd9831ae41aa4c964dcb9b69ebe8d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.RagdollPoseSync
+  ShowTopMostFoldoutHeaderGroup: 1
+  _interpolationDelay: 0.1
+  _staleSeconds: 0.5
+--- !u!114 &8725776826772511479
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8343822966637116645}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 689895d20b320934abb1257f40fb2ec8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.ActiveRagdoll
+  _jointSpring: 1100
+  _jointDamper: 12
+  _hipsPositionSpring: 30000
+  _hipsPositionDamper: 1500
+  _hipsRotationSpring: 12000
+  _hipsRotationDamper: 600
+  _physicsWeight: 1
+  _grippingArmWeight: 0.15
+  _drawSmoothing: 0.025
+  _knockdownFallSpeed: 12
+  _knockdownSeconds: 1.6
+  _standUpSeconds: 0.9
+  _limpSpringShare: 0.03
+--- !u!114 &4102790693013993052
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8343822966637116645}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a4471983045a3146aeee291a47c1efa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.RagdollCharacter
+  ShowTopMostFoldoutHeaderGroup: 1
+  _fullRagdoll: 1
+  _walkSpeed: 4
+  _sprintSpeed: 6.5
+  _acceleration: 25
+  _airAcceleration: 6
+  _jumpSpeed: 5.5
+  _sprintStaminaDrain: 15
+  _standSpring: 120
+  _standDamper: 14
+  _uprightSpring: 900
+  _uprightDamper: 60
+  _jointSpring: 1400
+  _jointDamper: 20
+  _cloneModel: {fileID: 919132149155446097, guid: b063e68e368ac0549ab9a2c0c32f9581, type: 3}
+  _cloneController: {fileID: 9100000, guid: 4ee60e795a43db043b91186975476d99, type: 2}
+  _walkBlendSpeed: 1.2
+  _runBlendSpeed: 4
+  _walkClipSpeed: 0.9
+  _runClipSpeed: 1.7
+  _maxMoveRate: 2.4
+  _idleClip: {fileID: -5624545281902316504, guid: 4b532b32fc06ddb49b0211cfe32a85c7, type: 3}
+  _walkClip: {fileID: 3174661419259135242, guid: 53a5184c4cc65f34bae192e3494d005c, type: 3}
+  _runClip: {fileID: -1640158340307531623, guid: 53a5184c4cc65f34bae192e3494d005c, type: 3}
+  _carryPickupReach: 1.1
+  _carryHandSpread: 0.2
+  _carryHandForce: 150
+  _carryLeash: 20
+  _throwSpeed: 8
+  _throwStaminaCost: 8
+  _firstPersonHands: 1
+  _bumpNudgeSpeed: 0.3
+  _handMaxImpulse: 0.4
+  _strideFrequency: 1.8
+  _thighSwing: 30
+  _kneeBend: 40
+  _armSwing: 25
+  _knockdownFallSpeed: 12
+  _knockdownTilt: 70
+  _knockdownSeconds: 1.5
+  _standUpSeconds: 0.8
 --- !u!1001 &7320352570590444729
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -17,7 +17,7 @@ namespace CoopGame.CarrySystem
         // Braking used only for the final approach, so a fast drop still lands without a slam.
         private const float PlacementLandingDeceleration = 30f;
         private Vector3 _placementTarget;
-        private Collider[] _placingCarrierColliders;
+        private Collider[] _placingCarrierColliders, _placingExtraColliders;
         public bool SoloAssistActive => _soloAssist.Value;
         public bool IsPlacing => _placing.Value;
         public float StaminaDrainMultiplier => SoloAssistActive ? .65f : 1f;
@@ -35,10 +35,12 @@ namespace CoopGame.CarrySystem
             if (!Mathf.Approximately(_rigidbody.mass, mass)) _rigidbody.mass = mass;
         }
 
-        // Called only in PlayerCarry.FixedUpdate after server ownership validation.
-        public bool TryPlaceGently(ulong carrierId)
+        // Called only in PlayerCarry.FixedUpdate after server ownership validation (and by the full-physics player,
+        // whose ragdoll limbs live outside the player hierarchy and are passed as extraCarrierColliders).
+        public bool TryPlaceGently(ulong carrierId, Collider[] extraCarrierColliders = null)
         {
             if ((IsSpawned && !IsServer) || IsSecured || IsPlacing || !HasCarrier(carrierId)) return false;
+            _placingExtraColliders = extraCarrierColliders;
             if (_activeCarriers.Count > 1)
             {
                 // When one co-op carrier sets their side down first, capture the floor below and protect
@@ -46,14 +48,14 @@ namespace CoopGame.CarrySystem
                 _placingCarrierColliders = _activeCarriers.TryGetValue(carrierId, out var coPlacer) ? coPlacer.PlayerColliders : null;
                 if (TryPlacementTarget(out _))
                     _supportProtectionEnd = Mathf.Max(_supportProtectionEnd, Time.fixedTime + .65f);
-                _placingCarrierColliders = null;
+                _placingCarrierColliders = _placingExtraColliders = null;
                 DetachCarrier(carrierId);
                 return true;
             }
             // The carrier setting it down stands against the cargo; their own body must not
             // block the spot (their collision with it stays ignored until they step apart).
             _placingCarrierColliders = _activeCarriers.TryGetValue(carrierId, out var placer) ? placer.PlayerColliders : null;
-            if (!TryPlacementTarget(out Vector3 target)) { _placingCarrierColliders = null; return false; }
+            if (!TryPlacementTarget(out Vector3 target)) { _placingCarrierColliders = _placingExtraColliders = null; return false; }
             DetachCarrier(carrierId);
             _placementTarget = target;
             _placementSpeed = 0f;
@@ -134,7 +136,8 @@ namespace CoopGame.CarrySystem
         }
 
         private bool IsPlacingCarrier(Collider collider) =>
-            _placingCarrierColliders != null && System.Array.IndexOf(_placingCarrierColliders, collider) >= 0;
+            (_placingCarrierColliders != null && System.Array.IndexOf(_placingCarrierColliders, collider) >= 0) ||
+            (_placingExtraColliders != null && System.Array.IndexOf(_placingExtraColliders, collider) >= 0);
 
         private bool TickGentlePlacement()
         {
@@ -160,7 +163,7 @@ namespace CoopGame.CarrySystem
         private void EndPlacement(bool completed)
         {
             _placing.Value = false;
-            _placingCarrierColliders = null;
+            _placingCarrierColliders = _placingExtraColliders = null;
             _rigidbody.useGravity = true;
             _supportProtectionEnd = completed ? Time.fixedTime + .35f : -1f;
             if (!completed) _placementFloorCount = 0;

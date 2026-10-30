@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Unity.Netcode;
 using UnityEngine;
 using CoopGame.Player;
@@ -135,6 +135,9 @@ namespace CoopGame.CarrySystem
         private Vector3 _lastAimLeftNormal = Vector3.up;
         private Vector3 _lastAimRightNormal = Vector3.up;
         private const float LocalContactSlack = .04f;
+        // Extra distance a hand may reach for when grabbing (George, 2026-10-29): the hold pose then draws the cargo in.
+        private const float GrabReachBonus = .35f;
+        private CoopGame.Player.ActiveRagdoll _ragdoll;
         // Two-hand pickup grip: how low on the cargo (0 bottom, 1 top), how far apart on a wide face,
         // and the widest cargo whose side faces both palms can reach.
         private const float GripLowFraction = .3f;
@@ -701,6 +704,13 @@ namespace CoopGame.CarrySystem
         private void ProcessGrabIntent()
         {
             _canAttemptGrab = !_requireGrabRelease && _throwReleaseCooldown <= 0f && !_grabPending && !_releasePending;
+            // No grabbing while knocked flat or standing back up.
+            if (_ragdoll == null) _ragdoll = GetComponent<CoopGame.Player.ActiveRagdoll>();
+            if (_ragdoll != null && (_ragdoll.IsKnockedDown || _ragdoll.IsRecovering) && _currentCarryable == null)
+            {
+                _pendingToggleMask = 0; _pendingDualToggle = false; _requestedCargo = null;
+                return;
+            }
             if (_grabPending)
             {
                 byte predictedHands = (byte)((_leftHandGripping ? 1 : 0) | (_rightHandGripping ? 2 : 0));
@@ -894,7 +904,7 @@ namespace CoopGame.CarrySystem
             // A pickup grip below the shoulders may count a torso lean toward reach (the server's ValidateContact
             // allows the same); the hold pose then lifts the cargo up to the hands.
             if (leanDown) shoulder = Vector3.MoveTowards(shoulder, point, Mathf.Clamp(shoulder.y - point.y, 0f, PickupLeanAllowance));
-            float maximum = reach + LocalContactSlack;
+            float maximum = reach + LocalContactSlack + GrabReachBonus;
             float maxSqr = maximum * maximum;
             if ((point - shoulder).sqrMagnitude <= maxSqr) return true;
             if (rightDir.sqrMagnitude > .001f)
@@ -971,7 +981,7 @@ namespace CoopGame.CarrySystem
             out Vector3 contact, out Vector3 surfaceNormal)
         {
             GetArmGeometry(left, out Vector3 shoulder, out float reach);
-            float maximumDistance = reach + LocalContactSlack;
+            float maximumDistance = reach + LocalContactSlack + GrabReachBonus;
             float maximumSquared = maximumDistance * maximumDistance;
             if (FindSurfaceContact(target, point, normal, shoulder, out contact, out surfaceNormal) &&
                 (contact - shoulder).sqrMagnitude <= maximumSquared) return true;
@@ -1932,7 +1942,7 @@ namespace CoopGame.CarrySystem
             toCargo.y = 0f;
             Vector3 facingRight = toCargo.sqrMagnitude > .0001f ? Vector3.Cross(Vector3.up, toCargo.normalized).normalized : transform.right;
             Vector3 facingShoulder = chestCenter + facingRight * (left ? -.18f : .18f);
-            float maximumDistance = reach + ServerContactSlack + .10f;
+            float maximumDistance = reach + ServerContactSlack + .10f + GrabReachBonus;
             float maxSqr = maximumDistance * maximumDistance;
             if ((point - shoulder).sqrMagnitude > maxSqr && (point - facingShoulder).sqrMagnitude > maxSqr) return false;
             Quaternion worldRot = cargo.transform.rotation * rotation.normalized;
