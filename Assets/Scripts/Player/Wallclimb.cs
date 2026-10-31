@@ -185,11 +185,73 @@ public class Wallclimb : NetworkBehaviour
         ? _isPullingUp 
         : ((_netClimbHandState.Value & (1 << 2)) != 0);
     public bool IsAimingAtWall => _isAimingAtWall;
+
+    // Body measurements. The defaults suit the old player; the full-physics player sets its real shoulder height and
+    // arm length (ConfigureBody), so grips, hanging and the pull match the arms that are actually drawn.
+    private float _chestHeight = 1.15f;     // shoulder line above the root
+    private float _gripDistance = 1.05f;    // furthest a hold may be from the shoulder to take it
+    private float _freeReach = 1.35f;       // free-air reach of a raised hand
+    private float _maxPullSpeed = 6f;       // body pull speed toward the hang point (m/s)
+    private bool _wallSideAnchor;           // one-hand hang offset along the wall instead of the camera
+    private float _pullUpRootHeight = 0.05f; // root height above the ledge at the end of a pull-up
+    private float _ledgeHandTolerance = 0.55f; // how far below the ledge top the hands may be to pull up onto it
+    private bool _aimFromCamera;            // full-physics player: the hold is where the camera looks, within arm reach
+    private float _shoulderHeight, _reachUp, _reachSide, _reachDown;
+    private bool _leftAimFromCamera, _rightAimFromCamera;
+    private float _armLength, _shiftMax, _shiftSpeed; // full-physics: A/D swings a one-hand hang toward the free hand
+    private float _hangShift = OneHandSideOffset;
+    private const float OneHandSideOffset = 0.20f;  // a one-hand hang sits this far toward the free hand
+
+    public Vector3 LeftGripNormal => _leftGripNormal;
+    public Vector3 RightGripNormal => _rightGripNormal;
+
+    /// <summary>Full-physics player: climb with its real shoulder height and arm length, and pull more slowly.</summary>
+    public void ConfigureBody(float shoulderHeight, float armLength, float maxPullSpeed, float rootAboveFeet,
+        float reachScale = 1f, float sideReachScale = 1f, float downReachScale = 1f,
+        float shiftScale = 0f, float shiftSpeed = 1f)
+    {
+        _armLength = armLength;
+        _shiftMax = Mathf.Max(OneHandSideOffset, armLength * shiftScale);
+        _shiftSpeed = shiftSpeed;
+        // Holds are aimed with the camera, as far as a fully reached arm goes around the real shoulder.
+        _aimFromCamera = true;
+        _shoulderHeight = shoulderHeight;
+        _reachUp = armLength * reachScale;
+        _reachSide = armLength * sideReachScale;
+        _reachDown = armLength * downReachScale;
+        _pullUpRootHeight = rootAboveFeet + 0.02f;
+        _ledgeHandTolerance = 0.25f; // hands really at the top edge, not a long mantle from below
+        _pullUpDuration = Mathf.Max(_pullUpDuration, 0.8f); // a deliberate climb onto the top, not a pop
+        // Holds are searched from hand height (shoulder + 0.6 arm), so a hand never takes a hold level with the
+        // shoulder; W then has a full pull-up to make.
+        _chestHeight = shoulderHeight + armLength * .6f;
+        _wallSideAnchor = true;
+        // Measured from that raised point: a hold stays within the real arm's reach of the shoulder.
+        // reachScale lengthens how far each new grab may reach (the arm then stretches toward the hold as far as it goes).
+        _gripDistance = armLength * .7f * reachScale;
+        _freeReach = armLength * .5f * reachScale;
+        _handReachDistance = armLength * reachScale;
+        _normalHangDistance = shoulderHeight + armLength * .85f;
+        // W is a real pull-up: the body rises until the hands are at chest height (~0.5 m, the old player's 0.6 m).
+        _minHangDistance = shoulderHeight - armLength * .4f;
+        _maxHangDistance = shoulderHeight + armLength * .98f;
+        _maxPullSpeed = maxPullSpeed;
+    }
     /// <summary>The full-physics player carries its own momentum, so it reads the wall-jump boost here.</summary>
     public Vector3 LastBoostImpulse { get; private set; }
     public int BoostCount { get; private set; }
     private RagdollCharacter _fullBody;
-    public LayerMask WallLayers => _wallLayers | (Physics.DefaultRaycastLayers & ~(1 << 5));
+    // Ragdoll limbs (PlayerRagdoll layer) are never holds: they live outside the player hierarchy, so without this the
+    // full-physics player grabbed its own head and arms and climbed itself into the sky.
+    public LayerMask WallLayers => (_wallLayers | (Physics.DefaultRaycastLayers & ~(1 << 5))) & ~RagdollLimbMask;
+    private static int RagdollLimbMask
+    {
+        get
+        {
+            int layer = LayerMask.NameToLayer(RagdollCharacter.LimbLayerName);
+            return layer >= 0 ? 1 << layer : 0;
+        }
+    }
 
     private void Awake()
     {
@@ -358,7 +420,7 @@ public class Wallclimb : NetworkBehaviour
         // 3. Read cached player inputs
         bool leftClick = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
         bool rightClick = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
-        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.HoldingCargo);
+        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.BlocksClimbing);
 
         if (carryingItem || _slipCooldownTimer > 0f)
         {
@@ -387,18 +449,18 @@ public class Wallclimb : NetworkBehaviour
         }
 
         // The visual hand approaches the contact in Update; only the physics step commits a grip.
-        Vector3 chestPos = transform.position + Vector3.up * 1.15f;
+        Vector3 chestPos = transform.position + Vector3.up * _chestHeight;
         if (leftClick && !_leftHandGripping && _canGrabLeft && !_leftRequireFreshPress && _leftHandCooldown <= 0f)
         {
             Vector3 shoulder = chestPos - transform.right * (_handLateralSpacing * 0.5f);
-            if (Vector3.Distance(shoulder, _leftAimHit.point) <= 1.05f ||
+            if (_leftAimFromCamera || Vector3.Distance(shoulder, _leftAimHit.point) <= _gripDistance ||
                 (_leftHand != null && Vector3.Distance(_leftHand.position, _leftAimHit.point) <= 0.25f))
                 GripLeftHand(_leftAimHit);
         }
         if (rightClick && !_rightHandGripping && _canGrabRight && !_rightRequireFreshPress && _rightHandCooldown <= 0f)
         {
             Vector3 shoulder = chestPos + transform.right * (_handLateralSpacing * 0.5f);
-            if (Vector3.Distance(shoulder, _rightAimHit.point) <= 1.05f ||
+            if (_rightAimFromCamera || Vector3.Distance(shoulder, _rightAimHit.point) <= _gripDistance ||
                 (_rightHand != null && Vector3.Distance(_rightHand.position, _rightAimHit.point) <= 0.25f))
                 GripRightHand(_rightAimHit);
         }
@@ -451,19 +513,26 @@ public class Wallclimb : NetworkBehaviour
 
         LocateCamera();
 
-        Vector3 chestPos = transform.position + Vector3.up * 1.15f;
+        Vector3 chestPos = transform.position + Vector3.up * _chestHeight;
         GetAimDirections(out Vector3 leftAimDir, out Vector3 rightAimDir);
 
         bool notExhausted = (_stamina == null || !_stamina.IsExhausted);
+
+        // Full-physics player: each hand takes the wall spot under the crosshair, pulled in to a full arm's reach.
+        // Where that finds no wall (above the top edge), the old shoulder-aim search below still runs.
+        _leftAimFromCamera = notExhausted && _aimFromCamera && TryCameraGrip(-1f, out leftHit);
+        _rightAimFromCamera = notExhausted && _aimFromCamera && TryCameraGrip(1f, out rightHit);
+        canLeft = _leftAimFromCamera;
+        canRight = _rightAimFromCamera;
 
         // -------------------------------------------------------------
         // LEFT HAND AIM:
         // -------------------------------------------------------------
         Vector3 leftShoulder = chestPos - transform.right * (_handLateralSpacing * 0.5f);
 
-        if (TryFindSurfaceHit(leftShoulder, leftAimDir, false, out RaycastHit lHit) ||
+        if (!canLeft && (TryFindSurfaceHit(leftShoulder, leftAimDir, false, out RaycastHit lHit) ||
             (_characterController != null && !_characterController.isGrounded &&
-             TryFindSurfaceHit(leftShoulder, Vector3.ProjectOnPlane(leftAimDir, Vector3.up).normalized, true, out lHit)))
+             TryFindSurfaceHit(leftShoulder, Vector3.ProjectOnPlane(leftAimDir, Vector3.up).normalized, true, out lHit))))
         {
             float dist = Vector3.Distance(leftShoulder, lHit.point);
             if (dist <= _handReachDistance && notExhausted)
@@ -478,9 +547,9 @@ public class Wallclimb : NetworkBehaviour
         // -------------------------------------------------------------
         Vector3 rightShoulder = chestPos + transform.right * (_handLateralSpacing * 0.5f);
 
-        if (TryFindSurfaceHit(rightShoulder, rightAimDir, false, out RaycastHit rHit) ||
+        if (!canRight && (TryFindSurfaceHit(rightShoulder, rightAimDir, false, out RaycastHit rHit) ||
             (_characterController != null && !_characterController.isGrounded &&
-             TryFindSurfaceHit(rightShoulder, Vector3.ProjectOnPlane(rightAimDir, Vector3.up).normalized, true, out rHit)))
+             TryFindSurfaceHit(rightShoulder, Vector3.ProjectOnPlane(rightAimDir, Vector3.up).normalized, true, out rHit))))
         {
             float dist = Vector3.Distance(rightShoulder, rHit.point);
             if (dist <= _handReachDistance && notExhausted)
@@ -503,7 +572,12 @@ public class Wallclimb : NetworkBehaviour
         int count = forgiving
             ? Physics.SphereCastNonAlloc(ray, 0.12f, _surfaceHits, distance, mask, QueryTriggerInteraction.Ignore)
             : Physics.RaycastNonAlloc(ray, _surfaceHits, distance, mask, QueryTriggerInteraction.Ignore);
+        return NearestWallHit(count, out result);
+    }
 
+    private bool NearestWallHit(int count, out RaycastHit result)
+    {
+        result = default;
         float nearest = float.MaxValue;
         for (int i = 0; i < count; i++)
         {
@@ -524,6 +598,47 @@ public class Wallclimb : NetworkBehaviour
             }
         }
         return result.collider != null;
+    }
+
+    /// <summary>
+    /// Full-physics player: the wall spot under the crosshair, pulled in to what a fully reached arm can touch
+    /// around this hand's shoulder (up, sideways and down each have their own reach). side: -1 left, +1 right.
+    /// </summary>
+    private bool TryCameraGrip(float side, out RaycastHit hit)
+    {
+        hit = default;
+        if (_cachedCamera == null) return false;
+        Transform cam = _cachedCamera.transform;
+        float camToBody = Vector3.Distance(cam.position, transform.position);
+        int count = Physics.RaycastNonAlloc(new Ray(cam.position, cam.forward), _surfaceHits, camToBody + 3f,
+            WallLayers, QueryTriggerInteraction.Ignore);
+        if (!NearestWallHit(count, out RaycastHit aim)) return false;
+
+        Vector3 n = aim.normal;
+        Vector3 shoulder = transform.position + Vector3.up * _shoulderHeight + transform.right * (side * _handLateralSpacing * 0.5f);
+        float wallDistance = Vector3.Dot(shoulder - aim.point, n);
+        if (wallDistance < -0.1f || wallDistance > Mathf.Max(_reachUp, _reachSide) * 0.9f) return false;
+
+        // Offset from the shoulder within the wall plane, clamped to an ellipse of the reaches left at that distance.
+        Vector3 onWall = shoulder - n * wallDistance;
+        Vector3 wallRight = Vector3.Cross(n, Vector3.up).normalized; // the player's right while facing the wall
+        Vector3 wallUp = Vector3.Cross(wallRight, n);
+        Vector3 offset = aim.point - onWall;
+        float x = Vector3.Dot(offset, wallRight) + side * 0.06f; // hands side by side, not on the same spot
+        float y = Vector3.Dot(offset, wallUp);
+        // A hand may cross to the body's middle but not past the other hand's shoulder.
+        x = side < 0f ? Mathf.Min(x, _handLateralSpacing * 0.5f) : Mathf.Max(x, -_handLateralSpacing * 0.5f);
+        float d2 = wallDistance * wallDistance;
+        float rx = Mathf.Sqrt(Mathf.Max(0.01f, _reachSide * _reachSide - d2));
+        float reachY = y >= 0f ? _reachUp : _reachDown;
+        float ry = Mathf.Sqrt(Mathf.Max(0.01f, reachY * reachY - d2));
+        float k = (x / rx) * (x / rx) + (y / ry) * (y / ry);
+        if (k > 1f) { float s = 1f / Mathf.Sqrt(k); x *= s; y *= s; }
+        Vector3 target = onWall + wallRight * x + wallUp * y;
+
+        // The clamped spot must still be wall (not air above its top edge or past its side).
+        count = Physics.RaycastNonAlloc(new Ray(target + n * 0.4f, -n), _surfaceHits, 0.8f, WallLayers, QueryTriggerInteraction.Ignore);
+        return NearestWallHit(count, out hit);
     }
 
     /// <summary>
@@ -640,6 +755,14 @@ public class Wallclimb : NetworkBehaviour
         }
 
         Vector3 camRight = (_cameraController != null) ? _cameraController.HorizontalRight : transform.right;
+        // Full-physics body: hang beside the hold along the wall, not along the camera, so looking around while
+        // hanging by one hand does not swing the body in circles round the hold.
+        if (_wallSideAnchor)
+        {
+            Vector3 n = _leftHandGripping ? _leftGripNormal : _rightGripNormal;
+            Vector3 alongWall = Vector3.Cross(Vector3.up, -n);
+            if (alongWall.sqrMagnitude > 0.01f) camRight = alongWall.normalized;
+        }
 
         // 2. Determine anchor point and wall normal
         Vector3 anchor;
@@ -652,19 +775,27 @@ public class Wallclimb : NetworkBehaviour
         }
         else if (_leftHandGripping)
         {
-            anchor = _leftGripPoint + camRight * 0.20f;
+            anchor = _leftGripPoint + camRight * OneHandShift(1f, deltaTime);
             wallNormal = _leftGripNormal;
         }
         else
         {
-            anchor = _rightGripPoint - camRight * 0.20f;
+            anchor = _rightGripPoint - camRight * OneHandShift(-1f, deltaTime);
             wallNormal = _rightGripNormal;
         }
+        if (!(_leftHandGripping ^ _rightHandGripping)) _hangShift = OneHandSideOffset;
 
         // 3. Calculate target body height: W or Looking UP hoists body UP; S or Looking DOWN lowers body
         float moveY = (_inputReader != null) ? _inputReader.MoveInput.y : 0f;
         float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
         float currentHangDist;
+
+        // Full-physics body: fully pulled up with both hands on a top edge + W -> climb onto the top (the ledge
+        // pull-up below), so W alone gets the player over without a Space boost.
+        if (_wallSideAnchor && moveY > 0.5f && _leftHandGripping && _rightHandGripping &&
+            transform.position.y >= Mathf.Max(_leftGripPoint.y, _rightGripPoint.y) - 0.45f &&
+            CheckForTopLedgePullUp())
+            return;
 
         float upPull = 0f;
         if (moveY > 0.05f) upPull = Mathf.Max(upPull, moveY);
@@ -690,6 +821,15 @@ public class Wallclimb : NetworkBehaviour
             currentHangDist = _normalHangDistance;
         }
 
+        // A body swung out sideways pivots on the gripping hand: it rises so the arm (nearly straight) still
+        // reaches the hold instead of the hand coming off it.
+        if (_shiftMax > OneHandSideOffset && (_leftHandGripping ^ _rightHandGripping) && _hangShift > OneHandSideOffset)
+        {
+            float arm = _armLength * 0.95f;
+            float rise = Mathf.Sqrt(Mathf.Max(0f, arm * arm - _hangShift * _hangShift));
+            currentHangDist = Mathf.Min(currentHangDist, _shoulderHeight + rise);
+        }
+
         // Target body position:
         Vector3 targetBodyPos;
         targetBodyPos.y = anchor.y - currentHangDist;
@@ -706,7 +846,7 @@ public class Wallclimb : NetworkBehaviour
         // CLIMBER card scales both the pull gain and its speed clamp.
         float climbScale = _expedition != null ? _expedition.CardMagnitude(CoopGame.Network.CardEffect.Climber) : 1f;
         Vector3 moveStep = toTarget * (_bodyPullSpeed * climbScale * deltaTime);
-        moveStep = Vector3.ClampMagnitude(moveStep, 6.0f * climbScale * deltaTime);
+        moveStep = Vector3.ClampMagnitude(moveStep, _maxPullSpeed * climbScale * deltaTime);
 
         if (_characterController != null && _characterController.enabled)
         {
@@ -721,6 +861,22 @@ public class Wallclimb : NetworkBehaviour
             Quaternion targetRot = Quaternion.LookRotation(faceDir.normalized, Vector3.up);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, deltaTime * 12f);
         }
+    }
+
+    /// <summary>
+    /// Full-physics one-hand hang: how far the body sits from the gripping hand toward the free hand. A/D toward
+    /// the free hand swings it out (so that hand reaches further), away from it brings it under the gripping hand.
+    /// freeSide: +1 when the free hand is on the right (holding with the left), -1 the other way.
+    /// </summary>
+    private float OneHandShift(float freeSide, float deltaTime)
+    {
+        if (_shiftMax <= OneHandSideOffset) return OneHandSideOffset;
+        float input = (_inputReader != null ? _inputReader.MoveInput.x : 0f) * freeSide;
+        float target = input >= 0f
+            ? Mathf.Lerp(OneHandSideOffset, _shiftMax, input)
+            : Mathf.Lerp(OneHandSideOffset, 0f, -input);
+        _hangShift = Mathf.MoveTowards(_hangShift, target, _shiftSpeed * deltaTime);
+        return _hangShift;
     }
 
     /// <summary>
@@ -805,7 +961,7 @@ public class Wallclimb : NetworkBehaviour
                 col.GetComponentInParent<NetworkPlayer>() != null ||
                 col.GetComponentInParent<CarryableObject>() != null ||
                 (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) ||
-                hit.normal.y < 0.7f || handHeight < hit.point.y - 0.55f ||
+                hit.normal.y < 0.7f || handHeight < hit.point.y - _ledgeHandTolerance ||
                 hit.point.y < transform.position.y - 0.2f)
                 continue;
 
@@ -831,7 +987,7 @@ public class Wallclimb : NetworkBehaviour
 
         float radius = (_characterController != null) ? _characterController.radius : 0.5f;
         Vector3 targetXZ = new Vector3(ledgeHit.point.x, 0f, ledgeHit.point.z) + wallForward * (radius + 0.20f);
-        _pullUpTargetPos = new Vector3(targetXZ.x, ledgeHit.point.y + 0.05f, targetXZ.z);
+        _pullUpTargetPos = new Vector3(targetXZ.x, ledgeHit.point.y + _pullUpRootHeight, targetXZ.z);
 
         // Release physical wall grip points so hands can slide onto ground
         _leftHandGripping = false;
@@ -913,13 +1069,13 @@ public class Wallclimb : NetworkBehaviour
         bool leftHeld = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
         bool rightHeld = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
 
-        Vector3 chestPos = transform.position + Vector3.up * 1.15f;
+        Vector3 chestPos = transform.position + Vector3.up * _chestHeight;
         GetAimDirections(out Vector3 aimDirL, out Vector3 aimDirR);
 
         float pitch = (_cameraController != null) ? _cameraController.Pitch : 0f;
         float pitchRad = pitch * Mathf.Deg2Rad;
         // When looking down (positive pitch), arm reaches further toward feet; up = overhead reach
-        float reachDist = 1.35f + Mathf.Clamp(pitchRad, -0.3f, 0.8f) * 0.4f;
+        float reachDist = _freeReach + Mathf.Clamp(pitchRad, -0.3f, 0.8f) * 0.4f * (_freeReach / 1.35f);
         Vector3 restL = (_procArms != null) ? ProceduralPlayerArms.LeftHandRestLocal : _leftHandRest;
         Vector3 restR = (_procArms != null) ? ProceduralPlayerArms.RightHandRestLocal : _rightHandRest;
 
@@ -1061,7 +1217,7 @@ public class Wallclimb : NetworkBehaviour
     {
         if (_leftClimbMarker == null || _rightClimbMarker == null) return;
 
-        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.HoldingCargo);
+        bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.BlocksClimbing);
         if (carryingItem || _isPullingUp)
         {
             HideMarkers();
@@ -1298,7 +1454,7 @@ public class Wallclimb : NetworkBehaviour
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;
-        Vector3 chestPos = transform.position + Vector3.up * 1.15f;
+        Vector3 chestPos = transform.position + Vector3.up * _chestHeight;
         Gizmos.DrawWireSphere(chestPos, _handReachDistance);
 
         if (_leftHandGripping)

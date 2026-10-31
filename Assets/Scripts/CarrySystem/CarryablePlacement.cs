@@ -68,6 +68,17 @@ namespace CoopGame.CarrySystem
 
         private bool Own(Collider collider) => collider != null && collider.attachedRigidbody == _rigidbody;
 
+        // Full-physics players' ragdoll limbs are neither floor nor an obstacle for a set-down (an arm under the
+        // crate used to make the placement fail).
+        private static int PlacementMask
+        {
+            get
+            {
+                int limbs = LayerMask.NameToLayer(CoopGame.Player.RagdollCharacter.LimbLayerName);
+                return limbs >= 0 ? ~(1 << limbs) : ~0;
+            }
+        }
+
         private Bounds SolidBounds()
         {
             Bounds bounds = new Bounds(_rigidbody.position, Vector3.zero);
@@ -98,7 +109,7 @@ namespace CoopGame.CarrySystem
                     origin.x += ((sample & 1) == 0 ? -1 : 1) * bounds.extents.x * .85f;
                     origin.z += ((sample & 2) == 0 ? -1 : 1) * bounds.extents.z * .85f;
                 }
-                int count = Physics.RaycastNonAlloc(origin, Vector3.down, _placeHits, 1.58f, ~0, QueryTriggerInteraction.Ignore);
+                int count = Physics.RaycastNonAlloc(origin, Vector3.down, _placeHits, 1.58f, PlacementMask, QueryTriggerInteraction.Ignore);
                 if (count == _placeHits.Length) return false;
                 RaycastHit nearest = default;
                 float distance = float.PositiveInfinity;
@@ -128,7 +139,7 @@ namespace CoopGame.CarrySystem
         {
             int count = Physics.OverlapBoxNonAlloc(bounds.center + offset,
                 Vector3.Max(bounds.extents - Vector3.one * .015f, Vector3.one * .01f),
-                _placeOverlaps, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+                _placeOverlaps, Quaternion.identity, PlacementMask, QueryTriggerInteraction.Ignore);
             if (count == _placeOverlaps.Length) return false;
             for (int i = 0; i < count; i++)
                 if (!Own(_placeOverlaps[i]) && !IsPlacingCarrier(_placeOverlaps[i])) return false;

@@ -100,6 +100,28 @@ namespace CoopGame.Player
         [SerializeField] private float _throwSpeed = 8f;
         [SerializeField] private float _throwStaminaCost = 8f;
 
+        [Header("Climb (Wallclimb)")]
+        [Tooltip("How fast Wallclimb pulls the body toward its hang point (the old player used 6 m/s)")]
+        [SerializeField] private float _climbPullSpeed = 1.8f;
+        [Tooltip("How far a grab may reach upward from the shoulder toward the crosshair (1 = the arm's own length)")]
+        [SerializeField] private float _climbReachScale = 1.6f;
+        [Tooltip("How far a grab may reach sideways from the shoulder (1 = the arm's own length)")]
+        [SerializeField] private float _climbSideReachScale = 1.4f;
+        [Tooltip("How far a grab may reach downward from the shoulder (1 = the arm's own length)")]
+        [SerializeField] private float _climbDownReachScale = 1.1f;
+        [Tooltip("Hanging by one hand, A/D toward the free hand swings the body this far along the wall (1 = the arm's length), so the free hand reaches further")]
+        [SerializeField] private float _climbShiftDistance = .9f;
+        [Tooltip("How fast that sideways swing moves (m/s)")]
+        [SerializeField] private float _climbShiftSpeed = 1.2f;
+        [Tooltip("Opacity of your own body while climbing, so the wall behind it shows (gloves stay solid; only on your screen)")]
+        [SerializeField, Range(0f, 1f)] private float _climbFadeAlpha = .3f;
+        [Tooltip("Seconds to fade the body out when a climb starts and back in when it ends")]
+        [SerializeField] private float _climbFadeTime = .2f;
+        [Tooltip("Transparent copy of the body material used while climbing")]
+        [SerializeField] private Material _climbFadeBody;
+        [Tooltip("Transparent copy of the face material used while climbing")]
+        [SerializeField] private Material _climbFadeFace;
+
         [Header("First Person")]
         [Tooltip("In first person the owner sees only their forearms and hands")]
         [SerializeField] private bool _firstPersonHands = true;
@@ -127,6 +149,8 @@ namespace CoopGame.Player
         public bool IsGrounded { get; private set; }
         public bool IsClimbing => _climbing;
         public bool HoldingCargo => _carry != null;
+        /// <summary>Holding a crate, or a lift is on its way to the server: Wallclimb must not take a wall meanwhile.</summary>
+        public bool BlocksClimbing => _carry != null || (_carryRequestPending && Time.time <= _carryRequestTimeout);
         public CarryableObject CarriedCargo => _carry;
         public bool OwnsCollider(Collider c) => _physicsRoot != null && c != null && c.transform.IsChildOf(_physicsRoot.transform);
 
@@ -178,18 +202,22 @@ namespace CoopGame.Player
 
         // Climb (owner): Wallclimb moves the root, the bodies are posed kinematically
         private bool _climbing;
-        private float _climbLift;
         private int _seenBoostCount;
         private readonly Vector3[] _fk = new Vector3[BoneCount];
+        private Vector3 _hipsForwardLocal = Vector3.forward; // the body's forward in the hips bone's frame
+        private float _facingYaw, _slowTurnUntil;           // where the body faces (turns at a capped rate)
+        private bool _slowTurnUntilLanded;
+        private const float TurnRate = 720f, SlowTurnRate = 240f; // deg/s
         private const float OldPlayerGravity = 24f; // PlayerMovement._gravity
-        private float _airborneUntil;
+        private float _airborneUntil, _boostSteerUntil;
 
         // Carry (owner side)
         private CarryableObject _carry;
         private Vector3 _carryLocalL, _carryLocalR;
         private readonly ConfigurableJoint[] _carryHand = new ConfigurableJoint[2];
         private CarryableObject _ignoredAfterCarry;
-        private bool _carryRequestPending;
+        private bool _carryRequestPending, _dropRequested, _throwCostPending;
+        private float _carryRequestTimeout;
         private int _liftSteps;
         // Carry (server side, for this player)
         private CarryableObject _serverCarry;
@@ -305,7 +333,7 @@ namespace CoopGame.Player
                     if (_stamina.IsExhausted) RequestDrop();
                 }
             }
-            else if (_input.GrabLeftPressed && canAct && !Exhausted && !_carryRequestPending &&
+            else if (_input.GrabLeftPressed && canAct && !Exhausted && (!_carryRequestPending || Time.time > _carryRequestTimeout) &&
                      (_wallclimb == null || !_wallclimb.IsClimbing) && FindAimedCargo(out CarryableObject cargo))
             {
                 RequestCarry(cargo);
@@ -356,9 +384,21 @@ namespace CoopGame.Player
             float recover = !limp && Time.time < _standUpUntil ? 1f - (_standUpUntil - Time.time) / _standUpSeconds : 1f;
             UpdateDrives(limp ? 0f : Mathf.SmoothStep(.15f, 1f, recover));
 
-            if (_clone != null) UpdateClonePose(flatVel, facing, IsGrounded);
-            else UpdateTargetPose(flatVel.magnitude, facing, dt);
-            UpdateArms(pitch, facing, physics: true);
+            // The body turns to the camera heading at a capped rate (slower just after a climb), so letting go of a
+            // wall and grabbing again never snaps it round between the wall and the camera.
+            // After letting go of a wall the slow turn lasts until the body has landed (plus a moment).
+            if (_slowTurnUntilLanded)
+            {
+                if (IsGrounded) { _slowTurnUntilLanded = false; _slowTurnUntil = Mathf.Max(_slowTurnUntil, Time.time + .4f); }
+                else _slowTurnUntil = Mathf.Max(_slowTurnUntil, Time.time + .1f);
+            }
+            bool slowTurn = Time.time < _slowTurnUntil;
+            float turnRate = slowTurn ? SlowTurnRate : TurnRate;
+            _facingYaw = Mathf.MoveTowardsAngle(_facingYaw, yaw, turnRate * dt);
+            Quaternion bodyFacing = Quaternion.Euler(0f, _facingYaw, 0f);
+            if (_clone != null) UpdateClonePose(flatVel, bodyFacing, IsGrounded);
+            else UpdateTargetPose(flatVel.magnitude, bodyFacing, dt);
+            UpdateArms(pitch, bodyFacing, physics: true);
 
             if (!limp)
             {
@@ -370,7 +410,7 @@ namespace CoopGame.Player
                     accel.y = -Physics.gravity.y + (_standHeight - height) * _standSpring - hipsVel.y * _standDamper;
                     accel.y = Mathf.Max(0f, accel.y) * recover;
                 }
-                float gain = IsGrounded ? _acceleration : _airAcceleration;
+                float gain = IsGrounded || Time.time < _boostSteerUntil ? _acceleration : _airAcceleration;
                 // Standing still: hold the spot, so the slippery feet do not let the body creep.
                 Vector3 hold = Vector3.zero;
                 bool still = IsGrounded && desired == Vector3.zero && flatVel.sqrMagnitude < .25f;
@@ -382,9 +422,11 @@ namespace CoopGame.Player
 
                 if (_jumpQueued) TryJump();
 
-                // Stay upright and turn to the camera heading (hips and chest follow the target pose).
-                Upright(Hips, recover);
-                Upright(Chest, recover * .6f);
+                // Stay upright and turn to the camera heading (hips and chest follow the target pose). Just after
+                // letting go of a wall the turn is softer, so the landing cannot flick the body round.
+                float uprightScale = Time.time < _slowTurnUntil ? .35f : 1f;
+                Upright(Hips, recover * uprightScale);
+                Upright(Chest, recover * .6f * uprightScale);
             }
             _jumpQueued = false;
 
@@ -496,10 +538,18 @@ namespace CoopGame.Player
                 float side = h == 0 ? -1f : 1f;
                 Vector3 shoulder = physics ? _bodies[upper].position : _fk[upper];
                 bool hasTarget = ArmTarget(h, shoulder, out Vector3 target, out Vector3 pole, facing);
-                if (!hasTarget) continue;
+                if (!hasTarget)
+                {
+                    // Hanging on the wall, a free arm hangs relaxed instead of playing the jump clip's flailing.
+                    if (!physics && _hasHoldPose)
+                        for (int i = upper; i < upper + 3; i++) _target[i] = _target[Chest] * _holdArmRel[i];
+                    continue;
+                }
                 if (_hasHoldPose)
                     for (int i = upper; i < upper + 3; i++) _target[i] = _target[Chest] * _holdArmRel[i];
-                if (pole == Vector3.zero) pole = -Vector3.up + right * side * .6f - facing * Vector3.forward * .3f;
+                // Carrying: elbows out to the sides, a little back and down. (Mostly-down flipped the elbow when the
+                // crate was held low, with the arms then pointing along the hint.)
+                if (pole == Vector3.zero) pole = right * side - facing * Vector3.forward * .5f - Vector3.up * .4f;
                 SolveArm(upper, shoulder, target, pole);
             }
             _target[Head] = Quaternion.AngleAxis(Mathf.Clamp(pitch, -40f, 40f) * .4f, right) * _target[Head];
@@ -522,8 +572,10 @@ namespace CoopGame.Player
             Transform hand = h == 0 ? _ikTargets.LeftHand : _ikTargets.RightHand;
             if (hand == null) return false;
             target = hand.position;
-            // Climbing elbows point down and out, away from the wall.
-            pole = -Vector3.up * 1f + (facing * Vector3.right) * (h == 0 ? -.7f : .7f) - facing * Vector3.forward * .4f;
+            // Climbing elbows point out to the side and back from the wall. (Mostly-down made the elbow flip round
+            // when a hand reached down, since the arm then points along the hint.) A hand on the wall never points
+            // out-and-back, so this hint never lines up with the arm.
+            pole = (facing * Vector3.right) * (h == 0 ? -1f : 1f) - facing * Vector3.forward * .6f - Vector3.up * .3f;
             return true;
         }
 
@@ -542,7 +594,15 @@ namespace CoopGame.Player
             Vector3 elbow = shoulder + dir * (a * cos) + bend * (a * Mathf.Sqrt(1f - cos * cos));
             Vector3 wrist = shoulder + dir * d;
 
-            Quaternion r1 = Quaternion.FromToRotation(_target[upper] * _boneAxis[upper], elbow - shoulder);
+            // Turn the upper arm as a whole frame (its axis onto the elbow, its bend side onto the forearm's side),
+            // not by the shortest swing: a hand above the head is ~180 deg from the hold pose, where the shortest
+            // swing picks an arbitrary roll and the shoulder twists.
+            Vector3 upperAxis = _target[upper] * _boneAxis[upper];
+            Vector3 foreSide = Vector3.ProjectOnPlane(_target[lower] * _boneAxis[lower], upperAxis);
+            Vector3 newForeSide = Vector3.ProjectOnPlane(wrist - elbow, elbow - shoulder);
+            Quaternion r1 = foreSide.sqrMagnitude > 1e-4f && newForeSide.sqrMagnitude > 1e-6f
+                ? Quaternion.LookRotation(elbow - shoulder, newForeSide) * Quaternion.Inverse(Quaternion.LookRotation(upperAxis, foreSide))
+                : Quaternion.FromToRotation(upperAxis, elbow - shoulder);
             _target[upper] = r1 * _target[upper];
             _target[lower] = r1 * _target[lower];
             _target[hand] = r1 * _target[hand];
@@ -566,30 +626,28 @@ namespace CoopGame.Player
             if (!_climbing) return false;
 
             IsGrounded = false;
-            Quaternion facing = Quaternion.Euler(0f, transform.eulerAngles.y, 0f); // Wallclimb turns the root to the wall
+            // Face into the wall from the held faces only, turning at a capped rate: a re-grab, or a hand on a top
+            // edge or side face, must not snap the body round.
+            float? wallYaw = ClimbFacingYaw();
+            if (wallYaw.HasValue)
+                _facingYaw = Mathf.MoveTowardsAngle(_facingYaw, wallYaw.Value, SlowTurnRate * dt);
+            Quaternion facing = Quaternion.Euler(0f, _facingYaw, 0f);
             if (_clone != null) UpdateClonePose(Vector3.zero, facing, false);
             else UpdateTargetPose(0f, facing, dt);
-
-            // Hang the body from the grips: lift it as far as the arms need to reach their holds.
-            Vector3 hips = transform.position - Vector3.up * _hipsAboveRoot;
-            ForwardKinematics(hips + Vector3.up * _climbLift);
-            float need = 0f;
-            for (int h = 0; h < 2; h++)
+            // The airborne clip twists the hips back and forth; hanging on a wall the body keeps facing the wall.
+            Vector3 hipsForward = Flat(_target[Hips] * _hipsForwardLocal);
+            if (hipsForward.sqrMagnitude > 1e-4f)
             {
-                bool gripping = h == 0 ? _wallclimb.LeftHandGripping : _wallclimb.RightHandGripping;
-                Transform hand = _ikTargets != null ? (h == 0 ? _ikTargets.LeftHand : _ikTargets.RightHand) : null;
-                if (!gripping || hand == null) continue;
-                int upper = h == 0 ? ArmL : ArmR;
-                Vector3 shoulder = _fk[upper] - Vector3.up * _climbLift;
-                Vector3 to = hand.position - shoulder;
-                float reach = (_boneLength[upper] + _boneLength[upper + 1]) * .95f;
-                float flat = Flat(to).magnitude;
-                need = Mathf.Max(need, to.y - Mathf.Sqrt(Mathf.Max(0f, reach * reach - flat * flat)));
+                Quaternion untwist = Quaternion.FromToRotation(hipsForward.normalized, facing * Vector3.forward);
+                for (int i = 0; i < BoneCount; i++) _target[i] = untwist * _target[i];
             }
-            _climbLift = Mathf.MoveTowards(_climbLift, Mathf.Clamp(need, 0f, 1.2f), dt * 4f);
-            ForwardKinematics(hips + Vector3.up * _climbLift);
+
+            // The body stays exactly where Wallclimb puts the root, as in the old player; the arms reach up toward
+            // the holds as far as they go. (Lifting the body to the holds made it float and outrun the camera.)
+            Vector3 hips = transform.position - Vector3.up * _hipsAboveRoot;
+            ForwardKinematics(hips);
             UpdateArms(pitch, facing, physics: false);
-            ForwardKinematics(hips + Vector3.up * _climbLift);
+            ForwardKinematics(hips);
 
             bool jump = (_fk[Hips] - _bodies[Hips].position).sqrMagnitude > 1f; // respawn/teleport mid-climb
             for (int i = 0; i < BoneCount; i++)
@@ -601,6 +659,29 @@ namespace CoopGame.Player
             return true;
         }
 
+        /// <summary>
+        /// Heading into the wall from the faces the hands hold. A hand that re-grabs on a face turned well away from
+        /// the one the body already faces (a corner, the side of a pillar) does not turn it; only when both hands are
+        /// on the new face does the body turn to it. Top surfaces never count.
+        /// </summary>
+        private float? ClimbFacingYaw()
+        {
+            Vector3 sum = Vector3.zero, any = Vector3.zero;
+            for (int h = 0; h < 2; h++)
+            {
+                bool gripping = h == 0 ? _wallclimb.LeftHandGripping : _wallclimb.RightHandGripping;
+                Vector3 n = h == 0 ? _wallclimb.LeftGripNormal : _wallclimb.RightGripNormal;
+                if (!gripping || Mathf.Abs(n.y) > .7f) continue;
+                Vector3 into = Flat(-n).normalized;
+                any += into;
+                float delta = Mathf.Abs(Mathf.DeltaAngle(_facingYaw, Quaternion.LookRotation(into).eulerAngles.y));
+                if (delta < 50f) sum += into;
+            }
+            Vector3 dir = sum.sqrMagnitude > .01f ? sum : any;
+            if (dir.sqrMagnitude < .01f) return null;
+            return Quaternion.LookRotation(dir).eulerAngles.y;
+        }
+
         private void ForwardKinematics(Vector3 hips)
         {
             _fk[Hips] = hips;
@@ -610,7 +691,6 @@ namespace CoopGame.Player
         private void EnterClimb()
         {
             _climbing = true;
-            _climbLift = 0f;
             _seenBoostCount = _wallclimb.BoostCount;
             if (_carry != null) RequestDrop();
             if (_controller != null && !_controller.enabled) _controller.enabled = true;
@@ -620,15 +700,22 @@ namespace CoopGame.Player
         private void ExitClimb(float dt)
         {
             _climbing = false;
-            Vector3 velocity = Vector3.ClampMagnitude(_controller != null ? _controller.velocity : Vector3.zero, 8f);
+            _slowTurnUntil = Time.time + .8f;
+            _slowTurnUntilLanded = true;
+            // Letting go hands the body back to physics calmly: like the old player, the climb's pull speed is not
+            // carried over (it made the body shoot up at the wall top). A little sideways drift is kept.
+            Vector3 pull = _controller != null ? _controller.velocity : Vector3.zero;
+            Vector3 velocity = Vector3.ClampMagnitude(Flat(pull), 1.5f) + Vector3.up * Mathf.Min(0f, pull.y);
             if (_wallclimb != null && _wallclimb.BoostCount != _seenBoostCount)
             {
                 // Wallclimb's boost is tuned for the old player's -24 gravity; scale the rise to the same height here.
+                // The boost replaces the pull speed, it is not added to it.
                 Vector3 boost = _wallclimb.LastBoostImpulse;
-                velocity += new Vector3(boost.x, boost.y * Mathf.Sqrt(-Physics.gravity.y / OldPlayerGravity), boost.z);
+                velocity = new Vector3(boost.x, boost.y * Mathf.Sqrt(-Physics.gravity.y / OldPlayerGravity), boost.z);
                 // Right after the boost the hips are level with the wall top; its edge must not count as ground
                 // (the stand spring's damper would eat the rise).
                 _airborneUntil = Time.time + .35f;
+                _boostSteerUntil = Time.time + .6f; // full air control to get over the top, like the old player
             }
             if (_controller != null) _controller.enabled = false;
             foreach (var body in _bodies)
@@ -696,12 +783,14 @@ namespace CoopGame.Player
             Vector3 localL = cargo.transform.InverseTransformPoint(left);
             Vector3 localR = cargo.transform.InverseTransformPoint(right);
             _carryRequestPending = true;
+            _carryRequestTimeout = Time.time + 2f; // an unanswered request never blocks lifting for good
             if (HasAuthority) ServerStartCarry(cargo, localL, localR);
             else StartCarryRpc(cargo.NetworkObject, localL, localR);
         }
 
         private void RequestPlace()
         {
+            _throwCostPending = false;
             if (HasAuthority) ServerPlace(_colliders);
             else PlaceCarryRpc();
         }
@@ -712,14 +801,17 @@ namespace CoopGame.Player
             float yaw = _camera != null ? _camera.Yaw : transform.eulerAngles.y;
             Vector3 dir = Quaternion.Euler(Mathf.Clamp(pitch - 20f, -60f, 30f), yaw, 0f) * Vector3.forward;
             Vector3 velocity = dir * _throwSpeed + Flat(_bodies[Hips].linearVelocity) * .5f;
-            if (_stamina != null) _stamina.ConsumeStamina(_throwStaminaCost);
+            _throwCostPending = true; // stamina is paid when the server has really let go (OnCarryEnded)
             if (HasAuthority) ServerThrow(velocity);
             else ThrowCarryRpc(velocity);
         }
 
         private void RequestDrop()
         {
-            if (_carry == null) return;
+            // Asked once per carry: running out of stamina calls this every frame until the server lets go.
+            if (_carry == null || _dropRequested) return;
+            _dropRequested = true;
+            _throwCostPending = false;
             if (HasAuthority) ServerDropCarry();
             else DropCarryRpc();
         }
@@ -730,6 +822,7 @@ namespace CoopGame.Player
             _carryRequestPending = false;
             if (!ok || cargo == null || _physicsRoot == null) return;
             _carry = cargo;
+            _dropRequested = false;
             _carryLocalL = localL;
             _carryLocalR = localR;
             _liftSteps = 0;
@@ -751,6 +844,8 @@ namespace CoopGame.Player
             }
             // Collisions come back once the body has stepped clear, so a set-down crate is not shoved.
             if (_carry != null) _ignoredAfterCarry = _carry;
+            if (_carry != null && _throwCostPending && _stamina != null) _stamina.ConsumeStamina(_throwStaminaCost);
+            _throwCostPending = false;
             _carry = null;
         }
 
@@ -981,7 +1076,14 @@ namespace CoopGame.Player
                 _bones[Hips].position = _bodies[Hips].transform.position;
                 for (int i = 0; i < BoneCount; i++) _bones[i].rotation = _bodies[i].transform.rotation;
                 if (_sync != null) _sync.PublishDrawnPose(_bones, _rig.Visual);
+                // Fists while a hand holds a wall or a crate; other players read the same state.
+                bool left = _carry != null || (_wallclimb != null && _wallclimb.LeftHandGripping);
+                bool right = _carry != null || (_wallclimb != null && _wallclimb.RightHandGripping);
+                byte bits = (byte)((left ? 1 : 0) | (right ? 2 : 0));
+                if (IsSpawned && _fistBits.Value != bits) _fistBits.Value = bits;
+                DrawFists(left, right);
                 UpdateFirstPersonHands();
+                UpdateClimbFade();
             }
             else if (_sync != null && _sync.TrySampleRemotePose(_remoteLocal, out Vector3 hipsLocal, out Quaternion hipsRot))
             {
@@ -989,6 +1091,43 @@ namespace CoopGame.Player
                 _bones[Hips].position = visual.TransformPoint(hipsLocal);
                 _bones[Hips].rotation = visual.rotation * hipsRot;
                 for (int i = 1; i < BoneCount; i++) _bones[i].localRotation = _remoteLocal[i];
+                DrawFists((_fistBits.Value & 1) != 0, (_fistBits.Value & 2) != 0);
+            }
+        }
+
+        // ───────────────────────── Fists ─────────────────────────
+
+        [Header("Fists")]
+        [Tooltip("Finger curl (degrees) of a hand holding a wall or a crate")]
+        [SerializeField] private float _fistFingerAngle = 100f;
+        [SerializeField] private float _fistThumbAngle = 50f;
+        private readonly NetworkVariable<byte> _fistBits = new NetworkVariable<byte>(0,
+            NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        private float _fistL, _fistR;
+
+        /// <summary>Closes the fingers of a holding hand into a fist (and opens them again), eased over ~0.1 s.</summary>
+        private void DrawFists(bool left, bool right)
+        {
+            float step = Time.deltaTime * 10f;
+            _fistL = Mathf.MoveTowards(_fistL, left ? 1f : 0f, step);
+            _fistR = Mathf.MoveTowards(_fistR, right ? 1f : 0f, step);
+            CurlFingers(_rig.FingersL, _fistL);
+            CurlFingers(_rig.FingersR, _fistR);
+        }
+
+        private void CurlFingers(CharacterRig.Finger[] fingers, float grip)
+        {
+            if (fingers == null) return;
+            foreach (var f in fingers)
+            {
+                float angle = (f.IsThumb ? _fistThumbAngle : _fistFingerAngle) * grip;
+                for (int j = 0; j < f.Joints.Length; j++)
+                {
+                    Transform joint = f.Joints[j];
+                    if (joint == null) continue;
+                    joint.localRotation = grip <= .001f ? f.RestRotations[j]
+                        : f.RestRotations[j] * Quaternion.AngleAxis(angle * (j == 0 ? .7f : f.IsThumb ? .85f : .95f), f.CurlAxes[j]);
+                }
             }
         }
 
@@ -1060,6 +1199,63 @@ namespace CoopGame.Player
                 _visualShadowModes[i] = _visualRenderers[i].shadowCastingMode == UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly
                     ? UnityEngine.Rendering.ShadowCastingMode.On : _visualRenderers[i].shadowCastingMode;
             return true;
+        }
+
+        // ───────────────────────── Climb fade ─────────────────────────
+        // While climbing, the owner's own body turns see-through on their screen so the wall and holds behind it
+        // show. Body and face swap to transparent copies of their materials (the alpha rides on the colour property
+        // block PlayerAppearance already sets); the gloves keep their solid material. Others see the body as usual.
+
+        private Renderer _fadeBodyRenderer, _fadeFaceRenderer;
+        private Material[] _fadeBodySolid, _fadeBodySeeThrough;
+        private Material _fadeFaceSolid;
+        private float _fadeAlpha = 1f;
+        private bool _fadeSwapped;
+        private MaterialPropertyBlock _fadeBlock;
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+        private void UpdateClimbFade()
+        {
+            float target = _climbing && !_fpShown && _climbFadeBody != null ? _climbFadeAlpha : 1f;
+            if (!_fadeSwapped && target >= 1f) { _fadeAlpha = 1f; return; }
+            if (_fadeBodyRenderer == null && !FindFadeRenderers()) return;
+            _fadeAlpha = Mathf.MoveTowards(_fadeAlpha, target, Time.deltaTime / Mathf.Max(.01f, _climbFadeTime));
+            bool seeThrough = _fadeAlpha < .999f;
+            if (seeThrough != _fadeSwapped)
+            {
+                _fadeSwapped = seeThrough;
+                _fadeBodyRenderer.sharedMaterials = seeThrough ? _fadeBodySeeThrough : _fadeBodySolid;
+                if (_fadeFaceRenderer != null && _climbFadeFace != null)
+                    _fadeFaceRenderer.sharedMaterial = seeThrough ? _climbFadeFace : _fadeFaceSolid;
+            }
+            SetFadeAlpha(_fadeBodyRenderer, seeThrough ? _fadeAlpha : 1f);
+            if (_fadeFaceRenderer != null) SetFadeAlpha(_fadeFaceRenderer, seeThrough ? _fadeAlpha : 1f);
+        }
+
+        private bool FindFadeRenderers()
+        {
+            _fadeBodyRenderer = _rig.BodyRenderer;
+            if (_fadeBodyRenderer == null) return false;
+            // The see-through copy is named after the solid material it replaces (Mat_chBODY -> Mat_chBODY_ClimbFade).
+            _fadeBodySolid = _fadeBodyRenderer.sharedMaterials;
+            _fadeBodySeeThrough = (Material[])_fadeBodySolid.Clone();
+            for (int i = 0; i < _fadeBodySeeThrough.Length; i++)
+                if (_fadeBodySeeThrough[i] != null && _climbFadeBody.name.StartsWith(_fadeBodySeeThrough[i].name + "_"))
+                    _fadeBodySeeThrough[i] = _climbFadeBody;
+            _fadeFaceRenderer = _rig.FaceRenderer;
+            if (_fadeFaceRenderer != null) _fadeFaceSolid = _fadeFaceRenderer.sharedMaterial;
+            return true;
+        }
+
+        private void SetFadeAlpha(Renderer renderer, float alpha)
+        {
+            _fadeBlock ??= new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(_fadeBlock);
+            Color color = _fadeBlock.HasColor(BaseColorId) ? _fadeBlock.GetColor(BaseColorId) : Color.white;
+            if (Mathf.Approximately(color.a, alpha)) return;
+            color.a = alpha;
+            _fadeBlock.SetColor(BaseColorId, color);
+            renderer.SetPropertyBlock(_fadeBlock);
         }
 
         /// <summary>The player root (camera, UI, NetworkTransform, checkpoints) stands under the hips.</summary>
@@ -1152,6 +1348,8 @@ namespace CoopGame.Player
                 _restRelative[i] = Quaternion.Inverse(parent.rotation) * _bodies[i].rotation;
                 _anchorInParent[i] = joint.connectedAnchor;
             }
+            _hipsForwardLocal = Quaternion.Inverse(_bodies[Hips].rotation) * (facing * Vector3.forward);
+            _facingYaw = facing.eulerAngles.y;
             // Arm segment axes and lengths for the IK (upper arm -> forearm -> hand).
             foreach (int upper in new[] { ArmL, ArmR })
                 for (int i = upper; i < upper + 2; i++)
@@ -1177,6 +1375,15 @@ namespace CoopGame.Player
             _appliedStrength = -1f;
             UpdateDrives(1f);
             BuildClone();
+
+            // Climb with this body's real shoulder height and arm length (Wallclimb's defaults suit a taller player).
+            if (_wallclimb != null)
+            {
+                float shoulder = (_bodies[ArmL].position.y + _bodies[ArmR].position.y) * .5f - transform.position.y;
+                float arm = _boneLength[ArmL] + _boneLength[ArmL + 1] + .06f; // + half a hand to the palm
+                _wallclimb.ConfigureBody(shoulder, arm, _climbPullSpeed, _hipsAboveRoot + _standHeight,
+                    _climbReachScale, _climbSideReachScale, _climbDownReachScale, _climbShiftDistance, _climbShiftSpeed);
+            }
         }
 
         /// <summary>The clone's controller with the Inspector's idle/walk/run choices swapped in.</summary>

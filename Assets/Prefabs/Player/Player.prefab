@@ -928,6 +928,16 @@ MonoBehaviour:
   _carryLeash: 20
   _throwSpeed: 8
   _throwStaminaCost: 8
+  _climbPullSpeed: 1.8
+  _climbReachScale: 1.6
+  _climbSideReachScale: 1.4
+  _climbDownReachScale: 1.1
+  _climbShiftDistance: 0.9
+  _climbShiftSpeed: 1.2
+  _climbFadeAlpha: 0.3
+  _climbFadeTime: 0.2
+  _climbFadeBody: {fileID: 2100000, guid: 8cab34b87b7570b4489bbff3ef377835, type: 2}
+  _climbFadeFace: {fileID: 2100000, guid: 08c01c98119566a41847a5499d7b44db, type: 2}
   _firstPersonHands: 1
   _bumpNudgeSpeed: 0.3
   _handMaxImpulse: 0.4
@@ -939,6 +949,8 @@ MonoBehaviour:
   _knockdownTilt: 70
   _knockdownSeconds: 1.5
   _standUpSeconds: 0.8
+  _fistFingerAngle: 100
+  _fistThumbAngle: 50
 --- !u!1001 &7320352570590444729
 PrefabInstance:
   m_ObjectHideFlags: 0
