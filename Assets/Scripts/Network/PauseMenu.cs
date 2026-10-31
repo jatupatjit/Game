@@ -156,11 +156,22 @@ namespace CoopGame.Network
             _copyCodeLabel = _copyCodeButton.GetComponentInChildren<Text>();
             _copyCodeButton.onClick.AddListener(OnCopyCodeClicked);
 
-            var bottomRule = new GameObject("SectionDivider", typeof(RectTransform), typeof(Image));
-            bottomRule.transform.SetParent(section, false);
-            bottomRule.GetComponent<Image>().color = UITheme.Track;
-            bottomRule.GetComponent<Image>().raycastTarget = false;
-            UITheme.SetPreferredHeight(bottomRule, 2f);
+            // Cute kit: the code sits on the navy room-code block, white Copy button.
+            var block = _roomSection.AddComponent<Image>();
+            UITheme.StyleShape(block, UITheme.CuteRoomCodeSprite, Color.white);
+            block.raycastTarget = false;
+            layout.spacing = 2f;
+            heading.color = new Color(0.82f, 0.88f, 1f);
+            UITheme.StyleButton(_copyCodeButton, UIButtonStyle.White);
+            buttonElement.preferredWidth = 250f;
+            buttonElement.preferredHeight = 64f;
+            UITheme.SetPreferredHeight(copyRow, 66f);
+            _copyCodeLabel.fontSize = 24;
+            heading.fontSize = 20;
+            _roomCodeValue.fontSize = 72;
+            codeElement.preferredHeight = 92f;
+            UITheme.SetPreferredHeight(codeRow, 92f);
+            layout.padding = new RectOffset(22, 22, 18, 24);
 
             _roomSection.SetActive(false);
         }
@@ -296,6 +307,47 @@ namespace CoopGame.Network
                 }
             }
             ApplyKitLabels();
+            ApplyCuteLook();
+        }
+
+        /// <summary>Cute kit pause card (Canva page 69): beige card, "PAUSE" on a wooden plank, glossy buttons, tapes.</summary>
+        private void ApplyCuteLook()
+        {
+            if (_pausePanel == null) return;
+            var card = (RectTransform)_pausePanel.transform;
+            UITheme.StyleCuteCard(_pausePanel.GetComponent<Image>());
+            card.sizeDelta = new Vector2(CuteCardWidth, card.sizeDelta.y);
+            if (_pausePanel.TryGetComponent(out VerticalLayoutGroup layout))
+            {
+                layout.padding = new RectOffset(60, 60, 104, 64);
+                layout.spacing = 18f;
+            }
+            foreach (string name in new[] { "PauseTitle", "Divider" })
+            {
+                Transform child = _pausePanel.transform.Find(name);
+                if (child != null) child.gameObject.SetActive(false);
+            }
+            if (_pausePanel.transform.Find("CutePlank") == null)
+            {
+                Text plank = UITheme.MakeCutePlank(_pausePanel.transform, "PAUSE", 360f, 110f, 0f, 46);
+                UITheme.SetWeight(plank, UITheme.FontBold);
+                UITheme.AddCuteTape(_pausePanel.transform, 4, Vector2.zero, new Vector2(22f, 38f), 35f, 104f);
+                UITheme.AddCuteTape(_pausePanel.transform, 6, new Vector2(1f, 0f), new Vector2(-22f, 38f), -35f, 104f);
+            }
+            CuteButton(_continueButton, UIButtonStyle.Pink, 88f);
+            CuteButton(_settingsButton, UIButtonStyle.White, 80f);
+            CuteButton(_quitToMenuButton, UIButtonStyle.White, 80f);
+            SetButtonLabel(_quitToMenuButton, "ออกจากเกม");
+        }
+
+        private const float CuteCardWidth = 560f;
+
+        private static void CuteButton(Button button, UIButtonStyle style, float height)
+        {
+            if (button == null) return;
+            UITheme.StyleButton(button, style);
+            if (button.TryGetComponent(out LayoutElement element)) { element.preferredHeight = height; element.minHeight = height; }
+            foreach (Text label in button.GetComponentsInChildren<Text>(true)) label.fontSize = 32;
         }
 
         /// <summary>UI kit pause mockup: white "PAUSE" title, Thai button labels, beige settings panel.</summary>

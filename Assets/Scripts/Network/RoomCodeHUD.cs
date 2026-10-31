@@ -64,79 +64,138 @@ namespace CoopGame.Network
         [Tooltip("Show the always-visible top-left card. Off: the code is shown in the Pause menu instead.")]
         [SerializeField] private bool _showCard = false;
 
-        // Compact, readable card matching LevelSessionHUD (1080p reference pixels; labels ≈11 px at 720p).
-        private const float CardWidth = 300f, CopyButtonWidth = 150f, CopyRowHeight = 38f;
-        private const int CodeFontSize = 36, NamesFontSize = 17;
-
         /// <summary>
-        /// Restyles the scene-built (or runtime-built) card with <see cref="UITheme"/> and compacts it at
-        /// runtime (readable sizes, height fitted to content, standard card padding) so Lobby.unity needs
-        /// no re-save. References and behaviour are untouched.
+        /// Replaces the scene-built (or runtime-built) card with the cute kit layout at runtime, so Lobby.unity
+        /// needs no re-save. Behaviour is untouched; the text references are re-pointed at the new card.
         /// </summary>
         internal void ApplyTheme()
         {
-            RectTransform card = null;
-            foreach (Image image in GetComponentsInChildren<Image>(true))
-            {
-                if (image.GetComponent<Button>() != null) continue;
-                if (image.name == "Divider")
-                {
-                    image.color = UITheme.Track;
-                    UITheme.SetPreferredHeight(image.gameObject, 2f);
-                }
-                else
-                {
-                    UITheme.StylePanel(image);
-                    if (card == null) card = image.rectTransform;
-                }
-            }
-            UITheme.ReplaceEmojiIn(transform);
-            UITheme.StyleButton(_copyButton, UIButtonStyle.Secondary);
-            foreach (Text text in GetComponentsInChildren<Text>(true))
-            {
-                text.verticalOverflow = VerticalWrapMode.Overflow;
-                text.lineSpacing = 1f;
-                if (text.GetComponentInParent<Button>(true) != null)
-                {
-                    text.fontSize = UITheme.CardLabelFontSize;
-                    continue;
-                }
-                UITextRole role = text == _modeLabel || text == _copyFeedbackText ? UITextRole.Positive :
-                    text == _roomCodeText || text == _playerNamesText ? UITextRole.Primary : UITextRole.Accent;
-                UITheme.StyleText(text, role);
-                text.fontSize = text == _roomCodeText ? CodeFontSize : text == _playerNamesText ? NamesFontSize : UITheme.CardLabelFontSize;
-                text.fontStyle = text == _playerNamesText ? FontStyle.Normal : FontStyle.Bold;
-            }
-            if (card != null) CompactLayout(card);
+            BuildCuteCard();
         }
 
-        private void CompactLayout(RectTransform card)
+        // ── Cute kit lobby card (Canva page 68): blue room-code block + light player list with 4 slots ──
+        private const int MaxSlots = 4;
+        private const float CuteWidth = 340f, CodeBlockHeight = 124f, RowHeight = 46f, RowGap = 8f;
+        private readonly Image[] _rowBg = new Image[MaxSlots], _rowIcon = new Image[MaxSlots], _rowFace = new Image[MaxSlots];
+        private readonly Text[] _rowName = new Text[MaxSlots], _rowHost = new Text[MaxSlots];
+        private bool _cuteBuilt;
+
+        private void BuildCuteCard()
         {
-            UITheme.CompactCard(card, CardWidth);
-            Transform header = _modeLabel != null ? _modeLabel.transform.parent : null;
-            if (header != null && header != card.transform) UITheme.SpreadRow(header, 26f);
-            if (_roomCodeText != null) UITheme.SetPreferredHeight(_roomCodeText.gameObject, CodeFontSize + 10f);
-            if (_playerCountText != null) UITheme.SetPreferredHeight(_playerCountText.gameObject, 24f);
-            if (_playerNamesText != null) UITheme.SetPreferredHeight(_playerNamesText.gameObject, -1f); // fit the list
-
-            Transform copyRow = _copyButton != null ? _copyButton.transform.parent : null;
-            if (copyRow != null && copyRow != card.transform)
+            if (_cuteBuilt) return;
+            _cuteBuilt = true;
+            // Replace the old dark card (scene-built or runtime-built) with the kit layout; the text fields are re-pointed.
+            for (int i = transform.childCount - 1; i >= 0; i--)
             {
-                UITheme.SetPreferredHeight(copyRow.gameObject, CopyRowHeight);
-                SizeInRow((RectTransform)_copyButton.transform, CopyButtonWidth);
-                if (_copyFeedbackText != null) SizeInRow(_copyFeedbackText.rectTransform, 120f);
+                GameObject old = transform.GetChild(i).gameObject;
+                old.SetActive(false);
+                Destroy(old);
             }
-            LayoutRebuilder.ForceRebuildLayoutImmediate(card);
+            _copyButton = null; _copyFeedbackText = null; _playerNamesText = null;
+
+            var root = new GameObject("CuteRoomCard", typeof(RectTransform));
+            root.transform.SetParent(transform, false);
+            var rootRect = (RectTransform)root.transform;
+            rootRect.anchorMin = rootRect.anchorMax = rootRect.pivot = new Vector2(0f, 1f);
+            rootRect.anchoredPosition = new Vector2(24f, -24f);
+            float listHeight = 62f + MaxSlots * RowHeight + (MaxSlots - 1) * RowGap + 22f;
+            rootRect.sizeDelta = new Vector2(CuteWidth, CodeBlockHeight + listHeight - 18f);
+
+            // Player list (drawn first so the code block overlaps its top).
+            Image list = Panel(root.transform, "PlayerList", UITheme.CutePlayerListSprite,
+                new Vector2(10f, -(CodeBlockHeight - 18f)), new Vector2(CuteWidth - 20f, listHeight));
+            _playerCountText = UITheme.MakeText(list.transform, "PlayerCountText", "PLAYERS (1/4)", 17, UITextRole.OnLight);
+            UITheme.StyleCuteText(_playerCountText, true);
+            UITheme.SetWeight(_playerCountText, UITheme.FontMedium);
+            Place(_playerCountText.rectTransform, new Vector2(22f, -26f), new Vector2(CuteWidth - 60f, 28f));
+            for (int i = 0; i < MaxSlots; i++)
+            {
+                float y = -62f - i * (RowHeight + RowGap);
+                _rowBg[i] = Panel(list.transform, "Row" + (i + 1), UITheme.CutePlayerRowSprite(false), new Vector2(12f, y), new Vector2(CuteWidth - 44f, RowHeight));
+                _rowIcon[i] = Panel(_rowBg[i].transform, "Icon", UITheme.CutePlayerIcon(false), new Vector2(8f, -5f), new Vector2(36f, 36f));
+                _rowIcon[i].type = Image.Type.Simple;
+                _rowFace[i] = Panel(_rowIcon[i].transform, "Face", UITheme.FaceForClient((ulong)i), new Vector2(5f, -5f), new Vector2(26f, 26f));
+                _rowFace[i].type = Image.Type.Simple; _rowFace[i].preserveAspect = true;
+                _rowName[i] = UITheme.MakeText(_rowBg[i].transform, "Name", "Waiting...", 17, UITextRole.OnLight);
+                UITheme.StyleCuteText(_rowName[i]);
+                _rowName[i].horizontalOverflow = HorizontalWrapMode.Overflow;
+                Place(_rowName[i].rectTransform, new Vector2(54f, -RowHeight * 0.5f + 1f), new Vector2(180f, 30f), true);
+                _rowHost[i] = UITheme.MakeText(_rowBg[i].transform, "Host", "HOST", 14, UITextRole.OnLight, TextAnchor.MiddleRight);
+                UITheme.SetWeight(_rowHost[i], UITheme.FontSemiBold);
+                _rowHost[i].color = new Color(0.85f, 0.55f, 0f);
+                Place(_rowHost[i].rectTransform, new Vector2(CuteWidth - 44f - 70f, -RowHeight * 0.5f + 1f), new Vector2(58f, 24f), true);
+            }
+            UITheme.AddCuteTape(list.transform, 6, new Vector2(0f, 0f), new Vector2(4f, 10f), 35f, 64f);
+
+            // Room code block.
+            Image code = Panel(root.transform, "RoomCodeBlock", UITheme.CuteRoomCodeSprite, Vector2.zero, new Vector2(CuteWidth, CodeBlockHeight));
+            Text heading = UITheme.MakeText(code.transform, "HeaderTitle", "ROOM CODE", 16, UITextRole.Secondary);
+            heading.color = new Color(0.82f, 0.88f, 1f);
+            Place(heading.rectTransform, new Vector2(24f, -30f), new Vector2(200f, 24f), true);
+            _roomCodeText = UITheme.MakeText(code.transform, "RoomCodeText", "------", 40, UITextRole.Primary);
+            UITheme.SetWeight(_roomCodeText, UITheme.FontSemiBold);
+            _roomCodeText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            Place(_roomCodeText.rectTransform, new Vector2(24f, -72f), new Vector2(220f, 48f), true);
+            Image badge = Panel(code.transform, "ModeBadge", UITheme.Kit("CuteButtonGreen"), new Vector2(CuteWidth - 116f, -46f), new Vector2(96f, 42f));
+            _modeLabel = UITheme.MakeText(badge.transform, "ModeLabel", "HOST", 16, UITextRole.Primary, TextAnchor.MiddleCenter);
+            UITheme.SetWeight(_modeLabel, UITheme.FontSemiBold);
+            ProceduralUIUtility.StretchFull(_modeLabel.rectTransform);
+            _modeLabel.rectTransform.offsetMin = new Vector2(0f, 3f);
+            UITheme.AddCuteTape(code.transform, 5, new Vector2(0f, 1f), new Vector2(10f, -8f), 35f, 62f);
         }
 
-        private static void SizeInRow(RectTransform rect, float width)
+        private static Image Panel(Transform parent, string name, Sprite sprite, Vector2 topLeft, Vector2 size)
         {
-            rect.sizeDelta = new Vector2(width, CopyRowHeight);
-            var element = rect.GetComponent<LayoutElement>();
-            if (element == null) element = rect.gameObject.AddComponent<LayoutElement>();
-            element.preferredWidth = width;
-            element.preferredHeight = CopyRowHeight;
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rect = (RectTransform)go.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = topLeft;
+            rect.sizeDelta = size;
+            Image image = go.GetComponent<Image>();
+            UITheme.StyleShape(image, sprite, Color.white);
+            image.raycastTarget = false;
+            return image;
         }
+
+        /// <summary>Top-left placement; <paramref name="midLeft"/> pins the left-centre at <paramref name="pos"/> instead.</summary>
+        private static void Place(RectTransform rect, Vector2 pos, Vector2 size, bool midLeft = false)
+        {
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = midLeft ? new Vector2(0f, 0.5f) : new Vector2(0f, 1f);
+            rect.anchoredPosition = midLeft ? pos : pos + new Vector2(0f, size.y * 0.5f);
+            rect.sizeDelta = size;
+        }
+
+        /// <summary>Fills the 4 player slots: local player shows "You", the host row a HOST tag, empty slots "Waiting...".</summary>
+        private void RefreshRows(List<string> names, bool local)
+        {
+            if (!_cuteBuilt) return;
+            var mgr = SteamLobbyManager.Instance;
+            string self = mgr != null && !local && mgr.IsSteamInitialized ? mgr.SteamPlayerName : null;
+            var nm = NetworkManager.Singleton;
+            bool selfIsHost = nm != null && nm.IsHost;
+            int selfIndex = -1;
+            for (int i = 0; i < names.Count && selfIndex < 0; i++)
+                if (self != null && StripHost(names[i]) == self) selfIndex = i;
+            if (selfIndex < 0 && (local || selfIsHost) && names.Count > 0) selfIndex = 0;
+
+            for (int i = 0; i < MaxSlots; i++)
+            {
+                if (_rowBg[i] == null) continue;
+                bool joined = i < names.Count;
+                bool you = joined && i == selfIndex;
+                _rowBg[i].sprite = UITheme.CutePlayerRowSprite(you);
+                _rowIcon[i].sprite = UITheme.CutePlayerIcon(joined);
+                _rowFace[i].enabled = joined;
+                _rowName[i].text = !joined ? "Waiting..." : you ? "You" : StripHost(names[i]);
+                _rowName[i].color = joined ? UITheme.CuteInk : UITheme.CuteInkSoft;
+                _rowHost[i].enabled = joined && names[i].EndsWith(" (Host)");
+            }
+        }
+
+        private static string StripHost(string name) =>
+            name.EndsWith(" (Host)") ? name.Substring(0, name.Length - " (Host)".Length) : name;
 
         private void Start()
         {
@@ -201,7 +260,7 @@ namespace CoopGame.Network
                     ? mgr.CurrentRoomCode : "------";
 
             if (_modeLabel != null && nm != null)
-                _modeLabel.text = local ? "● SOLO" : nm.IsHost ? "● HOST" : (nm.IsServer ? "● SERVER" : "● CLIENT");
+                _modeLabel.text = local ? "SOLO" : nm.IsHost ? "HOST" : (nm.IsServer ? "SERVER" : "CLIENT");
 
             if (_copyButton != null)
             {
@@ -223,6 +282,7 @@ namespace CoopGame.Network
             {
                 _playerCountText.text = $"PLAYERS ({count}/{(local ? 1 : 4)})";
             }
+            RefreshRows(names, local);
 
             if (_playerNamesText != null)
             {

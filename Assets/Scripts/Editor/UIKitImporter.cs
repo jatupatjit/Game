@@ -15,7 +15,7 @@ public static class UIKitImporter
     private const string OutputDir = "Assets/Art/UI/Resources/UIKit";
 
     // source file, output name, scale, 9-slice border L,B,R,T (in output pixels; 0 = simple sprite), max size
-    private struct Entry
+    public struct Entry
     {
         public string Source, Output; public float Scale; public Vector4 Border; public int MaxSize;
         public Entry(string s, string o, float scale, Vector4 border, int max = 1024)
@@ -54,6 +54,37 @@ public static class UIKitImporter
         new Entry("BG Blur.png",                "BackdropBlur",      0.55f, Vector4.zero, 1024),
     };
 
+    // Second kit (Canva pages 64-74, 2026-10-31): beige cards, wooden plank title, glossy buttons, lobby
+    // player list. Source paths are full asset paths; built by Tools/UI Kit/Rebuild Cute Sprites.
+    private const string CuteDir = "Assets/ThirdParty/UI เพิ่ม/";
+    private static readonly Entry[] CuteEntries =
+    {
+        new Entry(CuteDir + "BG.png",                         "CuteCard",          1.00f, new Vector4(46, 46, 46, 46), 512),
+        new Entry(CuteDir + "Long_BG.png",                    "CuteCardWide",      0.50f, new Vector4(70, 60, 70, 74), 1024),
+        new Entry(CuteDir + "Plank sign (มีเงา).png",          "CutePlank",         1.00f, new Vector4(30, 22, 30, 22), 512),
+        new Entry(CuteDir + "Pink Button (มีเงา).png",         "CuteButtonPink",    1.00f, new Vector4(26, 28, 26, 22), 512),
+        new Entry(CuteDir + "Blue Button (มีเงา).png",         "CuteButtonBlue",    1.00f, new Vector4(26, 28, 26, 22), 512),
+        new Entry(CuteDir + "White Button (มีเงา).png",        "CuteButtonWhite",   1.00f, new Vector4(26, 28, 26, 22), 512),
+        new Entry(CuteDir + "Short_White Button (มีเงา).png",  "CuteButtonWhiteShort", 1.00f, new Vector4(26, 28, 26, 22), 512),
+        new Entry(CuteDir + "Green Button.png",               "CuteButtonGreen",   1.00f, new Vector4(18, 14, 18, 14), 512),
+        new Entry(CuteDir + "Lobby Room Code.png",            "CuteRoomCodeBlock", 1.00f, new Vector4(36, 36, 36, 36), 512),
+        new Entry(CuteDir + "Lobby Waiting.png",              "CutePlayerList",    1.00f, new Vector4(36, 36, 36, 36), 512),
+        new Entry(CuteDir + "Player Waiting(You).png",        "CutePlayerRowYou",  1.00f, new Vector4(24, 22, 24, 22), 512),
+        new Entry(CuteDir + "Player Waiting.png",             "CutePlayerRow",     1.00f, new Vector4(24, 22, 24, 22), 512),
+        new Entry(CuteDir + "Icon_Player Come.png",           "CuteIconJoined",    1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Icon_Player Waiting.png",        "CuteIconWaiting",   1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape.png",                       "CuteTape1",         1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape2.png",                      "CuteTape2",         1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape3.png",                      "CuteTape3",         1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape4.png",                      "CuteTape4",         1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape5.png",                      "CuteTape5",         1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape6.png",                      "CuteTape6",         1.00f, Vector4.zero, 128),
+        new Entry(CuteDir + "Tape7.png",                      "CuteTape7",         1.00f, Vector4.zero, 128),
+    };
+
+    [MenuItem("Tools/UI Kit/Rebuild Cute Sprites")]
+    public static void RebuildCuteMenu() => Debug.Log(Rebuild(CuteEntries));
+
     /// <summary>Creates/updates Assets/Art/UI/Resources/UIFontSet.asset pointing at the Mitr weights.</summary>
     [MenuItem("Tools/UI Kit/Rebuild Font Set")]
     public static string RebuildFontSet()
@@ -76,13 +107,15 @@ public static class UIKitImporter
     [MenuItem("Tools/UI Kit/Rebuild Sprites")]
     public static void RebuildMenu() => Debug.Log(Rebuild());
 
-    public static string Rebuild()
+    public static string Rebuild() => Rebuild(Entries);
+
+    public static string Rebuild(Entry[] entries)
     {
         Directory.CreateDirectory(OutputDir);
         var log = new System.Text.StringBuilder();
-        foreach (Entry e in Entries)
+        foreach (Entry e in entries)
         {
-            string src = Path.Combine(SourceDir, e.Source);
+            string src = e.Source.StartsWith("Assets/") ? e.Source : Path.Combine(SourceDir, e.Source);
             if (!File.Exists(src)) { log.AppendLine("MISSING " + src); continue; }
             var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             tex.LoadImage(File.ReadAllBytes(src));
@@ -95,7 +128,7 @@ public static class UIKitImporter
             Object.DestroyImmediate(outTex);
         }
         AssetDatabase.Refresh();
-        foreach (Entry e in Entries)
+        foreach (Entry e in entries)
         {
             string path = $"{OutputDir}/{e.Output}.png";
             if (!(AssetImporter.GetAtPath(path) is TextureImporter importer)) continue;

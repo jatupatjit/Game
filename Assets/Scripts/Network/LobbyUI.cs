@@ -135,10 +135,104 @@ namespace CoopGame.Network
                         element.preferredHeight = Mathf.Max(element.preferredHeight, size + 8f);
                 }
             }
+            if (card != null) ApplyCuteLook((RectTransform)card);
             if (card != null) CompactLayout((RectTransform)card);
         }
 
         private const int SubtitleFontSize = 16, MinLabelFontSize = 15, MinButtonFontSize = 16;
+
+        // ── Cute kit (Canva pages 65-67): beige card, wooden plank title per screen, glossy buttons ──
+        private Text _plankTitle;
+        private const float CuteCardWidth = 620f, CuteButtonHeight = 86f, CuteSmallButtonHeight = 76f;
+
+        private void ApplyCuteLook(RectTransform card)
+        {
+            UITheme.StyleCuteCard(card.GetComponent<Image>());
+            card.sizeDelta = new Vector2(CuteCardWidth, card.sizeDelta.y);
+            if (card.TryGetComponent(out VerticalLayoutGroup layout))
+            {
+                layout.padding = new RectOffset(66, 66, 100, 58); // top band leaves room for the plank
+                layout.spacing = 20f;
+            }
+            if (_plankTitle == null)
+            {
+                _plankTitle = UITheme.MakeCutePlank(card, "", 430f, 108f, 0f, 38);
+                UITheme.AddCuteTape(card, 2, new Vector2(0f, 1f), new Vector2(22f, -34f), 30f, 100f);
+                UITheme.AddCuteTape(card, 1, new Vector2(1f, 0f), new Vector2(-36f, 30f), -25f, 100f);
+            }
+
+            // Titles move onto the plank.
+            foreach (string name in new[] { "TitleLabel", "SubTitle", "ConnectingTitle", "SettingsTitle" })
+            {
+                Text text = FindText(name);
+                if (text == null) continue;
+                text.gameObject.SetActive(false);
+                UITheme.SetPreferredHeight(text.gameObject, 0f);
+            }
+
+            CuteButton(_hostRoomMenuButton, UIButtonStyle.Pink);
+            CuteButton(_settingsMenuButton, UIButtonStyle.White);
+            CuteButton(_quitGameButton, UIButtonStyle.White);
+            CuteButton(_hostButton, UIButtonStyle.Pink);
+            CuteButton(_joinButton, UIButtonStyle.Blue);
+            CuteButton(_backFromHostRoomButton, UIButtonStyle.White, CuteSmallButtonHeight);
+            CuteButton(_confirmJoinButton, UIButtonStyle.Pink);
+            CuteButton(_backFromJoinButton, UIButtonStyle.White, CuteSmallButtonHeight);
+            CuteButton(_backFromSettingsButton, UIButtonStyle.White, CuteSmallButtonHeight);
+            CuteButton(_cancelConnectingButton, UIButtonStyle.White, CuteSmallButtonHeight);
+            if (_pasteCodeButton != null)
+            {
+                UITheme.StyleButton(_pasteCodeButton, UIButtonStyle.WhiteShort);
+                if (_pasteCodeButton.TryGetComponent(out LayoutElement paste)) { paste.preferredWidth = 118f; paste.preferredHeight = 76f; }
+                ((RectTransform)_pasteCodeButton.transform).sizeDelta = new Vector2(118f, 76f); // InputRow does not control widths
+                foreach (Text label in _pasteCodeButton.GetComponentsInChildren<Text>(true)) label.fontSize = 26;
+            }
+
+            if (_roomCodeInput != null && _roomCodeInput.targetGraphic is Image well)
+            {
+                UITheme.StyleShape(well, UITheme.SmallSprite, UITheme.CuteWell);
+                if (_roomCodeInput.TryGetComponent(out LayoutElement input)) { input.preferredWidth = 360f; input.preferredHeight = 76f; }
+                ((RectTransform)_roomCodeInput.transform).sizeDelta = new Vector2(360f, 76f);
+                if (_roomCodeInput.placeholder is Text hint) hint.fontSize = 24;
+                if (_roomCodeInput.transform.parent.TryGetComponent(out LayoutElement row)) row.preferredHeight = 76f;
+                if (_roomCodeInput.textComponent != null) _roomCodeInput.textComponent.fontSize = 32;
+            }
+
+            foreach (SpinnerAnimator spinner in GetComponentsInChildren<SpinnerAnimator>(true))
+                if (spinner.TryGetComponent(out Image ring)) ring.color = UITheme.CuteAccent;
+
+            foreach (Text text in GetComponentsInChildren<Text>(true))
+            {
+                if (text == _plankTitle || text == _statusMessageLabel) continue;
+                if (text.GetComponentInParent<Button>(true) != null || text.GetComponentInParent<InputField>(true) != null) continue;
+                if (text.transform.parent != null && text.transform.parent.name == "CutePlank") continue;
+                UITheme.StyleCuteText(text, text.name == "ConnectingSub" || text.name == "BlankNote");
+                text.fontSize = text.name == "ConnectingSub" ? 20 : 26;
+                if (text.TryGetComponent(out LayoutElement element) && element.preferredHeight > 0f)
+                    element.preferredHeight = Mathf.Max(element.preferredHeight, text.fontSize + 12f);
+            }
+        }
+
+        private static void CuteButton(Button button, UIButtonStyle style, float height = CuteButtonHeight)
+        {
+            if (button == null) return;
+            UITheme.StyleButton(button, style);
+            if (button.TryGetComponent(out LayoutElement element)) { element.preferredHeight = height; element.minHeight = height; }
+            foreach (Text label in button.GetComponentsInChildren<Text>(true)) label.fontSize = Mathf.Max(label.fontSize, 30);
+        }
+
+        private void UpdatePlank(MenuState state)
+        {
+            if (_plankTitle == null) return;
+            switch (state)
+            {
+                case MenuState.HostRoom:   _plankTitle.text = "เลือกโหมดการเล่น"; break;
+                case MenuState.Join:       _plankTitle.text = "เข้าห้องด้วยรหัส"; break;
+                case MenuState.Settings:   _plankTitle.text = "ตั้งค่า"; break;
+                case MenuState.Connecting: _plankTitle.text = "กำลังเข้าเกม"; break;
+                default:                   _plankTitle.text = "DON'T DROP IT"; break;
+            }
+        }
 
         /// <summary>Applies one Thai copy set to both serialized and runtime-built lobby hierarchies.</summary>
         private void LocalizeThai()
@@ -383,6 +477,7 @@ namespace CoopGame.Network
         private void ShowPanel(MenuState state)
         {
             _currentState = state;
+            UpdatePlank(state);
             SetActive(_mainPanel,       state == MenuState.Main);
             SetActive(_hostRoomPanel,   state == MenuState.HostRoom);
             SetActive(_joinPanel,       state == MenuState.Join);
@@ -436,7 +531,7 @@ namespace CoopGame.Network
         {
             if (_statusMessageLabel == null) return;
             _statusMessageLabel.text  = LocalizeStatus(msg);
-            _statusMessageLabel.color = isError ? UITheme.Danger : UITheme.TextSecondary;
+            _statusMessageLabel.color = isError ? UITheme.Danger : UITheme.CuteInkSoft;
         }
 
         private static string LocalizeStatus(string status)

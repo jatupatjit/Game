@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>Button roles of the UI kit theme.</summary>
-public enum UIButtonStyle { Primary, Secondary, Danger }
+public enum UIButtonStyle { Primary, Secondary, Danger, Pink, Blue, White, WhiteShort, Green }
 
 /// <summary>Text roles of the UI kit theme. OnLight is dark text for beige panels.</summary>
 public enum UITextRole { Primary, Secondary, Accent, OnPrimary, Positive, Danger, OnLight }
@@ -42,6 +42,14 @@ public static class UITheme
     public static readonly Color Placeholder   = Hex("#E9DCDF80");
     /// <summary>Not a UI accent: matches the player's blue body so face previews read as on the character.</summary>
     public static readonly Color FacePreview   = Hex("#2D7DF5");
+
+    // Cute kit (Canva pages 64-74): beige cards, navy text, wooden plank titles.
+    public static readonly Color CuteInk       = Hex("#2E3B73");        // navy text on beige / white buttons
+    public static readonly Color CuteInkSoft   = Hex("#6F75A8");        // secondary text on beige
+    public static readonly Color CutePlankText = Hex("#FFF7EE");        // cream title on the wooden plank
+    public static readonly Color CuteAccent    = Hex("#3F8CFF");        // spinner / highlights
+    public static readonly Color CuteNavyPanel = Hex("#1F2C47EB");      // card view info panel
+    public static readonly Color CuteWell      = Hex("#2C3E73");        // room-code input well
 
     /// <summary>Meters below this ratio switch to <see cref="Danger"/>.</summary>
     public const float LowRatio = 0.3f;
@@ -81,6 +89,17 @@ public static class UITheme
     public static Sprite IconStrength => Kit("IconStrength");
     public static Sprite IconCube => Kit("IconCube");
     public static Sprite IconCargoHud => Kit("IconCargoHud");
+    // Cute kit sprites (Tools/UI Kit/Rebuild Cute Sprites, sources in Assets/ThirdParty/UI เพิ่ม).
+    public static Sprite CuteCardSprite => Kit("CuteCard");
+    public static Sprite CuteCardWideSprite => Kit("CuteCardWide");
+    public static Sprite CutePlankSprite => Kit("CutePlank");
+    public static Sprite CuteRoomCodeSprite => Kit("CuteRoomCodeBlock");
+    public static Sprite CutePlayerListSprite => Kit("CutePlayerList");
+    public static Sprite CutePlayerRowSprite(bool you) => Kit(you ? "CutePlayerRowYou" : "CutePlayerRow");
+    public static Sprite CutePlayerIcon(bool joined) => Kit(joined ? "CuteIconJoined" : "CuteIconWaiting");
+    /// <summary>Tape strips 1-7 as drawn in the kit.</summary>
+    public static Sprite CuteTape(int index) => Kit("CuteTape" + Mathf.Clamp(index, 1, 7));
+
     /// <summary>Tintable rounded shape with a darker rim (chips, tracks, banners, tooltips).</summary>
     public static Sprite SmallSprite => ProceduralUIUtility.GetRoundedSprite(10, 2, 0.55f);
     /// <summary>Tintable rounded fill without rim (bar fills).</summary>
@@ -184,7 +203,36 @@ public static class UITheme
     /// <summary>Tint applied to the button sprite (kit sprites are already coloured, so mostly white).</summary>
     public static Color ButtonColor(UIButtonStyle style) => style == UIButtonStyle.Danger ? Danger : Color.white;
 
-    public static Color ButtonTextColor(UIButtonStyle style) => style == UIButtonStyle.Danger ? TextPrimary : OnPrimary;
+    public static Color ButtonTextColor(UIButtonStyle style)
+    {
+        switch (style)
+        {
+            case UIButtonStyle.Danger:
+            case UIButtonStyle.Pink:
+            case UIButtonStyle.Blue:
+            case UIButtonStyle.Green: return TextPrimary;
+            case UIButtonStyle.White:
+            case UIButtonStyle.WhiteShort: return CuteInk;
+            default: return OnPrimary;
+        }
+    }
+
+    /// <summary>True for the glossy cute-kit buttons (drop shadow under the art).</summary>
+    public static bool IsCute(UIButtonStyle style) => style >= UIButtonStyle.Pink;
+
+    public static Sprite ButtonSprite(UIButtonStyle style)
+    {
+        switch (style)
+        {
+            case UIButtonStyle.Primary: return ButtonPrimarySprite;
+            case UIButtonStyle.Pink: return Kit("CuteButtonPink");
+            case UIButtonStyle.Blue: return Kit("CuteButtonBlue");
+            case UIButtonStyle.White: return Kit("CuteButtonWhite");
+            case UIButtonStyle.WhiteShort: return Kit("CuteButtonWhiteShort");
+            case UIButtonStyle.Green: return Kit("CuteButtonGreen");
+            default: return ButtonSecondarySprite;
+        }
+    }
 
     public static Color TextColor(UITextRole role)
     {
@@ -278,7 +326,7 @@ public static class UITheme
     {
         if (button == null) return;
         Color baseColor = ButtonColor(style);
-        Sprite sprite = style == UIButtonStyle.Primary ? ButtonPrimarySprite : ButtonSecondarySprite;
+        Sprite sprite = ButtonSprite(style);
         if (button.targetGraphic is Image image) StyleShape(image, sprite, Color.white);
         else if (button.targetGraphic != null) button.targetGraphic.color = Color.white;
 
@@ -299,7 +347,103 @@ public static class UITheme
             text.font = FontMedium;
             text.color = label;
             text.fontStyle = FontStyle.Normal; // only regular Sarabun ships; synthesized bold smears
+            // Cute buttons carry a ~6 px drop shadow at the bottom: centre the label on the face, not the art.
+            RectTransform rect = text.rectTransform;
+            if (rect.parent == button.transform && rect.anchorMin == Vector2.zero && rect.anchorMax == Vector2.one)
+                rect.offsetMin = new Vector2(rect.offsetMin.x, IsCute(style) ? 6f : 0f);
         }
+    }
+
+    // ── Cute kit builders (Canva pages 64-74) ────────────────────────────────
+    /// <summary>Beige card; <paramref name="wide"/> = the wide arched card (card select, customization).</summary>
+    public static void StyleCuteCard(Image image, bool wide = false)
+    {
+        if (image == null) return;
+        if (wide)
+        {
+            image.sprite = CuteCardWideSprite;
+            image.type = Image.Type.Simple; // the arched top would flatten if sliced
+            image.preserveAspect = false;
+            image.color = Color.white;
+        }
+        else StyleShape(image, CuteCardSprite, Color.white);
+    }
+
+    /// <summary>
+    /// Wooden plank title centred on the card's top edge (ignored by layouts). Returns its label.
+    /// <paramref name="drop"/> is how far the plank centre sits below the card's top edge.
+    /// </summary>
+    public static Text MakeCutePlank(Transform card, string title, float width = 300f, float height = 84f, float drop = 4f, int fontSize = 30)
+    {
+        var go = new GameObject("CutePlank", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+        go.transform.SetParent(card, false);
+        go.GetComponent<LayoutElement>().ignoreLayout = true;
+        var rect = (RectTransform)go.transform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = new Vector2(0f, -drop);
+        rect.sizeDelta = new Vector2(width, height);
+        Image image = go.GetComponent<Image>();
+        StyleShape(image, CutePlankSprite, Color.white);
+        image.raycastTarget = false;
+        Text text = MakeText(go.transform, "Title", title, fontSize, UITextRole.Primary, TextAnchor.MiddleCenter);
+        ProceduralUIUtility.StretchFull(text.rectTransform);
+        text.rectTransform.offsetMin = new Vector2(16f, 8f); // the plank art has a shadow under it
+        text.rectTransform.offsetMax = new Vector2(-16f, -2f);
+        text.horizontalOverflow = HorizontalWrapMode.Overflow;
+        SetWeight(text, FontSemiBold);
+        text.color = CutePlankText;
+        return text;
+    }
+
+    /// <summary>Decorative tape strip (ignored by layouts), anchored on <paramref name="anchor"/> of the parent.</summary>
+    public static Image AddCuteTape(Transform parent, int tape, Vector2 anchor, Vector2 position, float angle, float size = 72f)
+    {
+        var go = new GameObject("Tape" + tape, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+        go.transform.SetParent(parent, false);
+        go.GetComponent<LayoutElement>().ignoreLayout = true;
+        var rect = (RectTransform)go.transform;
+        rect.anchorMin = rect.anchorMax = anchor;
+        rect.anchoredPosition = position;
+        rect.sizeDelta = new Vector2(size, size * 48f / 51f);
+        rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+        Image image = go.GetComponent<Image>();
+        StyleIcon(image, CuteTape(tape));
+        return image;
+    }
+
+    /// <summary>
+    /// Clips <paramref name="art"/> to a rounded rectangle (card illustrations have square corners): inserts a
+    /// mask parent at the art's rect and stretches the art inside it. <paramref name="radius"/> in sprite pixels.
+    /// </summary>
+    public static void RoundCorners(Image art, int radius = 26)
+    {
+        if (art == null || art.transform.parent == null || art.transform.parent.name == "RoundMask") return;
+        RectTransform rect = art.rectTransform;
+        var go = new GameObject("RoundMask", typeof(RectTransform), typeof(Image), typeof(Mask));
+        go.transform.SetParent(rect.parent, false);
+        go.transform.SetSiblingIndex(rect.GetSiblingIndex());
+        var mask = (RectTransform)go.transform;
+        mask.anchorMin = rect.anchorMin; mask.anchorMax = rect.anchorMax; mask.pivot = rect.pivot;
+        mask.anchoredPosition = rect.anchoredPosition; mask.sizeDelta = rect.sizeDelta;
+        Image shape = go.GetComponent<Image>();
+        StyleShape(shape, ProceduralUIUtility.GetRoundedSprite(radius, 0), Color.white);
+        shape.raycastTarget = false;
+        go.GetComponent<Mask>().showMaskGraphic = false;
+        rect.SetParent(go.transform, false);
+        rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one;
+        rect.offsetMin = rect.offsetMax = Vector2.zero;
+        art.preserveAspect = false; // the mask rect already has the card's 640:904 shape
+    }
+
+    /// <summary>Text on a beige card: navy (<paramref name="soft"/> = muted secondary line).</summary>
+    public static void StyleCuteText(Text text, bool soft = false)
+    {
+        if (text == null) return;
+        StyleText(text, UITextRole.OnLight);
+        text.color = soft ? CuteInkSoft : CuteInk;
+        var outline = text.GetComponent<Outline>();
+        if (outline != null) outline.enabled = false;
     }
 
     public static void StyleSlider(Slider slider)
@@ -525,7 +669,7 @@ public static class UITheme
     private static readonly System.Collections.Generic.Dictionary<long, Texture2D> _imguiTextures =
         new System.Collections.Generic.Dictionary<long, Texture2D>();
     private static GUIStyle _imguiBox, _imguiLabel, _imguiField;
-    private static readonly GUIStyle[] _imguiButtons = new GUIStyle[3];
+    private static readonly GUIStyle[] _imguiButtons = new GUIStyle[System.Enum.GetValues(typeof(UIButtonStyle)).Length];
 
     /// <summary>The tintable rounded shape baked to a solid colour (IMGUI cannot tint per style).</summary>
     public static Texture2D ImguiTexture(Color color, bool small)
@@ -596,7 +740,7 @@ public static class UITheme
     {
         int i = (int)style;
         if (_imguiButtons[i] != null) return _imguiButtons[i];
-        Sprite sprite = style == UIButtonStyle.Primary ? ButtonPrimarySprite : ButtonSecondarySprite;
+        Sprite sprite = ButtonSprite(style);
         var s = new GUIStyle(GUI.skin.button) { border = BorderOf(sprite), font = FontMedium, fontSize = 16, richText = true, alignment = TextAnchor.MiddleCenter };
         Texture2D texture = sprite != null ? sprite.texture : ImguiTexture(Primary, true);
         s.normal.background = s.focused.background = s.hover.background = s.active.background = texture;

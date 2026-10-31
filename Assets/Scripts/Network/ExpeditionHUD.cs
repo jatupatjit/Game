@@ -316,8 +316,8 @@ namespace CoopGame.Network
             if (_confirmCard != null) _confirmCard.interactable = selecting && _pendingSlot >= 0;
             if (selecting)
             {
-                _title.text = "เลือกการ์ดสำหรับด่านนี้";
-                _message.text = "สุ่มมา 3 ใบ เลือก 1 ใบด้วยปุ่ม 1–3 หรือคลิกแล้วกดยืนยัน";
+                _title.text = "เลือกการ์ด 1 ใบ";
+                _message.text = "สุ่มมา 3 ใบ เลือกด้วยปุ่ม 1–3 หรือคลิกแล้วกด เลือกใบนี้";
             }
             if (summary)
             {
@@ -581,26 +581,29 @@ namespace CoopGame.Network
             // Full-screen dim + large soft dark panel behind the banner and cards (uGUI has no real blur).
             _modal = Box("Mission Menu", transform, new Vector2(.5f, .5f), Vector2.zero, Vector2.zero, UITheme.Overlay);
             StretchFull(_modal);
-            var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1100, 700), Color.clear);
+            // Cute kit (Canva page 71): wide beige card, plank title, navy message, pink confirm on the bottom edge.
+            var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1320, 730), Color.white);
+            UITheme.StyleCuteCard(panel.GetComponent<Image>(), true);
             panel.GetComponent<Image>().raycastTarget = false;
-            Backdrop(panel.transform);
-            var banner = Box("Banner", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 375), new Vector2(620, 92), UITheme.MissionRed, UITheme.SmallSprite);
-            var leftBack = Box("BannerCardLeft", panel.transform, new Vector2(.5f, .5f), new Vector2(-340, 375), new Vector2(58, 88), Color.white);
-            UITheme.StyleIcon(leftBack.GetComponent<Image>(), UITheme.CardBack(1));
-            leftBack.transform.localRotation = Quaternion.Euler(0, 0, 10f);
-            var rightBack = Box("BannerCardRight", panel.transform, new Vector2(.5f, .5f), new Vector2(340, 375), new Vector2(58, 88), Color.white);
-            UITheme.StyleIcon(rightBack.GetComponent<Image>(), UITheme.CardBack(2));
-            rightBack.transform.localRotation = Quaternion.Euler(0, 0, -10f);
-            _title = Label(banner.transform, "Title", "", 40, Vector2.zero, new Vector2(600, 80), TextAnchor.MiddleCenter);
-            UITheme.SetWeight(_title, UITheme.FontBold);
-            var strip = Box("MessageStrip", panel.transform, new Vector2(.5f, .5f), new Vector2(0, 300), new Vector2(760, 56), UITheme.SolidPanel, UITheme.SmallSprite);
-            strip.GetComponent<Image>().raycastTarget = false;
-            _message = Label(strip.transform, "Message", "", 22, Vector2.zero, new Vector2(740, 52), TextAnchor.MiddleCenter);
+            _title = UITheme.MakeCutePlank(panel.transform, "", 460f, 100f, 6f, 36);
+            UITheme.AddCuteTape(panel.transform, 5, new Vector2(1f, 1f), new Vector2(-130, -70), -28f, 100f);
+            UITheme.AddCuteTape(panel.transform, 2, new Vector2(0f, 0f), new Vector2(110, 90), 30f, 90f);
+            _message = Label(panel.transform, "Message", "", 26, new Vector2(0, 268), new Vector2(1000, 52), TextAnchor.MiddleCenter);
+            UITheme.StyleCuteText(_message);
+            UITheme.SetWeight(_message, UITheme.FontMedium);
 
             _cards = new GameObject("Cards", typeof(RectTransform)); _cards.transform.SetParent(panel.transform, false);
             for (int slot = 0; slot < 3; slot++)
                 CardButton(_cards.transform, slot, new Vector2((slot - 1) * CardSpacing, _cardsY));
-            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -385), new Vector2(320, 70), ConfirmCard, UIButtonStyle.Primary);
+            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -420), new Vector2(380, 96), ConfirmCard, UIButtonStyle.Pink);
+            foreach (Text label in _confirmCard.GetComponentsInChildren<Text>(true)) label.fontSize = 32;
+            // Disabled until a card is picked, but stay fully opaque (the default 60% fade read as broken).
+            var confirmColors = _confirmCard.colors;
+            confirmColors.disabledColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            _confirmCard.colors = confirmColors;
+            // Cards (and the confirm under them) at 86% so they sit inside the card frame like the mockup.
+            _cards.transform.localScale = Vector3.one * 0.86f;
+            ((RectTransform)_cards.transform).anchoredPosition = new Vector2(0, 4);
 
             _shop = new GameObject("Shop", typeof(RectTransform)); _shop.transform.SetParent(panel.transform, false);
             ((RectTransform)_shop.transform).anchoredPosition = new Vector2(0, 95); // shop sits under the raised banner
@@ -609,7 +612,7 @@ namespace CoopGame.Network
             _shopWallet = Label(_shop.transform, "Wallet", "", 22, new Vector2(0, 110), new Vector2(1020, 50), TextAnchor.MiddleCenter, UITextRole.Secondary);
             _buy[0] = Button(_shop.transform, "Stamina Elixir — 40 เหรียญ\nฟื้น Stamina เต็ม 1 ครั้ง", new Vector2(-250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(1));
             _buy[1] = Button(_shop.transform, "Cargo Padding — 60 เหรียญ\nลดความเสียหายครั้งถัดไป 50%\nใช้ขณะจับลัง", new Vector2(250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(2));
-            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(0, -170), new Vector2(340, 66), Dismiss, UIButtonStyle.Primary);
+            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.Pink);
             _modal.SetActive(false);
             BuildView();
         }
@@ -621,14 +624,6 @@ namespace CoopGame.Network
             rect.offsetMin = rect.offsetMax = Vector2.zero;
         }
 
-        /// <summary>Large dark rounded panel (themed panel sprite) behind the card UI, sibling index 0.</summary>
-        private void Backdrop(Transform parent, Vector2? size = null, Vector2? offset = null)
-        {
-            var go = Box("Backdrop", parent, new Vector2(.5f, .5f), offset ?? Vector2.zero, size ?? new Vector2(1280, 930), UITheme.Panel, UITheme.PanelSprite);
-            go.GetComponent<Image>().raycastTarget = false;
-            go.transform.SetAsFirstSibling();
-        }
-
         /// <summary>H card view: same dim + backdrop, own card full-size, teammates as small thumbnails with names.</summary>
         private void BuildView()
         {
@@ -636,29 +631,37 @@ namespace CoopGame.Network
             StretchFull(_view);
             var root = Box("Panel", _view.transform, new Vector2(.5f, .5f), Vector2.zero, _viewPanelSize, Color.clear);
             root.GetComponent<Image>().raycastTarget = false;
-            Backdrop(root.transform, _viewPanelSize, Vector2.zero);
-            var title = Label(root.transform, "Title", "การ์ดของคุณ", 44, new Vector2(0, 410), new Vector2(900, 64), TextAnchor.MiddleCenter);
-            UITheme.SetWeight(title, UITheme.FontBold);
-            // Own card, large, on the left; its name, effect and a plain-language tip on the right.
-            var own = Box("OwnCard", root.transform, new Vector2(.5f, .5f), new Vector2(-400, -15), new Vector2(520, 735), Color.white);
+            // Cute kit (Canva page 72): own card in a beige taped frame on the left, navy info panel on the right.
+            var frame = Box("OwnCardFrame", root.transform, new Vector2(.5f, .5f), new Vector2(-440, 0), new Vector2(560, 780), Color.white);
+            UITheme.StyleCuteCard(frame.GetComponent<Image>());
+            frame.GetComponent<Image>().raycastTarget = false;
+            UITheme.AddCuteTape(frame.transform, 5, new Vector2(0f, 1f), new Vector2(20, -40), 30f, 110f);
+            UITheme.AddCuteTape(frame.transform, 3, new Vector2(0f, 0f), new Vector2(30, 40), -30f, 100f);
+            var own = Box("OwnCard", frame.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(500, 712), Color.white);
             _viewOwnArt = own.GetComponent<Image>();
             _viewOwnArt.preserveAspect = true; _viewOwnArt.raycastTarget = false;
-            _viewName = Label(root.transform, "CardName", "", 54, new Vector2(330, 250), new Vector2(720, 80), TextAnchor.MiddleLeft);
-            UITheme.SetWeight(_viewName, UITheme.FontBold);
-            _viewEffect = Label(root.transform, "CardEffect", "", 36, new Vector2(330, 150), new Vector2(720, 110), TextAnchor.UpperLeft);
-            UITheme.SetWeight(_viewEffect, UITheme.FontSemiBold);
-            _viewTip = Label(root.transform, "CardTip", "", 30, new Vector2(330, 10), new Vector2(720, 170), TextAnchor.UpperLeft, UITextRole.Secondary);
-            _viewMatesTitle = Label(root.transform, "MatesTitle", "การ์ดของเพื่อน", 28, new Vector2(330, -120), new Vector2(720, 40), TextAnchor.MiddleLeft, UITextRole.Secondary);
+            ((RectTransform)own.transform).sizeDelta = new Vector2(500, 706); // card art is 640:904
+            UITheme.RoundCorners(_viewOwnArt, 40);
+            var info = Box("Info", root.transform, new Vector2(.5f, .5f), new Vector2(300, 0), new Vector2(920, 720), UITheme.CuteNavyPanel, UITheme.SmallSprite);
+            info.GetComponent<Image>().raycastTarget = false;
+            Label(info.transform, "Title", "การ์ดของคุณ", 26, new Vector2(0, 312), new Vector2(820, 40), TextAnchor.MiddleLeft, UITextRole.Secondary);
+            _viewName = Label(info.transform, "CardName", "", 58, new Vector2(0, 245), new Vector2(820, 80), TextAnchor.MiddleLeft);
+            UITheme.SetWeight(_viewName, UITheme.FontSemiBold);
+            _viewEffect = Label(info.transform, "CardEffect", "", 36, new Vector2(0, 140), new Vector2(820, 110), TextAnchor.UpperLeft);
+            UITheme.SetWeight(_viewEffect, UITheme.FontMedium);
+            _viewTip = Label(info.transform, "CardTip", "", 26, new Vector2(0, 10), new Vector2(820, 150), TextAnchor.UpperLeft, UITextRole.Secondary);
+            _viewMatesTitle = Label(info.transform, "MatesTitle", "การ์ดของเพื่อน", 24, new Vector2(0, -105), new Vector2(820, 36), TextAnchor.MiddleLeft, UITextRole.Secondary);
             for (int i = 0; i < 3; i++)
             {
-                var mate = Box($"Mate{i + 1}", root.transform, new Vector2(.5f, .5f), new Vector2(150 + i * 230, -300), new Vector2(210, 250), Color.clear);
+                var mate = Box($"Mate{i + 1}", info.transform, new Vector2(.5f, .5f), new Vector2(-300 + i * 200, -225), new Vector2(190, 190), Color.clear);
                 mate.GetComponent<Image>().raycastTarget = false;
-                var art = Box("Art", mate.transform, new Vector2(.5f, .5f), new Vector2(0, 28), new Vector2(125, 176), Color.white);
+                var art = Box("Art", mate.transform, new Vector2(.5f, .5f), new Vector2(0, 18), new Vector2(105, 148), Color.white);
                 _viewMateArt[i] = art.GetComponent<Image>();
                 _viewMateArt[i].preserveAspect = true; _viewMateArt[i].raycastTarget = false;
-                _viewMateName[i] = Label(mate.transform, "Name", "", 22, new Vector2(0, -92), new Vector2(210, 34), TextAnchor.MiddleCenter, UITextRole.Secondary);
+                UITheme.RoundCorners(_viewMateArt[i], 14);
+                _viewMateName[i] = Label(mate.transform, "Name", "", 20, new Vector2(0, -78), new Vector2(190, 30), TextAnchor.MiddleCenter, UITextRole.Secondary);
             }
-            Label(root.transform, "Close", "H / Esc  ปิด", 24, new Vector2(0, -435), new Vector2(500, 36), TextAnchor.MiddleCenter, UITextRole.Secondary);
+            Label(info.transform, "Close", "H / ESC  ปิด", 22, new Vector2(0, -322), new Vector2(500, 34), TextAnchor.MiddleCenter, UITextRole.Secondary);
             _view.SetActive(false);
         }
 
@@ -743,6 +746,7 @@ namespace CoopGame.Network
             _cardArt[slot] = art.GetComponent<Image>();
             _cardArt[slot].preserveAspect = true;
             _cardArt[slot].raycastTarget = false;
+            UITheme.RoundCorners(_cardArt[slot], 30);
 
             var frame = Box("SelectedFrame", root.transform, new Vector2(.5f, .5f), new Vector2(0, -6f), new Vector2(CardWidth * 1.2f, CardHeight * 1.22f), Color.white);
             _cardFrames[slot] = frame.GetComponent<Image>();
