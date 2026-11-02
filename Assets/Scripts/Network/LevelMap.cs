@@ -14,7 +14,7 @@ namespace CoopGame.Network
     /// </summary>
     public sealed class LevelMap : MonoBehaviour
     {
-        private const string Lobby = "Lobby";
+        private const string Lobby = "Lobby", Training = "Tutorial";
         public static bool IsOpen { get; private set; }
 
         private GameObject _root;
@@ -122,9 +122,11 @@ namespace CoopGame.Network
             int previousStars = 3;
             foreach (var (index, name) in Levels())
             {
+                // The training ground has no delivery: always open, and it does not gate the next level.
+                bool training = name == Training;
                 int stars = BestStars(name);
-                bool unlocked = previousStars > 0;
-                previousStars = stars;
+                bool unlocked = training || previousStars > 0;
+                if (!training) previousStars = stars;
                 var node = new GameObject(name, typeof(RectTransform), typeof(Image));
                 node.transform.SetParent(_list, false);
                 ((RectTransform)node.transform).sizeDelta = new Vector2(280f, 300f);
