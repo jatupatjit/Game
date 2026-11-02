@@ -211,10 +211,10 @@ namespace CoopGame.Player
         private Vector3 _holdSpot;
         private bool _holding;
         private const float HoldSpring = 30f;
-        // Carry stance (CarryStance): the body may come this much inside its hold distance, input toward the crate
-        // fades out over the last CarryStanceApproach, and the push back (per m inside, per m/s closing) beats the
-        // walk acceleration (_acceleration 25) so walking cannot shove the body into the crate.
-        private const float CarryStanceInset = .04f, CarryStanceApproach = .08f;
+        // Carry stance (CarryStance): the hips keep CarryBodyClearance (flat) outside the carried crate's box, input
+        // toward the crate fades out over the last CarryStanceApproach before that, and the push back (per m inside,
+        // per m/s closing) beats the walk acceleration (_acceleration 25) so walking cannot shove the body into it.
+        private const float CarryBodyClearance = .20f, CarryStanceApproach = .06f;
         private const float CarryPushSpring = 400f, CarryPushDamper = 10f, CarryPushMax = 60f;
         // Others' screens: a carrier's drawn hips stay this far (flat) outside their crate (KeepDrawnBodyOutOfCargo).
         private const float DrawnBodyClearance = .28f, DrawnBodyHoldMax = .45f, DrawnBodyMaxShift = .9f;
@@ -449,9 +449,12 @@ namespace CoopGame.Player
                 float gain = IsGrounded || Time.time < _boostSteerUntil ? _acceleration : _airAcceleration;
                 // Standing still: hold the spot, so the slippery feet do not let the body creep.
                 Vector3 hold = Vector3.zero;
-                bool still = IsGrounded && desired == Vector3.zero && flatVel.sqrMagnitude < .25f;
+                // Carrying alone without walking: the spot is held even when the crate swinging round a turn drags
+                // the hands (the body used to give way after half a metre and slide off with the crate).
+                bool carryHold = IsGrounded && !moving && _carry != null && _carry.CurrentCarrierCount < 2;
+                bool still = IsGrounded && desired == Vector3.zero && (carryHold || flatVel.sqrMagnitude < .25f);
                 Vector3 hipsFlat = Flat(_bodies[Hips].position);
-                if (!still || !_holding || (hipsFlat - _holdSpot).sqrMagnitude > .25f) { _holdSpot = hipsFlat; _holding = still; }
+                if (!still || !_holding || (!carryHold && (hipsFlat - _holdSpot).sqrMagnitude > .25f)) { _holdSpot = hipsFlat; _holding = still; }
                 else hold = (_holdSpot - hipsFlat) * HoldSpring;
                 accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
@@ -803,7 +806,7 @@ namespace CoopGame.Player
         private void SampleCargoReplica()
         {
             if (_carry == null || HasAuthority) { _cargoReplicaOf = null; _cargoReplicaVel = Vector3.zero; return; }
-            Vector3 position = _carry.transform.position;
+            Vector3 position = CarryGripMid();
             if (_cargoReplicaOf == _carry && Time.deltaTime > 1e-4f)
                 _cargoReplicaVel = Vector3.Lerp(_cargoReplicaVel, Flat(position - _cargoReplicaLast) / Time.deltaTime,
                     1f - Mathf.Exp(-Time.deltaTime / .1f));
@@ -1003,7 +1006,9 @@ namespace CoopGame.Player
         /// per-frame motion on a client).</summary>
         private Vector3 CarriedCargoVelocity()
         {
-            if (HasAuthority && _carry.TryGetComponent(out Rigidbody body)) return Flat(body.linearVelocity);
+            // The grips' own speed, not the crate centre's: a turning crate swings its centre round while the
+            // grips stay in front of the carrier.
+            if (HasAuthority && _carry.TryGetComponent(out Rigidbody body)) return Flat(body.GetPointVelocity(CarryGripMid()));
             return _cargoReplicaOf == _carry ? _cargoReplicaVel : Vector3.zero;
         }
 
@@ -1011,22 +1016,26 @@ namespace CoopGame.Player
         /// Owner, while carrying: the crate leads (it moves with the team's averaged input). The body and its own
         /// crate do not collide, so walking could push the body into the crate: input toward the grips fades out
         /// as the body reaches its hold distance, and a body closer than that is pushed back harder than walking
-        /// pushes in. With no input of its own the body follows the crate's speed, so a stopped partner is drawn
-        /// along instead of braking against the leash.
+        /// pushes in.
         /// </summary>
         private Vector3 CarryStance(Vector3 desired, bool hasInput, Vector3 flatVel, out Vector3 push)
         {
             push = Vector3.zero;
             Vector3 cargoVel = CarriedCargoVelocity();
-            if (!hasInput) desired = Vector3.ClampMagnitude(cargoVel, _sprintSpeed);
-            Vector3 toGrips = Flat(CarryGripMid() - _bodies[Hips].position);
-            float dist = toGrips.magnitude;
-            if (dist < 1e-3f) return desired;
-            Vector3 dir = toGrips / dist;
-            float near = CarryableObject.HoldReach - CarryStanceInset;
+            // No "follow the crate" when idle: the crate moves where this body faces, so following it (alone, or
+            // turning while a partner holds the other end) made the body chase its own crate and slide off. A
+            // stopped partner is drawn along by CarryLeash instead.
+            // Kept out of the crate's box itself, not away from the grips: while turning the crate swings round and
+            // its gripped face sweeps past close to the hips, which a grip-distance test took for clipping and
+            // pushed the body away (it slid off while turning in place).
+            Vector3 hips = _bodies[Hips].position;
+            Vector3 outward = HoldBandShift(_carry, hips, CarryBodyClearance + CarryStanceApproach, float.MaxValue);
+            float gap = outward.magnitude;
+            if (gap < 1e-4f) return desired;
+            Vector3 dir = -outward / gap; // toward the crate
             float into = Vector3.Dot(desired - cargoVel, dir);
-            if (into > 0f) desired -= dir * (into * Mathf.InverseLerp(near + CarryStanceApproach, near, dist));
-            float overlap = near - dist;
+            if (into > 0f) desired -= dir * (into * Mathf.Clamp01(gap / CarryStanceApproach));
+            float overlap = gap - CarryStanceApproach;
             if (overlap > 0f)
             {
                 float closing = Mathf.Max(0f, Vector3.Dot(flatVel - cargoVel, dir));
@@ -1039,11 +1048,13 @@ namespace CoopGame.Player
         private Vector3 CarryLeash(Quaternion facing)
         {
             if (_carry == null) return Vector3.zero;
-            Vector3 grips = CarryGripMid();
-            Vector3 anchor = transform.position + facing * Vector3.forward * CarryableObject.HoldReach;
-            Vector3 error = Flat(grips - anchor);
-            float slack = error.magnitude - .12f;
-            return slack > 0f ? Vector3.ClampMagnitude(error.normalized * slack * _carryLeash * 4f, _carryLeash) : Vector3.zero;
+            // Only the distance to the grips is kept. (Holding the grips in front of the camera dragged the body
+            // sideways whenever the camera turned faster than the crate, so turning in place made it slide.)
+            Vector3 toGrips = Flat(CarryGripMid() - _bodies[Hips].position);
+            float distance = toGrips.magnitude;
+            float slack = Mathf.Abs(distance - CarryableObject.HoldReach) - .12f;
+            if (slack <= 0f || distance < 1e-3f) return Vector3.zero;
+            return toGrips / distance * Mathf.Sign(distance - CarryableObject.HoldReach) * Mathf.Min(slack * _carryLeash * 4f, _carryLeash);
         }
 
         private void AttachCarryHand(int h, Rigidbody cargoBody, Vector3 grip)
@@ -1060,6 +1071,9 @@ namespace CoopGame.Player
             var drive = new JointDrive { positionSpring = 1500f, positionDamper = 60f, maximumForce = _carryHandForce };
             joint.xDrive = joint.yDrive = joint.zDrive = drive;
             joint.enableCollision = false;
+            // The crate (driven by the server's hold pose) must not be tugged by the hands: on the host it is a real
+            // body, and hands pulling it toward the carrier fed back into the carrier's stance and made it slide.
+            joint.connectedMassScale = 20f;
             _carryHand[h] = joint;
         }
 
