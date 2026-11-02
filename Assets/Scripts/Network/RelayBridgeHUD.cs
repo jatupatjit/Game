@@ -11,6 +11,7 @@ namespace CoopGame.Network
     {
         private CoopRelayBridge _bridge;
         private GameObject _panel;
+        private RectTransform _panelRect;
         private Text _status;
         private Image _fill;
         private Transform _player;
@@ -28,7 +29,7 @@ namespace CoopGame.Network
             scaler.referenceResolution = new Vector2(1920, 1080);
             _panel = new GameObject("Progress", typeof(RectTransform), typeof(Image));
             _panel.transform.SetParent(canvas.transform, false);
-            var rect = _panel.GetComponent<RectTransform>();
+            var rect = _panelRect = _panel.GetComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = new Vector2(.5f, 1f);
             rect.pivot = new Vector2(.5f, 1f);
             rect.anchoredPosition = new Vector2(0, -30);
@@ -66,6 +67,9 @@ namespace CoopGame.Network
                 !PauseMenu.IsPaused && !ExpeditionHUD.BlocksGameplayInput;
             if (_panel.activeSelf != visible) _panel.SetActive(visible);
             if (!visible) return;
+            // Below the level HUD's run info chip (same top-centre spot), never on top of it.
+            float top = Mathf.Max(30f, ExpeditionHUD.RunInfoBottom + 12f);
+            if (!Mathf.Approximately(_panelRect.anchoredPosition.y, -top)) _panelRect.anchoredPosition = new Vector2(0f, -top);
             int display = _bridge.ProgressPercent | (_bridge.RequiredPadCount << 8) | (_bridge.OccupiedPadCount << 10);
             if (_display == display) return;
             _display = display;

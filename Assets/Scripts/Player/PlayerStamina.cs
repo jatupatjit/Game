@@ -139,7 +139,7 @@ namespace CoopGame.Player
         {
             _wasUpdatedThisFrame = true;
             // Co-op carry (2+ players): zero drain & active stamina regeneration
-            if (carrierCount >= 2)
+            if (CoopGame.Network.DevCheats.EffectiveCarriers(carrierCount) >= 2)
             {
                 RegenerateStamina(Time.deltaTime);
                 return;
@@ -172,7 +172,7 @@ namespace CoopGame.Player
 
         private void ApplyDrain(float amount)
         {
-            if (_currentStamina <= 0f) return;
+            if (_currentStamina <= 0f || CoopGame.Network.DevCheats.InfiniteStamina) return;
 
             float prev = _currentStamina;
             _currentStamina = Mathf.Max(0f, _currentStamina - amount);

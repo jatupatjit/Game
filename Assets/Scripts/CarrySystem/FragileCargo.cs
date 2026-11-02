@@ -468,7 +468,7 @@ namespace CoopGame.CarrySystem
         {
             if (_isDestroyed || damageAmount <= 0) return;
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer) return;
-            if (Time.fixedTime < _nextDamageAllowedAtFixedTime) return;
+            if (Time.fixedTime < _nextDamageAllowedAtFixedTime || CoopGame.Network.DevCheats.GodMode) return;
 
             if (HasPadding) { damageAmount = Mathf.CeilToInt(damageAmount * .5f); _padding.Value = false; }
             damageAmount = Mathf.Min(damageAmount, CurrentHP.Value);
@@ -487,8 +487,8 @@ namespace CoopGame.CarrySystem
                 if (!IsSpawned) HandleHPValueChanged(previousHP, restartHp);
                 Debug.Log($"[FragileCargo] '{name}' reached 0 HP ({reason}). Restarting from the last checkpoint with {restartHp} HP.");
                 OnCargoDamagedGlobal?.Invoke(this, damageAmount);
-                if (IsSpawned) PlayImpactFxClientRpc(transform.position);
-                else PlayImpactFeedback(transform.position);
+                if (IsSpawned) PlayImpactFxClientRpc(transform.position, 1f);
+                else PlayImpactFeedback(transform.position, 1f);
                 _restartRespawn = true;
                 _respawnPending = true;
                 return;
@@ -502,8 +502,10 @@ namespace CoopGame.CarrySystem
             Debug.Log($"[FragileCargo] '{name}' took {damageAmount} damage ({reason}). Remaining HP: {newHP}/{_maxHP}");
 
             OnCargoDamagedGlobal?.Invoke(this, damageAmount);
-            if (IsSpawned) PlayImpactFxClientRpc(transform.position);
-            else PlayImpactFeedback(transform.position);
+            // Louder and dustier the harder the hit (25 damage = full).
+            float strength = Mathf.Clamp01(damageAmount / 25f);
+            if (IsSpawned) PlayImpactFxClientRpc(transform.position, strength);
+            else PlayImpactFeedback(transform.position, strength);
 
             if (newHP <= 0)
             {
@@ -552,20 +554,22 @@ namespace CoopGame.CarrySystem
         }
 
         [Rpc(SendTo.ClientsAndHost)]
-        private void PlayImpactFxClientRpc(Vector3 impactPoint)
+        private void PlayImpactFxClientRpc(Vector3 impactPoint, float strength)
         {
-            PlayImpactFeedback(impactPoint);
+            PlayImpactFeedback(impactPoint, strength);
         }
 
-        private void PlayImpactFeedback(Vector3 impactPoint)
+        private void PlayImpactFeedback(Vector3 impactPoint, float strength)
         {
-            if (_impactFxPrefab == null) CoopGame.Network.GameplayFeedback.Burst(impactPoint, new Color(.75f, .57f, .32f));
+            if (_impactFxPrefab == null)
+                CoopGame.Network.GameplayFeedback.Burst(impactPoint, new Color(.75f, .57f, .32f), 8 + Mathf.RoundToInt(24f * strength));
             if (_impactFxPrefab != null)
             {
                 Instantiate(_impactFxPrefab, impactPoint, Quaternion.identity);
             }
 
-            if (_impactSound == null) CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Impact, impactPoint);
+            if (_impactSound == null) CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Impact, impactPoint, strength);
+            if (strength > .25f) CoopGame.Network.CameraShake.Add(impactPoint, strength * .6f);
             if (_impactSound != null)
             {
                 AudioSource.PlayClipAtPoint(_impactSound, impactPoint, 1.0f);

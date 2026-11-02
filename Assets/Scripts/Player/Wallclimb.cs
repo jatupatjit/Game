@@ -186,6 +186,16 @@ public class Wallclimb : NetworkBehaviour
         : ((_netClimbHandState.Value & (1 << 2)) != 0);
     public bool IsAimingAtWall => _isAimingAtWall;
 
+    /// <summary>Owner: the wall spot this hand would take right now (not while it already holds one).</summary>
+    public bool TryGetGrabPreview(bool left, out Vector3 point, out Vector3 normal)
+    {
+        bool can = IsOwner && (left ? _canGrabLeft && !_leftHandGripping : _canGrabRight && !_rightHandGripping);
+        RaycastHit hit = left ? _leftAimHit : _rightAimHit;
+        point = hit.point;
+        normal = hit.normal;
+        return can && hit.collider != null;
+    }
+
     // Body measurements. The defaults suit the old player; the full-physics player sets its real shoulder height and
     // arm length (ConfigureBody), so grips, hanging and the pull match the arms that are actually drawn.
     private float _chestHeight = 1.15f;     // shoulder line above the root

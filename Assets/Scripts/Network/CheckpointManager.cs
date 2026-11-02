@@ -106,6 +106,30 @@ namespace CoopGame.Network
             return hp;
         }
 
+        /// <summary>Server, dev cheat: make pad <paramref name="index"/> the active checkpoint and send everyone there.</summary>
+        public bool DevJumpTo(int index)
+        {
+            var pad = PadAt(index);
+            if (!IsServer || !IsSpawned || pad == null) return false;
+            pad.DevActivate();
+            _current.Value = index;
+            // The RPC can overtake the pad/index updates on a client, which would then respawn at the level start.
+            StartCoroutine(RestartPlayersAfterSync());
+            return true;
+        }
+
+        private System.Collections.IEnumerator RestartPlayersAfterSync()
+        {
+            yield return new WaitForSecondsRealtime(.3f);
+            if (IsSpawned) RestartPlayersRpc();
+        }
+
+        /// <summary>Server, dev cheat: everyone back to the last active checkpoint (or the level start).</summary>
+        public void DevSendPlayersBack()
+        {
+            if (IsServer && IsSpawned) RestartPlayersRpc();
+        }
+
         [Rpc(SendTo.ClientsAndHost)]
         private void RestartPlayersRpc()
         {

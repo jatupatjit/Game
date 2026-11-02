@@ -288,7 +288,7 @@ namespace CoopGame.Player
         public void UpdateLookInput(Vector2 lookDelta)
         {
             // Do not rotate camera when cursor is unlocked (e.g. pause menu or UI active)
-            if (Cursor.lockState != CursorLockMode.Locked) return;
+            if (Cursor.lockState != CursorLockMode.Locked || CoopGame.Network.PhotoMode.IsOn) return;
             _isCursorLocked = true;
 
             _yaw += lookDelta.x * _sensitivity;
@@ -311,7 +311,9 @@ namespace CoopGame.Player
             if (CoopGame.CarrySystem.MissionFailUI.IsVisible ||
                 CoopGame.Network.ExpeditionHUD.BlocksGameplayInput ||
                 CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible ||
-                CoopGame.Network.PauseMenu.IsPaused) return;
+                CoopGame.Network.PauseMenu.IsPaused || CoopGame.Network.DevCheatMenu.IsOpen ||
+                CoopGame.Network.PhotoMode.IsOn || CoopGame.Network.TitleScreen.IsVisible || CoopGame.Network.LevelMap.IsOpen ||
+                CoopGame.Network.Cosmetics.IsOpen) return;
 
             if (_isCursorLocked && (Cursor.lockState != CursorLockMode.Locked || Cursor.visible))
             {

@@ -12,6 +12,11 @@ namespace CoopGame.Network
     public sealed class PlayerExpeditionState : NetworkBehaviour
     {
         public readonly NetworkVariable<int> Coins = new(0);
+        /// <summary>This level's numbers for the results screen (host-written by LevelResults).</summary>
+        public readonly NetworkVariable<RunStats> Stats = new();
+        /// <summary>Worn hat (0 = none) and its colour (Cosmetics); written by the owner.</summary>
+        public readonly NetworkVariable<byte> Hat = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        public readonly NetworkVariable<byte> HatColor = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<byte> Card = new(0);
         /// <summary>The three card ids the server offered this player (CardCatalog packing). Only the owner (and the
         /// server) can read it; SelectCardRpc accepts nothing else.</summary>
@@ -29,6 +34,11 @@ namespace CoopGame.Network
         private bool _rewarded;
         private PlayerStamina _stamina;
         private PlayerCarry _carry;
+        private RagdollCharacter _ragdoll;
+
+        /// <summary>The cargo this player carries, from whichever player is active (full ragdoll or the old one).</summary>
+        private CarryableObject CarriedCargo => _ragdoll != null && _ragdoll.FullRagdoll ? _ragdoll.CarriedCargo
+            : _carry != null && _carry.IsCarrying ? _carry.CurrentCarryable : null;
         private bool _restoreStamina;
         private float _nextRequestAt;
         private System.Random _drawRng;
@@ -37,6 +47,8 @@ namespace CoopGame.Network
         [SerializeField, Min(0f)] private float _closeSupportRadius = CardCatalog.CloseSupportRadius;
 
         private static readonly System.Collections.Generic.List<PlayerExpeditionState> All = new();
+        /// <summary>Every spawned player's state on this machine (read-only).</summary>
+        public static System.Collections.Generic.IReadOnlyList<PlayerExpeditionState> Everyone => All;
 
         /// <summary>Effect magnitude of this player's card for <paramref name="effect"/>, or 1 (neutral) without it.</summary>
         public float CardMagnitude(CardEffect effect)
@@ -69,6 +81,7 @@ namespace CoopGame.Network
         {
             _stamina = GetComponent<PlayerStamina>();
             _carry = GetComponent<PlayerCarry>();
+            _ragdoll = GetComponent<RagdollCharacter>();
             SceneManager.sceneLoaded += OnSceneLoaded;
             if (!All.Contains(this)) All.Add(this);
             if (IsOwner)
@@ -168,7 +181,7 @@ namespace CoopGame.Network
             if (item == 2)
             {
                 // Padding targets only the owner's currently carried cargo, checked by the host.
-                if (_carry == null || !(_carry.CurrentCarryable is FragileCargo cargo) ||
+                if (!(CarriedCargo is FragileCargo cargo) ||
                     cargo.IsDestroyed || cargo.IsSecured || !cargo.HasCarrier(OwnerClientId) ||
                     cargo.HasPadding || (cargo.transform.position - transform.position).sqrMagnitude > 16f) return;
                 cargo.AddPadding();
@@ -180,6 +193,45 @@ namespace CoopGame.Network
 
         [Rpc(SendTo.Owner)]
         private void RestoreStaminaRpc() => _restoreStamina = true;
+
+        /// <summary>Owner to host: this player fell off the map or was knocked down (LevelResults).</summary>
+        [Rpc(SendTo.Server)]
+        public void ReportEventRpc(byte kind, RpcParams rpc = default)
+        {
+            if (rpc.Receive.SenderClientId == OwnerClientId) LevelResults.ServerReport(this, kind);
+        }
+
+        /// <summary>Owner to host: buy a hat with coins (Cosmetics shop).</summary>
+        [Rpc(SendTo.Server)]
+        public void BuyHatRpc(byte hat, RpcParams rpc = default)
+        {
+            if (rpc.Receive.SenderClientId != OwnerClientId || hat == 0 || hat >= Cosmetics.HatPrices.Length) return;
+            int price = Cosmetics.HatPrices[hat];
+            if (Coins.Value < price) return;
+            Coins.Value -= price;
+            HatBoughtRpc(hat);
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void HatBoughtRpc(byte hat) => Cosmetics.MarkOwned(hat);
+
+        /// <summary>Owner to everyone: a ping pin (PlayerPings).</summary>
+        [Rpc(SendTo.Everyone)]
+        public void PingRpc(byte kind, Vector3 point) => PlayerPings.Show(kind, point, LevelResults.NameOf(this));
+
+        /// <summary>Dev cheat request (DevCheatMenu); ignored outside Editor/Development builds.</summary>
+        [Rpc(SendTo.Server)]
+        public void DevCheatRpc(DevCheat cheat, int value)
+        {
+            if (DevCheats.Allowed) DevCheats.ExecuteOnServer(cheat, value, this);
+        }
+
+        /// <summary>Host to everyone: cheat state after a request, plus who did what.</summary>
+        [Rpc(SendTo.Everyone)]
+        public void DevStateRpc(byte flags, int weightPreset, float extraMass, int simCarriers, FixedString128Bytes line)
+        {
+            if (DevCheats.Allowed) DevCheats.ApplyState(flags, weightPreset, extraMass, simCarriers, line.ToString());
+        }
 
         private void FixedUpdate()
         {
@@ -193,7 +245,7 @@ namespace CoopGame.Network
             {
                 // Card effects on stamina (owner-simulated, like the stamina itself); PlayerStamina clamps the drain to 0.1..1.
                 float drain = CardMagnitude(CardEffect.StrongArms) * CardMagnitude(CardEffect.Endurance);
-                if (_carry != null && _carry.IsCarrying && IsCloseSupportNear()) drain *= CardCatalog.CloseSupportDrain;
+                if (CarriedCargo != null && IsCloseSupportNear()) drain *= CardCatalog.CloseSupportDrain;
                 _stamina.CarryDrainMultiplier = drain;
                 _stamina.RestRegenMultiplier = CardMagnitude(CardEffect.QuickRecovery);
                 _stamina.ActionCostMultiplier = CardMagnitude(CardEffect.LightStep);

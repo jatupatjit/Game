@@ -208,7 +208,9 @@ namespace CoopGame.CarrySystem
 
             int remainingHP = cargo.CurrentHP.Value;
             int multiplier = CurrentMultiplier;
-            int finalScore = remainingHP * multiplier;
+            // Crate variants (CargoVariant) can pay more, e.g. fragile glass.
+            float variantBonus = cargo.TryGetComponent(out CargoVariant variant) ? variant.ScoreMultiplier : 1f;
+            int finalScore = Mathf.RoundToInt(remainingHP * multiplier * variantBonus);
             int coinsEarned = finalScore; // 1:1 score to currency conversion for the Shop
 
             _lastDeliveryResult = new DeliveryResult
@@ -274,6 +276,8 @@ namespace CoopGame.CarrySystem
             {
                 _celebrationFx.Play();
             }
+            else CoopGame.Network.GameplayFeedback.Celebrate(deliveryPoint + Vector3.up * .5f, new Color(1f, .82f, .25f), 60);
+            CoopGame.Network.VisualPolish.DeliverySlowMo();
 
             if (_deliveryFanfareClip != null)
             {

@@ -157,13 +157,13 @@ namespace CoopGame.CarrySystem
             ? SyncedCarrierCount.Value
             : _activeCarriers.Count;
         public int MaxCarriers => (_sockets != null && _sockets.Length > 0) ? _sockets.Length : 4;
-        public float TotalMass => (_rigidbody != null) ? _rigidbody.mass : 10.0f;
+        public float TotalMass => ((_rigidbody != null) ? _rigidbody.mass : 10.0f) + CoopGame.Network.DevCheats.ExtraMass;
         // A big crate held by one person drags its far end: slow, and needs extra pull (see FixedUpdate).
         private const float DragTractionScale = 4f;
         private const float DragSpeedMultiplier = .4f;
         public bool IsSoloDragging => _requiresTwoCarriers && CurrentCarrierCount == 1;
         public float GetSpeedMultiplier() => IsSoloDragging ? DragSpeedMultiplier :
-            CurrentCarrierCount >= 2 ? _coopSpeedMultiplier : SoloAssistActive ? .85f : _soloSpeedMultiplier;
+            CoopGame.Network.DevCheats.EffectiveCarriers(CurrentCarrierCount) >= 2 ? _coopSpeedMultiplier : SoloAssistActive ? .85f : _soloSpeedMultiplier;
 
         protected virtual void Awake()
         {

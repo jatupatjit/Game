@@ -359,6 +359,8 @@ namespace CoopGame.Player
 
             if (transform.position.y < _fallLimitY)
             {
+                if (IsSpawned && TryGetComponent(out CoopGame.Network.PlayerExpeditionState state))
+                    state.ReportEventRpc(CoopGame.Network.LevelResults.EventFall);
                 RespawnAtStart();
                 return;
             }

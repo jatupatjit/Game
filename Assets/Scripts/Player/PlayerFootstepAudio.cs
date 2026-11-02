@@ -12,6 +12,7 @@ namespace CoopGame.Player
         [SerializeField, Min(.1f)] private float _minimumInterval = .32f;
         private PlayerMovement _movement;
         private global::Wallclimb _climb;
+        private RagdollCharacter _ragdoll;
         private CharacterController _controller;
         private Vector3 _previous;
         private float _distance;
@@ -22,6 +23,7 @@ namespace CoopGame.Player
             _movement = GetComponent<PlayerMovement>();
             _climb = GetComponent<global::Wallclimb>();
             _controller = GetComponent<CharacterController>();
+            _ragdoll = GetComponent<RagdollCharacter>();
         }
 
         public override void OnNetworkSpawn()
@@ -50,7 +52,8 @@ namespace CoopGame.Player
                 _distance = 0f;
                 return;
             }
-            bool grounded = IsOwner && _movement != null ? _movement.IsGrounded : IsProxyGrounded();
+            bool grounded = IsOwner && _ragdoll != null && _ragdoll.FullRagdoll ? _ragdoll.IsGrounded
+                : IsOwner && _movement != null ? _movement.IsGrounded : IsProxyGrounded();
             if (!grounded) { _distance = 0f; return; }
             _distance += traveled;
             if (_distance < _strideDistance || Time.unscaledTime < _nextStep) return;

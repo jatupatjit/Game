@@ -82,6 +82,13 @@ namespace CoopGame.Network
         private ClimbSwitchGate[] _climbGates;
         private Text _objective, _detail, _title, _message;
         private GameObject _modal, _cards, _shop;
+        // Last level (no exit portal): the host takes everyone back to the Lobby, still connected.
+        private Button _toLobby;
+        // Delivery result card (MissionCompleteUI) replaces the old summary panel; _cardPanel is the card-select card.
+        private MissionCompleteUI _complete;
+        private GameObject _cardPanel;
+        private Text _toLobbyLabel;
+        private bool _lobbyRequested;
         private Text _shopWallet;
         private readonly Button[] _buy = new Button[2];
         private float _refreshAt;
@@ -106,7 +113,11 @@ namespace CoopGame.Network
         private LevelRunState _run;
         private CheckpointManager _checkpoints;
         private GameObject _timerChip;
-        private Text _timerText, _sideText, _padText;
+        private Text _timerText, _sideText, _padText, _playText, _navText;
+        private RectTransform _navArrow;
+        private GameObject _navRow;
+        private int _shownPlaySecond = -1, _shownNavDistance = -1;
+        private string _playString = "", _navString = "", _navLabel;
         private int _shownSecond = -1, _shownSide = -1, _shownPadDistance = -1, _shownPad = -2, _noticeSeq;
         private float _noticeUntil;
         private LevelNotice _notice;
@@ -134,6 +145,7 @@ namespace CoopGame.Network
             BlocksGameplayInput = false;
             OverlayOpen = false;
             CardViewOpen = false;
+            if (_complete != null) _complete.SetVisible(false);
         }
 
         private void Update()
@@ -169,7 +181,20 @@ namespace CoopGame.Network
             CardViewOpen = _viewOpen;
             ShowModal(modal);
             _cards.SetActive(selecting);
-            _shop.SetActive(summary);
+            _shop.SetActive(false); // the old shop panel stays built (references) but MissionCompleteUI shows the result
+            if (_cardPanel.activeSelf == summary) _cardPanel.SetActive(!summary);
+            _complete.SetVisible(summary && !PauseMenu.IsPaused);
+            if (summary)
+            {
+                bool host = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
+                string text = host ? (_lobbyRequested ? "กำลังกลับ Lobby..." : "กลับ Lobby พร้อมกัน") : "รอ Host พากลับ Lobby";
+                if (_toLobby != null)
+                {
+                    _toLobby.interactable = host && !_lobbyRequested;
+                    if (_toLobbyLabel != null && _toLobbyLabel.text != text) _toLobbyLabel.text = text;
+                }
+                _complete.SetLobbyButton(_mission.Portal == null, host && !_lobbyRequested, text);
+            }
             // HUD pieces that would compete with the card-select / shop / card-view overlay stay hidden while it is open.
             bool overlay = modal || _viewOpen;
             OverlayOpen = overlay;
@@ -327,8 +352,51 @@ namespace CoopGame.Network
                 _shopWallet.text = $"เงิน {_player.Coins.Value}   |   ช่องไอเทม 3 ช่อง   |   ซื้อได้ก่อนเข้าประตู";
                 bool full = _player.Slot1.Value != 0 && _player.Slot2.Value != 0 && _player.Slot3.Value != 0;
                 for (int i = 0; i < 2; i++) _buy[i].interactable = !full && _player.Coins.Value >= PlayerExpeditionState.ItemPrice((byte)(i + 1));
+                float seconds = _run != null && _run.IsSpawned && _run.ElapsedSeconds > 0f ? _run.ElapsedSeconds
+                    : LevelResults.LevelSeconds() > 0f ? LevelResults.LevelSeconds() : -1f;
+                int maxHp = _mission.Cargo != null ? _mission.Cargo.MaxHP : 100;
+                _complete.SetResult(result.RemainingHP, maxHp, seconds, result.CoinsEarned, LevelResults.Stars(result.RemainingHP, maxHp));
+                RefreshResultRows();
+                // Items only matter when another level follows (they carry through the exit portal).
+                _complete.SetShop(_mission.Portal != null ? _player.Coins.Value : (int?)null, _buy[0].interactable, _buy[1].interactable);
             }
         }
+
+        // Per-player numbers and awards under the result rows (MissionCompleteUI.ExtraContent), from LevelResults.
+        private readonly System.Collections.Generic.List<Text> _resultRows = new();
+
+        private void RefreshResultRows()
+        {
+            if (_complete == null || _complete.ExtraContent == null || !LevelResults.IsReady) return;
+            var players = LevelResults.Players();
+            var awards = LevelResults.Awards();
+            int rows = players.Count + awards.Count;
+            if (_resultRows.Count != rows)
+            {
+                foreach (Transform child in _complete.ExtraContent) Destroy(child.gameObject);
+                _resultRows.Clear();
+                for (int i = 0; i < rows; i++) _resultRows.Add(ResultLine(i < players.Count));
+                _complete.SetVisible(true); // shows the slot now that it has rows
+            }
+            for (int i = 0; i < players.Count; i++)
+                SetChanged(_resultRows[i], LevelResults.NameOf(players[i]) + "  " + LevelResults.Line(players[i].Stats.Value));
+            for (int i = 0; i < awards.Count; i++)
+                SetChanged(_resultRows[players.Count + i], "★ " + awards[i].Title + ": " + awards[i].Player + " (" + awards[i].Detail + ")");
+        }
+
+        /// <summary>One compact full-width line in the result card (stats rows are secondary, awards accent).</summary>
+        private Text ResultLine(bool stats)
+        {
+            var text = UITheme.MakeText(_complete.ExtraContent, stats ? "PlayerStats" : "Award", "", 17,
+                stats ? UITextRole.Secondary : UITextRole.Accent, TextAnchor.MiddleLeft);
+            UITheme.StyleCuteText(text);
+            if (!stats) UITheme.SetWeight(text, UITheme.FontSemiBold);
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            UITheme.SetPreferredHeight(text.gameObject, 24f);
+            return text;
+        }
+
+        private static void SetChanged(Text text, string value) { if (text.text != value) text.text = value; }
 
         private static string NoticeText(LevelNotice notice, LevelRunState run) => notice switch
         {
@@ -354,10 +422,26 @@ namespace CoopGame.Network
         /// <summary>Timer, side mission and checkpoint lines plus one-shot notices. Strings are rebuilt only when the shown value changes.</summary>
         private void RefreshRunInfo(ref string detail)
         {
-            if (_run == null || _timerChip == null) return;
-            bool show = _run.IsSpawned && _mission.Phase.Value < 3;
+            if (_timerChip == null) return;
+            bool show = (_run == null || _run.IsSpawned) && _mission.Phase.Value < 3;
             if (_timerChip.activeSelf != show) _timerChip.SetActive(show);
+            RunInfoBottom = show && _rRun != null ? -_rRun.anchoredPosition.y + _rRun.rect.height : 0f;
             if (!show) return;
+            RefreshPlayTime();
+            RefreshNavigator();
+            // nearest checkpoint line: the active pad number and the distance from the local player
+            var pad = _checkpoints != null ? _checkpoints.Current : null;
+            var local = _player != null ? _player.transform : null;
+            int padNumber = pad != null && pad.IsActive ? pad.Number : 0;
+            int distance = pad != null && local != null ? Mathf.RoundToInt(Vector3.Distance(local.position, pad.transform.position)) : -1;
+            if (_checkpoints != null && (padNumber != _shownPad || distance != _shownPadDistance))
+            {
+                _shownPad = padNumber; _shownPadDistance = distance;
+                _padString = padNumber == 0 ? "เช็คพอยต์: ยังไม่ได้เซฟ (วางลังบนแท่นทอง)" : "เช็คพอยต์ล่าสุด " + padNumber + "  ห่าง " + distance + " ม.";
+                _padText.text = _padString;
+            }
+            if (_padText.gameObject.activeSelf != (_checkpoints != null)) _padText.gameObject.SetActive(_checkpoints != null);
+            if (_run == null) return;
             int seconds = Mathf.FloorToInt(_run.ElapsedSeconds);
             if (seconds != _shownSecond)
             {
@@ -380,17 +464,6 @@ namespace CoopGame.Network
                 }
                 _sideText.text = _sideString;
             }
-            // nearest checkpoint line: the active pad number and the distance from the local player
-            var pad = _checkpoints != null ? _checkpoints.Current : null;
-            var local = _player != null ? _player.transform : null;
-            int padNumber = pad != null && pad.IsActive ? pad.Number : 0;
-            int distance = pad != null && local != null ? Mathf.RoundToInt(Vector3.Distance(local.position, pad.transform.position)) : -1;
-            if (padNumber != _shownPad || distance != _shownPadDistance)
-            {
-                _shownPad = padNumber; _shownPadDistance = distance;
-                _padString = padNumber == 0 ? "เช็คพอยต์: ยังไม่ได้เซฟ (วางลังบนแท่นทอง)" : "เช็คพอยต์ล่าสุด " + padNumber + "  ห่าง " + distance + " ม.";
-                _padText.text = _padString;
-            }
             // notices: shown in the context chip for a few seconds
             if (_run.NoticeSequence != _noticeSeq)
             {
@@ -401,6 +474,116 @@ namespace CoopGame.Network
             if (_notice != LevelNotice.None && Time.unscaledTime < _noticeUntil) detail = NoticeText(_notice, _run);
         }
 
+        /// <summary>Play time since the session started, from the network clock, so every player shows the same.</summary>
+        private void RefreshPlayTime()
+        {
+            var manager = NetworkManager.Singleton;
+            int seconds = manager != null && manager.IsListening ? Mathf.FloorToInt((float)manager.ServerTime.Time) : 0;
+            if (seconds == _shownPlaySecond) return;
+            SetMmSs(ref _playString, ref _shownPlaySecond, seconds, "เล่นมาแล้ว ");
+            _playText.text = _playString;
+            PlayLabel = _playString;
+        }
+
+        private void BuildNavigator(Transform parent)
+        {
+            _navRow = new GameObject("Navigator", typeof(RectTransform));
+            _navRow.transform.SetParent(parent, false);
+            var row = _navRow.AddComponent<HorizontalLayoutGroup>();
+            row.spacing = 8f; row.childAlignment = TextAnchor.MiddleCenter;
+            row.childControlWidth = row.childControlHeight = true;
+            row.childForceExpandWidth = row.childForceExpandHeight = false;
+            UITheme.SetPreferredHeight(_navRow, 34f);
+            var arrow = new GameObject("Arrow", typeof(RectTransform), typeof(Image));
+            arrow.transform.SetParent(_navRow.transform, false);
+            var image = arrow.GetComponent<Image>();
+            image.sprite = ArrowSprite();
+            image.color = UITheme.TextColor(UITextRole.Accent);
+            image.raycastTarget = false;
+            var size = arrow.AddComponent<LayoutElement>();
+            size.preferredWidth = size.preferredHeight = 30f;
+            _navArrow = (RectTransform)arrow.transform;
+            _navText = UITheme.MakeText(_navRow.transform, "Target", "", 19, UITextRole.Accent, TextAnchor.MiddleLeft);
+            UITheme.SetWeight(_navText, UITheme.FontBold);
+            _navText.horizontalOverflow = HorizontalWrapMode.Overflow;
+        }
+
+        private static Sprite s_arrow;
+
+        /// <summary>White arrowhead pointing up (screen forward), drawn once.</summary>
+        private static Sprite ArrowSprite()
+        {
+            if (s_arrow != null) return s_arrow;
+            const int n = 64;
+            var texture = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var pixels = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float u = (x + .5f) / n - .5f, v = (y + .5f) / n;
+                    // Arrowhead: a triangle narrowing to the tip at the top, with a notch cut into its base.
+                    bool inside = v < .96f && Mathf.Abs(u) < (1f - v) * .48f && v > .08f + Mathf.Abs(u) * .6f;
+                    pixels[y * n + x] = inside ? new Color32(255, 255, 255, 255) : new Color32(255, 255, 255, 0);
+                }
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            s_arrow = Sprite.Create(texture, new Rect(0, 0, n, n), new Vector2(.5f, .5f), 100f);
+            return s_arrow;
+        }
+
+        /// <summary>Next goal: the first checkpoint after the last saved one, then the delivery zone, then the exit
+        /// portal once delivered.</summary>
+        private bool TryGetNavTarget(out Vector3 position, out string label)
+        {
+            position = default; label = null;
+            if (_mission.Phase.Value >= 2)
+            {
+                if (_mission.Portal == null || !_mission.Portal.IsOpen) return false;
+                position = _mission.Portal.transform.position; label = "ไปประตูด่านถัดไป";
+                return true;
+            }
+            if (_checkpoints != null)
+            {
+                var next = _checkpoints.PadAt(Mathf.Max(-1, _checkpoints.CurrentIndex) + 1);
+                if (next != null) { position = next.transform.position; label = "ไปเช็คพอยต์ " + next.Number; return true; }
+            }
+            if (_mission.Delivery == null) return false;
+            position = _mission.Delivery.transform.position; label = "ไปจุดส่งของ";
+            return true;
+        }
+
+        /// <summary>The arrow turns with the camera (up = straight ahead); the label names the goal and its distance.</summary>
+        private void RefreshNavigator()
+        {
+            var local = _player != null ? _player.transform : null;
+            var view = Camera.main;
+            Vector3 target = default;
+            string label = null;
+            bool show = local != null && view != null && TryGetNavTarget(out target, out label);
+            if (_navRow.activeSelf != show) _navRow.SetActive(show);
+            if (!show) return;
+            Vector3 to = target - local.position; to.y = 0f;
+            Vector3 forward = view.transform.forward; forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-4f) forward = view.transform.up;
+            float angle = to.sqrMagnitude > 1e-4f ? Vector3.SignedAngle(forward, to, Vector3.up) : 0f;
+            _navArrow.localRotation = Quaternion.Euler(0f, 0f, -angle);
+            NavAngle = angle;
+            int distance = Mathf.RoundToInt(to.magnitude);
+            if (distance == _shownNavDistance && label == _navLabel) return;
+            _shownNavDistance = distance; _navLabel = label;
+            _navString = label + "  " + distance + " ม.";
+            _navText.text = _navString;
+            NavLabel = _navString;
+        }
+
+        /// <summary>Last arrow angle (degrees, + = target to the right) and label, for tests.</summary>
+        public static float NavAngle { get; private set; }
+        public static string NavLabel { get; private set; }
+        /// <summary>How far down from the top of the screen (1920x1080 reference units) the run info chip reaches,
+        /// 0 while hidden. Other top-centre panels (RelayBridgeHUD) sit below it.</summary>
+        public static float RunInfoBottom { get; private set; }
+        public static string PlayLabel { get; private set; }
+
         private static void SetChanged(Text text, string value, ref string cached)
         {
             if (cached == value) return;
@@ -408,6 +591,20 @@ namespace CoopGame.Network
         }
 
         private void Dismiss() { _summaryDismissed = true; ShowModal(false); }
+
+        /// <summary>Host, after delivering on the last level (no exit portal): loads the Lobby for everyone through NGO
+        /// scene management, so the session stays connected and the Lobby portal can start Level01 again.</summary>
+        public void ReturnToLobbyTogether()
+        {
+            var manager = NetworkManager.Singleton;
+            if (_lobbyRequested || manager == null || !manager.IsServer || manager.SceneManager == null ||
+                _mission == null || _mission.Phase.Value != 2 || _mission.Portal != null) return;
+            _lobbyRequested = true;
+            var status = manager.SceneManager.LoadScene("Lobby", UnityEngine.SceneManagement.LoadSceneMode.Single);
+            if (status == SceneEventProgressStatus.Started) return;
+            _lobbyRequested = false;
+            Debug.LogWarning($"[ExpeditionHUD] Return to Lobby could not start: {status}.");
+        }
 
         private GameObject Box(string name, Transform parent, Vector2 anchor, Vector2 position, Vector2 size, Color color, Sprite shape = null)
         {
@@ -477,8 +674,8 @@ namespace CoopGame.Network
             _detail.horizontalOverflow = HorizontalWrapMode.Wrap;
             _detailChip.SetActive(false);
 
-            // Run timer + side mission + checkpoint (top-centre, only built for levels with a LevelRunState).
-            if (_run != null)
+            // Run info (top-centre): level timer + side mission (levels with a LevelRunState), the last saved
+            // checkpoint, play time and an arrow to the next target.
             {
                 _timerChip = Box("RunInfo", transform, new Vector2(.5f, 1f), new Vector2(0, -22), new Vector2(480, 10), UITheme.SolidPanel, UITheme.SmallSprite);
                 ((RectTransform)_timerChip.transform).pivot = new Vector2(.5f, 1f);
@@ -496,6 +693,11 @@ namespace CoopGame.Network
                 UITheme.SetPreferredHeight(_sideText.gameObject, 26f);
                 _padText = UITheme.MakeText(_timerChip.transform, "Checkpoint", "", 17, UITextRole.Secondary, TextAnchor.MiddleCenter);
                 UITheme.SetPreferredHeight(_padText.gameObject, 24f);
+                _playText = UITheme.MakeText(_timerChip.transform, "PlayTime", "", 17, UITextRole.Secondary, TextAnchor.MiddleCenter);
+                UITheme.SetPreferredHeight(_playText.gameObject, 24f);
+                BuildNavigator(_timerChip.transform);
+                _timerText.gameObject.SetActive(_run != null);
+                _sideText.gameObject.SetActive(_run != null);
                 _timerChip.SetActive(false);
             }
 
@@ -583,6 +785,9 @@ namespace CoopGame.Network
             StretchFull(_modal);
             // Cute kit (Canva page 71): wide beige card, plank title, navy message, pink confirm on the bottom edge.
             var panel = Box("Panel", _modal.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(1320, 730), Color.white);
+            _cardPanel = panel;
+            _complete = MissionCompleteUI.EnsureInstance();
+            _complete.Bind(Dismiss, ReturnToLobbyTogether, id => _player?.BuyItemRpc(id));
             UITheme.StyleCuteCard(panel.GetComponent<Image>(), true);
             panel.GetComponent<Image>().raycastTarget = false;
             _title = UITheme.MakeCutePlank(panel.transform, "", 460f, 100f, 6f, 36);
@@ -612,7 +817,13 @@ namespace CoopGame.Network
             _shopWallet = Label(_shop.transform, "Wallet", "", 22, new Vector2(0, 110), new Vector2(1020, 50), TextAnchor.MiddleCenter, UITextRole.Secondary);
             _buy[0] = Button(_shop.transform, "Stamina Elixir — 40 เหรียญ\nฟื้น Stamina เต็ม 1 ครั้ง", new Vector2(-250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(1));
             _buy[1] = Button(_shop.transform, "Cargo Padding — 60 เหรียญ\nลดความเสียหายครั้งถัดไป 50%\nใช้ขณะจับลัง", new Vector2(250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(2));
-            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.Pink);
+            bool lastLevel = _mission != null && _mission.Portal == null;
+            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(lastLevel ? -200 : 0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.Pink);
+            if (lastLevel)
+            {
+                _toLobby = Button(_shop.transform, "กลับ Lobby พร้อมกัน", new Vector2(200, -170), new Vector2(360, 80), ReturnToLobbyTogether);
+                _toLobbyLabel = _toLobby.GetComponentInChildren<Text>(true);
+            }
             _modal.SetActive(false);
             BuildView();
         }

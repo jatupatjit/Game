@@ -35,7 +35,12 @@ namespace CoopGame.Network
         }
         [Serializable] private sealed class Snapshot
         {
-            public float realtime, yaw, pitch, speed;
+            public float realtime, yaw, pitch, speed, navAngle;
+            public string navLabel, playLabel, aimedName, cues;
+            public int xrayCount, markerCount, pingsShown;
+            public string results, cargoes;
+            public bool devInfinite, devGod;
+            public string devLog;
             public Vector2 moveInput;
             public bool grounded, climbing, localSession, portalActivated;
             public string transport;
@@ -204,6 +209,19 @@ namespace CoopGame.Network
             if (parts[1] == "quit") { Application.Quit(); return; }
             if (parts[1] == "capture") { ScreenCapture.CaptureScreenshot(Path.Combine(_directory, parts[2] + ".png")); return; }
             if (parts[1] == "disconnect") { manager.Shutdown(); return; }
+            if (parts[1] == "shop") { Cosmetics.SetOpen(parts[2] == "1"); return; }
+            if (parts[1] == "hat") { Cosmetics.ProbeHat(int.Parse(parts[2]), int.Parse(parts[3])); return; }
+            if (parts[1] == "resetsave") { PlayerPrefs.DeleteKey("hats_owned"); PlayerPrefs.DeleteKey("hat_equipped"); PlayerPrefs.DeleteKey("stars_Level01"); PlayerPrefs.DeleteKey("stars_Level02"); return; }
+            if (parts[1] == "map") { LevelMap.SetOpen(parts[2] == "1"); return; }
+            if (parts[1] == "stars") { PlayerPrefs.SetInt("stars_" + parts[2], int.Parse(parts[3])); PlayerPrefs.Save(); return; }
+            if (parts[1] == "photo") { PhotoMode.Set(parts[2] == "1"); return; }
+            if (parts[1] == "title") { TitleScreen.ShowAgain(); return; }
+            if (parts[1] == "shake") { CameraShake.Add(Camera.main != null ? Camera.main.transform.position : Vector3.zero, 1f); return; }
+            if (parts[1] == "ping") { PlayerPings.Ping(byte.Parse(parts[2])); return; }
+            if (parts[1] == "emote") { manager.LocalClient?.PlayerObject?.GetComponent<RagdollCharacter>()?.PlayEmote(byte.Parse(parts[2]), 3f); return; }
+            if (parts[1] == "devmenu") { DevCheatMenu.SetOpen(parts[2] == "1"); return; }
+            if (parts[1] == "cheat") { DevCheatMenu.Send((DevCheat)Enum.Parse(typeof(DevCheat), parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0); return; }
+            if (parts[1] == "lobby") { FindAnyObjectByType<ExpeditionHUD>()?.ReturnToLobbyTogether(); return; }
             var player = manager.LocalClient?.PlayerObject;
             if (player == null) return;
             var state = player.GetComponent<PlayerExpeditionState>();
@@ -243,6 +261,20 @@ namespace CoopGame.Network
                         var body = setupCargo.GetComponent<Rigidbody>();
                         body.position = setupPosition; body.rotation = Quaternion.identity;
                         body.linearVelocity = Vector3.zero; body.angularVelocity = Vector3.zero;
+                    });
+                    break;
+                case "cargo_named":
+                    // Explicit diagnostic setup for scenes with several crates: move the named one.
+                    if (!manager.IsServer) break;
+                    var namedPosition = new Vector3(float.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture), float.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture), float.Parse(parts[5], System.Globalization.CultureInfo.InvariantCulture));
+                    QueuePhysicsAction(() => {
+                        foreach (var named in FindObjectsByType<FragileCargo>())
+                        {
+                            if (!named.name.StartsWith(parts[2])) continue;
+                            var namedBody = named.GetComponent<Rigidbody>();
+                            namedBody.position = namedPosition; namedBody.rotation = Quaternion.identity;
+                            namedBody.linearVelocity = Vector3.zero; namedBody.angularVelocity = Vector3.zero;
+                        }
                     });
                     break;
                 case "card": state.SelectCardRpc(byte.Parse(parts[2])); break;
@@ -354,6 +386,8 @@ namespace CoopGame.Network
                 portalEntryExtents = portalEntry != null ? portalEntry.bounds.extents : Vector3.zero,
                 portalActivated = portalState != null && portalState.Value,
                 realtime = Time.realtimeSinceStartup,
+                navAngle = ExpeditionHUD.NavAngle, navLabel = ExpeditionHUD.NavLabel, playLabel = ExpeditionHUD.PlayLabel,
+                aimedName = GameplayHighlights.AimedName, cues = GameplayFeedback.PlayCounts(), pingsShown = PlayerPings.ShownCount, cargoes = string.Join(" ", System.Array.ConvertAll(FindObjectsByType<FragileCargo>(), c => c.name + "=" + c.CurrentHP.Value + "/" + c.CurrentCarrierCount + "@" + c.transform.position.ToString("F1"))), results = LevelResults.IsReady ? string.Join(" / ", LevelResults.Players().ConvertAll(p => LevelResults.NameOf(p) + " " + LevelResults.Line(p.Stats.Value))) + " | " + string.Join(" / ", LevelResults.Awards().ConvertAll(a => a.Title + "=" + a.Player)) : "", devInfinite = DevCheats.InfiniteStamina, devGod = DevCheats.GodMode, devLog = string.Join(" / ", DevCheats.Log), xrayCount = GameplayHighlights.XRayCount, markerCount = GameplayHighlights.MarkerCount,
                 yaw = camera != null ? camera.Yaw : 0, pitch = camera != null ? camera.Pitch : 0,
                 speed = player != null ? player.GetComponent<PlayerMovement>().CurrentSpeed : 0,
                 moveInput = player != null ? player.GetComponent<PlayerInputReader>().MoveInput : Vector2.zero,

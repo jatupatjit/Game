@@ -138,6 +138,11 @@ namespace CoopGame.Player
         [SerializeField] private float _kneeBend = 40f;
         [SerializeField] private float _armSwing = 25f;
 
+        [Header("Relaxed Arms")]
+        [Tooltip("Free arms (not holding or reaching) are turned this many degrees in toward the body. The idle/walk "
+            + "clips were made for a slimmer rig and hold this chibi's arms out stiffly; the clip's forward/back swing is kept.")]
+        [SerializeField, Range(0f, 40f)] private float _relaxedArmTuck = 18f;
+
         [Header("Knockdown")]
         [SerializeField] private float _knockdownFallSpeed = 12f;
         [SerializeField] private float _knockdownTilt = 70f;
@@ -145,13 +150,32 @@ namespace CoopGame.Player
         [SerializeField] private float _standUpSeconds = .8f;
 
         public bool FullRagdoll => _fullRagdoll;
+        public const byte EmoteWave = 1, EmoteCheer = 2;
+        private byte _emote;
+        private float _emoteUntil;
+
+        /// <summary>Owner: wave (right arm) or cheer (both arms up) for a while, when the hands are free.</summary>
+        public void PlayEmote(byte emote, float seconds)
+        {
+            if (!IsLocal) return;
+            _emote = emote;
+            _emoteUntil = Time.time + seconds;
+        }
+
+        /// <summary>Owner: the crate a left click would lift now (null while carrying, climbing or unable to act).</summary>
+        public CarryableObject AimedCargo { get; private set; }
+        /// <summary>The crate this player carries: the owner's own view, the server's on the host, else the synced one.</summary>
+        public CarryableObject CarriedCargo =>
+            !_fullRagdoll ? null :
+            IsLocal && _carry != null ? _carry :
+            HasAuthority && _serverCarry != null ? _serverCarry :
+            IsSpawned && _carriedCargo.Value.TryGet(out NetworkObject o) ? o.GetComponent<CarryableObject>() : null;
         public bool IsKnockedDown => Time.time < _knockdownUntil;
         public bool IsGrounded { get; private set; }
         public bool IsClimbing => _climbing;
         public bool HoldingCargo => _carry != null;
         /// <summary>Holding a crate, or a lift is on its way to the server: Wallclimb must not take a wall meanwhile.</summary>
         public bool BlocksClimbing => _carry != null || (_carryRequestPending && Time.time <= _carryRequestTimeout);
-        public CarryableObject CarriedCargo => _carry;
         public bool OwnsCollider(Collider c) => _physicsRoot != null && c != null && c.transform.IsChildOf(_physicsRoot.transform);
 
         private CharacterRig _rig;
@@ -187,6 +211,13 @@ namespace CoopGame.Player
         private Vector3 _holdSpot;
         private bool _holding;
         private const float HoldSpring = 30f;
+        // Carry stance (CarryStance): the body may come this much inside its hold distance, input toward the crate
+        // fades out over the last CarryStanceApproach, and the push back (per m inside, per m/s closing) beats the
+        // walk acceleration (_acceleration 25) so walking cannot shove the body into the crate.
+        private const float CarryStanceInset = .04f, CarryStanceApproach = .08f;
+        private const float CarryPushSpring = 400f, CarryPushDamper = 10f, CarryPushMax = 60f;
+        // Others' screens: a carrier's drawn hips stay this far (flat) outside their crate (KeepDrawnBodyOutOfCargo).
+        private const float DrawnBodyClearance = .28f, DrawnBodyHoldMax = .45f, DrawnBodyMaxShift = .9f;
 
         // Animated clone (owner)
         private Animator _clone;
@@ -306,7 +337,9 @@ namespace CoopGame.Player
         }
 
         private bool Blocked =>
-            CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput;
+            CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput ||
+            CoopGame.Network.DevCheatMenu.IsOpen || CoopGame.Network.PhotoMode.IsOn || CoopGame.Network.TitleScreen.IsVisible ||
+            CoopGame.Network.LevelMap.IsOpen || CoopGame.Network.Cosmetics.IsOpen;
 
         private bool Exhausted => _stamina != null && _stamina.IsExhausted;
         private float Card(CoopGame.Network.CardEffect effect) => _expedition != null ? _expedition.CardMagnitude(effect) : 1f;
@@ -318,6 +351,8 @@ namespace CoopGame.Player
             if (!_fullRagdoll || !IsLocal || _input == null) return;
             if (_input.JumpTriggered && !_climbing) _jumpQueued = true;
             bool canAct = !IsKnockedDown && !Blocked && !_climbing;
+            AimedCargo = _carry == null && canAct && !Exhausted && (_wallclimb == null || !_wallclimb.IsClimbing) &&
+                         FindAimedCargo(out CarryableObject aimed) ? aimed : null;
 
             if (_carry != null)
             {
@@ -333,10 +368,9 @@ namespace CoopGame.Player
                     if (_stamina.IsExhausted) RequestDrop();
                 }
             }
-            else if (_input.GrabLeftPressed && canAct && !Exhausted && (!_carryRequestPending || Time.time > _carryRequestTimeout) &&
-                     (_wallclimb == null || !_wallclimb.IsClimbing) && FindAimedCargo(out CarryableObject cargo))
+            else if (_input.GrabLeftPressed && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
             {
-                RequestCarry(cargo);
+                RequestCarry(AimedCargo);
             }
         }
 
@@ -372,6 +406,8 @@ namespace CoopGame.Player
 
             Vector3 hipsVel = _bodies[Hips].linearVelocity;
             Vector3 flatVel = Flat(hipsVel);
+            Vector3 carryPush = Vector3.zero;
+            if (_carry != null) desired = CarryStance(desired, moving, flatVel, out carryPush);
 
             // Ground: sphere cast from the hips; the limb layer is left out of the mask.
             IsGrounded = Physics.SphereCast(_bodies[Hips].position + Vector3.up * .1f, .18f, Vector3.down, out RaycastHit ground,
@@ -417,7 +453,7 @@ namespace CoopGame.Player
                 Vector3 hipsFlat = Flat(_bodies[Hips].position);
                 if (!still || !_holding || (hipsFlat - _holdSpot).sqrMagnitude > .25f) { _holdSpot = hipsFlat; _holding = still; }
                 else hold = (_holdSpot - hipsFlat) * HoldSpring;
-                accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing);
+                accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
 
                 if (_jumpQueued) TryJump();
@@ -543,6 +579,12 @@ namespace CoopGame.Player
                     // Hanging on the wall, a free arm hangs relaxed instead of playing the jump clip's flailing.
                     if (!physics && _hasHoldPose)
                         for (int i = upper; i < upper + 3; i++) _target[i] = _target[Chest] * _holdArmRel[i];
+                    // Otherwise it plays the clip, turned in toward the body (about the facing axis, so the clip's
+                    // forward/back swing stays as it is).
+                    else if (physics && EmoteTarget(h, shoulder, facing, out Vector3 emoteTarget, out Vector3 emotePole))
+                        SolveArm(upper, shoulder, emoteTarget, emotePole);
+                    else if (physics && _relaxedArmTuck > 0f)
+                        SwingChain(upper, -side * _relaxedArmTuck, facing * Vector3.forward);
                     continue;
                 }
                 if (_hasHoldPose)
@@ -553,6 +595,22 @@ namespace CoopGame.Player
                 SolveArm(upper, shoulder, target, pole);
             }
             _target[Head] = Quaternion.AngleAxis(Mathf.Clamp(pitch, -40f, 40f) * .4f, right) * _target[Head];
+        }
+
+        /// <summary>Hand target of a wave (right hand swings side to side above the shoulder) or cheer (both up).</summary>
+        private bool EmoteTarget(int h, Vector3 shoulder, Quaternion facing, out Vector3 target, out Vector3 pole)
+        {
+            target = pole = Vector3.zero;
+            if (Time.time >= _emoteUntil || _emote == 0 || IsKnockedDown || _climbing || _carry != null) return false;
+            if (_emote == EmoteWave && h == 0) return false;
+            float side = h == 0 ? -1f : 1f;
+            Vector3 right = facing * Vector3.right, forward = facing * Vector3.forward;
+            float t = Time.time;
+            target = _emote == EmoteWave
+                ? shoulder + Vector3.up * .36f + right * (side * .1f + .12f * Mathf.Sin(t * 11f)) + forward * .08f
+                : shoulder + Vector3.up * (.38f + .05f * Mathf.Sin(t * 10f + h)) + right * side * .14f + forward * .05f;
+            pole = right * side - forward * .3f;
+            return true;
         }
 
         /// <summary>Where a hand should be: on its crate grip, on its climbing hold, or reaching for one.</summary>
@@ -738,6 +796,84 @@ namespace CoopGame.Player
         private readonly RaycastHit[] _aimHits = new RaycastHit[8];
         private readonly Collider[] _cargoNear = new Collider[16];
 
+        // Client carrier: the crate replica's measured ground speed (CarriedCargoVelocity).
+        private CarryableObject _cargoReplicaOf;
+        private Vector3 _cargoReplicaLast, _cargoReplicaVel;
+
+        private void SampleCargoReplica()
+        {
+            if (_carry == null || HasAuthority) { _cargoReplicaOf = null; _cargoReplicaVel = Vector3.zero; return; }
+            Vector3 position = _carry.transform.position;
+            if (_cargoReplicaOf == _carry && Time.deltaTime > 1e-4f)
+                _cargoReplicaVel = Vector3.Lerp(_cargoReplicaVel, Flat(position - _cargoReplicaLast) / Time.deltaTime,
+                    1f - Mathf.Exp(-Time.deltaTime / .1f));
+            _cargoReplicaOf = _carry;
+            _cargoReplicaLast = position;
+        }
+
+        /// <summary>
+        /// Others' screens: a team-mate's streamed pose and the crate arrive with different delays (on the host the
+        /// crate is current, the team-mate ~0.2 s old), so a carrier walking with the crate is drawn sunk into it
+        /// (crate coming toward them) or trailing behind it (crate going away). The drawn body of a carrier is kept
+        /// at its hold distance from the crate's box. Drawing only: the physics and the network state are untouched.
+        /// </summary>
+        private void KeepDrawnBodyOutOfCargo()
+        {
+            if (!_carriedCargo.Value.TryGet(out NetworkObject cargoObject) ||
+                !cargoObject.TryGetComponent(out CarryableObject cargo)) return;
+            Vector3 hips = _bones[Hips].position;
+            Vector3 shift = HoldBandShift(cargo, hips, DrawnBodyClearance, DrawnBodyHoldMax);
+            if (shift != Vector3.zero) _bones[Hips].position = hips + Vector3.ClampMagnitude(shift, DrawnBodyMaxShift);
+        }
+
+        private static readonly Dictionary<CarryableObject, Bounds> s_cargoLocalBounds = new();
+
+        /// <summary>Flat move that puts <paramref name="point"/> between <paramref name="min"/> and
+        /// <paramref name="max"/> outside the crate's box (its colliders in crate space, all heights).</summary>
+        private static Vector3 HoldBandShift(CarryableObject cargo, Vector3 point, float min, float max)
+        {
+            if (!s_cargoLocalBounds.TryGetValue(cargo, out Bounds box))
+            {
+                bool any = false;
+                foreach (var c in cargo.GetComponentsInChildren<Collider>())
+                {
+                    if (c.isTrigger) continue;
+                    Bounds world = c.bounds;
+                    for (int k = 0; k < 8; k++)
+                    {
+                        Vector3 corner = world.center + Vector3.Scale(world.extents,
+                            new Vector3((k & 1) == 0 ? -1 : 1, (k & 2) == 0 ? -1 : 1, (k & 4) == 0 ? -1 : 1));
+                        if (c is BoxCollider b) corner = b.transform.TransformPoint(b.center + Vector3.Scale(b.size * .5f,
+                            new Vector3((k & 1) == 0 ? -1 : 1, (k & 2) == 0 ? -1 : 1, (k & 4) == 0 ? -1 : 1)));
+                        Vector3 local = cargo.transform.InverseTransformPoint(corner);
+                        if (!any) { box = new Bounds(local, Vector3.zero); any = true; } else box.Encapsulate(local);
+                    }
+                }
+                if (!any) return Vector3.zero;
+                s_cargoLocalBounds[cargo] = box;
+            }
+            Transform t = cargo.transform;
+            Vector3 p = t.InverseTransformPoint(point) - box.center;
+            Vector3 e = box.extents;
+            if (Mathf.Abs(p.x) >= e.x || Mathf.Abs(p.z) >= e.z)
+            {
+                Vector3 surface = t.TransformPoint(box.center + new Vector3(Mathf.Clamp(p.x, -e.x, e.x), p.y, Mathf.Clamp(p.z, -e.z, e.z)));
+                Vector3 outward = Flat(point - surface);
+                float d = outward.magnitude;
+                if (d > 1e-4f)
+                {
+                    if (d < min) return outward * ((min - d) / d);
+                    return d > max ? outward * ((max - d) / d) : Vector3.zero;
+                }
+            }
+            // Inside the box: out through the nearest side.
+            Vector3 scale = t.lossyScale;
+            float inX = e.x + min / Mathf.Max(1e-3f, Mathf.Abs(scale.x)) - Mathf.Abs(p.x);
+            float inZ = e.z + min / Mathf.Max(1e-3f, Mathf.Abs(scale.z)) - Mathf.Abs(p.z);
+            Vector3 localMove = inX < inZ ? new Vector3(Mathf.Sign(p.x) * inX, 0f, 0f) : new Vector3(0f, 0f, Mathf.Sign(p.z) * inZ);
+            return Flat(t.TransformVector(localMove));
+        }
+
         /// <summary>Crate under the crosshair, or failing that the nearest one in front, within lifting reach.</summary>
         private bool FindAimedCargo(out CarryableObject cargo)
         {
@@ -860,11 +996,50 @@ namespace CoopGame.Player
             else CarryInputRpc(direction, heading, height, transform.position, Flat(hipsVel));
         }
 
+        private Vector3 CarryGripMid() =>
+            (_carry.transform.TransformPoint(_carryLocalL) + _carry.transform.TransformPoint(_carryLocalR)) * .5f;
+
+        /// <summary>The crate's ground speed as this machine has it (the server body on the host, the replica's
+        /// per-frame motion on a client).</summary>
+        private Vector3 CarriedCargoVelocity()
+        {
+            if (HasAuthority && _carry.TryGetComponent(out Rigidbody body)) return Flat(body.linearVelocity);
+            return _cargoReplicaOf == _carry ? _cargoReplicaVel : Vector3.zero;
+        }
+
+        /// <summary>
+        /// Owner, while carrying: the crate leads (it moves with the team's averaged input). The body and its own
+        /// crate do not collide, so walking could push the body into the crate: input toward the grips fades out
+        /// as the body reaches its hold distance, and a body closer than that is pushed back harder than walking
+        /// pushes in. With no input of its own the body follows the crate's speed, so a stopped partner is drawn
+        /// along instead of braking against the leash.
+        /// </summary>
+        private Vector3 CarryStance(Vector3 desired, bool hasInput, Vector3 flatVel, out Vector3 push)
+        {
+            push = Vector3.zero;
+            Vector3 cargoVel = CarriedCargoVelocity();
+            if (!hasInput) desired = Vector3.ClampMagnitude(cargoVel, _sprintSpeed);
+            Vector3 toGrips = Flat(CarryGripMid() - _bodies[Hips].position);
+            float dist = toGrips.magnitude;
+            if (dist < 1e-3f) return desired;
+            Vector3 dir = toGrips / dist;
+            float near = CarryableObject.HoldReach - CarryStanceInset;
+            float into = Vector3.Dot(desired - cargoVel, dir);
+            if (into > 0f) desired -= dir * (into * Mathf.InverseLerp(near + CarryStanceApproach, near, dist));
+            float overlap = near - dist;
+            if (overlap > 0f)
+            {
+                float closing = Mathf.Max(0f, Vector3.Dot(flatVel - cargoVel, dir));
+                push = -dir * Mathf.Min(overlap * CarryPushSpring + closing * CarryPushDamper, CarryPushMax);
+            }
+            return desired;
+        }
+
         /// <summary>Pulls the body back toward the crate's grips when it gets ahead of (or away from) them.</summary>
         private Vector3 CarryLeash(Quaternion facing)
         {
             if (_carry == null) return Vector3.zero;
-            Vector3 grips = (_carry.transform.TransformPoint(_carryLocalL) + _carry.transform.TransformPoint(_carryLocalR)) * .5f;
+            Vector3 grips = CarryGripMid();
             Vector3 anchor = transform.position + facing * Vector3.forward * CarryableObject.HoldReach;
             Vector3 error = Flat(grips - anchor);
             float slack = error.magnitude - .12f;
@@ -980,6 +1155,8 @@ namespace CoopGame.Player
                       (cargo.transform.position - transform.position).sqrMagnitude < 4f * 4f && // plausible reach
                       cargo.TryAttachCarrier(CarrierId, transform, null, localL, localR, out _);
             if (ok) _serverCarry = cargo;
+            if (ok && IsSpawned) CueRpc(CoopGame.Network.GameplayFeedback.Cue.Lift, cargo.transform.position);
+            if (ok && IsSpawned) _carriedCargo.Value = cargo.NetworkObject;
             if (IsLocal) OnCarryStarted(cargo, localL, localR, ok);
             else CarryStartedRpc(cargo != null ? cargo.NetworkObject : default(NetworkObjectReference), localL, localR, ok);
         }
@@ -993,13 +1170,15 @@ namespace CoopGame.Player
 
         private void ServerPlace(Collider[] carrierColliders)
         {
-            if (_serverCarry != null) _serverCarry.TryPlaceGently(CarrierId, carrierColliders);
+            if (_serverCarry != null && _serverCarry.TryPlaceGently(CarrierId, carrierColliders) && IsSpawned)
+                CueRpc(CoopGame.Network.GameplayFeedback.Cue.Place, _serverCarry.transform.position);
             ServerWatchCarry();
         }
 
         private void ServerThrow(Vector3 velocity)
         {
             if (_serverCarry == null) return;
+            if (IsSpawned) CueRpc(CoopGame.Network.GameplayFeedback.Cue.Throw, _serverCarry.transform.position);
             _serverCarry.ThrowObject(CarrierId, Vector3.ClampMagnitude(velocity, CarryableObject.BaseThrowLimit), Random.insideUnitSphere * 2f);
             ServerWatchCarry();
         }
@@ -1016,6 +1195,7 @@ namespace CoopGame.Player
             if (_serverCarry != null && _serverCarry.HasCarrier(CarrierId) && !_serverCarry.IsSecured) return;
             bool hadCarry = _serverCarry != null;
             _serverCarry = null;
+            if (hadCarry && IsSpawned) _carriedCargo.Value = default;
             if (IsLocal) { if (_carry != null) OnCarryEnded(); }
             else if (hadCarry) CarryEndedRpc();
         }
@@ -1060,6 +1240,35 @@ namespace CoopGame.Player
         [Rpc(SendTo.Owner)]
         private void CarryEndedRpc() => OnCarryEnded();
 
+        // ───────────────────────── Sound and effects ─────────────────────────
+
+        /// <summary>Carry and knockdown cues for every screen (server or owner sends; nothing gameplay-related).</summary>
+        [Rpc(SendTo.Everyone)]
+        private void CueRpc(CoopGame.Network.GameplayFeedback.Cue cue, Vector3 at) => PlayCue(cue, at);
+
+        private static void PlayCue(CoopGame.Network.GameplayFeedback.Cue cue, Vector3 at)
+        {
+            CoopGame.Network.GameplayFeedback.Play(cue, at);
+            if (cue == CoopGame.Network.GameplayFeedback.Cue.Knockdown)
+            {
+                CoopGame.Network.GameplayFeedback.Burst(at, new Color(1f, .95f, .7f), 18, 3f, .12f);
+                CoopGame.Network.CameraShake.Add(at, .8f);
+            }
+        }
+
+        private byte _shownFistBits;
+
+        /// <summary>Every screen: a hand that closes on a wall hold (synced fist bits, not while carrying) clicks.</summary>
+        private void CueClimbGrab(byte bits)
+        {
+            byte closed = (byte)(bits & ~_shownFistBits);
+            _shownFistBits = bits;
+            if (closed == 0 || !_fullRagdoll || !_bonesReady) return;
+            if (IsLocal ? _carry != null : !_carriedCargo.Value.Equals(default(NetworkObjectReference))) return;
+            int hand = (closed & 1) != 0 ? HandL : HandR;
+            CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.ClimbGrab, _bones[hand].position);
+        }
+
         // ───────────────────────── Drawing ─────────────────────────
 
         private void LateUpdate()
@@ -1076,11 +1285,13 @@ namespace CoopGame.Player
                 _bones[Hips].position = _bodies[Hips].transform.position;
                 for (int i = 0; i < BoneCount; i++) _bones[i].rotation = _bodies[i].transform.rotation;
                 if (_sync != null) _sync.PublishDrawnPose(_bones, _rig.Visual);
+                SampleCargoReplica();
                 // Fists while a hand holds a wall or a crate; other players read the same state.
                 bool left = _carry != null || (_wallclimb != null && _wallclimb.LeftHandGripping);
                 bool right = _carry != null || (_wallclimb != null && _wallclimb.RightHandGripping);
                 byte bits = (byte)((left ? 1 : 0) | (right ? 2 : 0));
                 if (IsSpawned && _fistBits.Value != bits) _fistBits.Value = bits;
+                CueClimbGrab(bits);
                 DrawFists(left, right);
                 UpdateFirstPersonHands();
                 UpdateClimbFade();
@@ -1091,6 +1302,8 @@ namespace CoopGame.Player
                 _bones[Hips].position = visual.TransformPoint(hipsLocal);
                 _bones[Hips].rotation = visual.rotation * hipsRot;
                 for (int i = 1; i < BoneCount; i++) _bones[i].localRotation = _remoteLocal[i];
+                KeepDrawnBodyOutOfCargo();
+                CueClimbGrab(_fistBits.Value);
                 DrawFists((_fistBits.Value & 1) != 0, (_fistBits.Value & 2) != 0);
             }
         }
@@ -1103,6 +1316,8 @@ namespace CoopGame.Player
         [SerializeField] private float _fistThumbAngle = 50f;
         private readonly NetworkVariable<byte> _fistBits = new NetworkVariable<byte>(0,
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        // The crate this player carries (server-written), so other screens can draw the body at the crate.
+        private readonly NetworkVariable<NetworkObjectReference> _carriedCargo = new NetworkVariable<NetworkObjectReference>();
         private float _fistL, _fistR;
 
         /// <summary>Closes the fingers of a holding hand into a fist (and opens them again), eased over ~0.1 s.</summary>
@@ -1547,6 +1762,10 @@ namespace CoopGame.Player
             _knockdownUntil = Time.time + _knockdownSeconds;
             _standUpUntil = _knockdownUntil + _standUpSeconds;
             RequestDrop();
+            if (IsSpawned && _expedition != null) _expedition.ReportEventRpc(CoopGame.Network.LevelResults.EventKnockdown);
+            Vector3 hit = _bodies[Chest].position;
+            if (IsSpawned) CueRpc(CoopGame.Network.GameplayFeedback.Cue.Knockdown, hit);
+            else PlayCue(CoopGame.Network.GameplayFeedback.Cue.Knockdown, hit);
             if (impulse != Vector3.zero)
             {
                 _bodies[Hips].AddForce(impulse * .5f, ForceMode.Impulse);

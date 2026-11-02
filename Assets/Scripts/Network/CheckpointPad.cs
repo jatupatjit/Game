@@ -45,6 +45,9 @@ namespace CoopGame.Network
         private Transform _localPlayer;
 
         public bool IsActive => IsSpawned && _active.Value;
+
+        /// <summary>Server, dev cheat: turn the pad on without placing the crate.</summary>
+        public void DevActivate() { if (IsServer && IsSpawned) _active.Value = true; }
         public int Number => _number;
         public Transform CargoPoint => _cargoPoint != null ? _cargoPoint : transform;
         public Transform PlayerPoint => _playerPoint != null ? _playerPoint : transform;
@@ -62,7 +65,14 @@ namespace CoopGame.Network
             if (!IsSpawned) return;
             if (IsServer && _cargo != null) ServerTick();
             int state = _active.Value ? 1 : 0;
-            if (state != _shown) ApplyVisual(state);
+            if (state == _shown) return;
+            bool saved = _shown == 0 && state == 1;
+            ApplyVisual(state);
+            if (saved)
+            {
+                GameplayFeedback.Play(GameplayFeedback.Cue.Checkpoint, transform.position);
+                GameplayFeedback.Celebrate(transform.position + Vector3.up * .6f, new Color(1f, .85f, .3f));
+            }
         }
 
         private void ServerTick()
