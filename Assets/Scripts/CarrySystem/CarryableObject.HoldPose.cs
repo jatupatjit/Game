@@ -58,16 +58,6 @@ namespace CoopGame.CarrySystem
             // A remote carrier's transform is one network delay old; use where their client really has them.
             if (TryGetRemoteCarrierMotion(carrier, isNetworked, out Vector3 lead, out _)) position += lead;
             heading = FlatHeading(carrier.FacingHeading, player);
-            // Two or more carriers: each one's grip stays on the side of the crate they hold, whatever their camera
-            // faces. (Following the camera made turning in place swing that carrier's grip round, dragging the crate
-            // sideways and the turning carrier with it.)
-            if (_activeCarriers.Count >= 2)
-            {
-                Vector3 grip = _rigidbody.position + _rigidbody.rotation * GripMidLocal(carrier, transform.lossyScale);
-                Vector3 toGrip = grip - position;
-                toGrip.y = 0f;
-                if (toGrip.sqrMagnitude > .01f) heading = toGrip.normalized;
-            }
             float lift = Mathf.Clamp(carrier.HoldHeight - NeutralHoldHeight,
                 -HoldLowerSteps * HoldStepHeight, HoldRaiseSteps * HoldStepHeight);
             return position + heading * HoldReach + Vector3.up * (HoldHeightOffset + lift);

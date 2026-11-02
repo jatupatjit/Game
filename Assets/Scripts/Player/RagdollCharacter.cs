@@ -1071,9 +1071,6 @@ namespace CoopGame.Player
             var drive = new JointDrive { positionSpring = 1500f, positionDamper = 60f, maximumForce = _carryHandForce };
             joint.xDrive = joint.yDrive = joint.zDrive = drive;
             joint.enableCollision = false;
-            // The crate (driven by the server's hold pose) must not be tugged by the hands: on the host it is a real
-            // body, and hands pulling it toward the carrier fed back into the carrier's stance and made it slide.
-            joint.connectedMassScale = 20f;
             _carryHand[h] = joint;
         }
 

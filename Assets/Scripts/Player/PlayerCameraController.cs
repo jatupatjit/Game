@@ -482,9 +482,9 @@ namespace CoopGame.Player
             if (_playerCarry != null && _playerCarry.CurrentCarryable != null &&
                 collider.transform.root == _playerCarry.CurrentCarryable.transform.root) return true;
 
-            // Ignore any CarryableObject currently being carried
-            var carryable = collider.GetComponentInParent<CoopGame.CarrySystem.CarryableObject>();
-            return carryable != null && carryable.IsCarried;
+            // Crates never push the camera in: not while carried, and not while being set down or lying next to the
+            // player (placing one used to snap the camera into the body).
+            return collider.GetComponentInParent<CoopGame.CarrySystem.CarryableObject>() != null;
         }
 
         [Header("Full Physics Body")]

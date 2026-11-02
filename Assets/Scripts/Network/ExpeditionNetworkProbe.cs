@@ -277,6 +277,11 @@ namespace CoopGame.Network
                         }
                     });
                     break;
+                case "liftsteps":
+                    // Same as turning the mouse wheel while carrying (full-ragdoll carry height steps).
+                    typeof(RagdollCharacter).GetField("_liftSteps", BindingFlags.NonPublic | BindingFlags.Instance)?
+                        .SetValue(player.GetComponent<RagdollCharacter>(), int.Parse(parts[2]));
+                    break;
                 case "card": state.SelectCardRpc(byte.Parse(parts[2])); break;
                 case "buy": state.BuyItemRpc(byte.Parse(parts[2])); break;
                 case "use": state.UseItemRpc(int.Parse(parts[2])); break;
@@ -387,7 +392,7 @@ namespace CoopGame.Network
                 portalActivated = portalState != null && portalState.Value,
                 realtime = Time.realtimeSinceStartup,
                 navAngle = ExpeditionHUD.NavAngle, navLabel = ExpeditionHUD.NavLabel, playLabel = ExpeditionHUD.PlayLabel,
-                aimedName = GameplayHighlights.AimedName, cues = GameplayFeedback.PlayCounts(), pingsShown = PlayerPings.ShownCount, cargoes = string.Join(" ", System.Array.ConvertAll(FindObjectsByType<FragileCargo>(), c => c.name + "=" + c.CurrentHP.Value + "/" + c.CurrentCarrierCount + "@" + c.transform.position.ToString("F1"))), results = LevelResults.IsReady ? string.Join(" / ", LevelResults.Players().ConvertAll(p => LevelResults.NameOf(p) + " " + LevelResults.Line(p.Stats.Value))) + " | " + string.Join(" / ", LevelResults.Awards().ConvertAll(a => a.Title + "=" + a.Player)) : "", devInfinite = DevCheats.InfiniteStamina, devGod = DevCheats.GodMode, devLog = string.Join(" / ", DevCheats.Log), xrayCount = GameplayHighlights.XRayCount, markerCount = GameplayHighlights.MarkerCount,
+                aimedName = GameplayHighlights.AimedName, cues = GameplayFeedback.PlayCounts(), pingsShown = PlayerPings.ShownCount, cargoes = string.Join(" ", System.Array.ConvertAll(FindObjectsByType<FragileCargo>(), c => c.name + "=" + c.CurrentHP.Value + "/" + c.CurrentCarrierCount + "@" + c.transform.position.ToString("F1") + "e" + c.transform.eulerAngles.x.ToString("F0") + "," + c.transform.eulerAngles.z.ToString("F0"))), results = LevelResults.IsReady ? string.Join(" / ", LevelResults.Players().ConvertAll(p => LevelResults.NameOf(p) + " " + LevelResults.Line(p.Stats.Value))) + " | " + string.Join(" / ", LevelResults.Awards().ConvertAll(a => a.Title + "=" + a.Player)) : "", devInfinite = DevCheats.InfiniteStamina, devGod = DevCheats.GodMode, devLog = string.Join(" / ", DevCheats.Log), xrayCount = GameplayHighlights.XRayCount, markerCount = GameplayHighlights.MarkerCount,
                 yaw = camera != null ? camera.Yaw : 0, pitch = camera != null ? camera.Pitch : 0,
                 speed = player != null ? player.GetComponent<PlayerMovement>().CurrentSpeed : 0,
                 moveInput = player != null ? player.GetComponent<PlayerInputReader>().MoveInput : Vector2.zero,
