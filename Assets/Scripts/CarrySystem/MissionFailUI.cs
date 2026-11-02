@@ -13,8 +13,8 @@ namespace CoopGame.CarrySystem
     {
         private static MissionFailUI _instance;
         private GameObject _overlay;
-        private Button _restartButton;
-        private Text _status;
+        private Button _restartButton, _lobbyButton;
+        private Text _status, _hpValue, _timeValue, _coinValue;
         private bool _shown;
 
         public static bool IsVisible => _instance != null && _instance._shown;
@@ -62,9 +62,13 @@ namespace CoopGame.CarrySystem
 
             NetworkManager manager = NetworkManager.Singleton;
             bool canRestart = manager == null || !manager.IsListening || manager.IsServer;
-            _restartButton.gameObject.SetActive(canRestart);
-            _status.text = canRestart ? "ลังเสียหายจน HP เหลือ 0\nเริ่มด่านใหม่เพื่อรับลังและลองอีกครั้ง" :
-                "ลังเสียหายจน HP เหลือ 0\nกำลังรอ Host เริ่มด่านใหม่...";
+            _restartButton.interactable = _lobbyButton.interactable = canRestart;
+            _status.text = canRestart ? "ลังเสียหายจน HP เหลือ 0" : "ลังเสียหายจน HP เหลือ 0 • รอ Host เลือก";
+            var run = FindAnyObjectByType<CoopGame.Network.LevelRunState>();
+            float seconds = run != null && run.IsSpawned ? run.ElapsedSeconds : 0f;
+            _hpValue.text = "0/100";
+            _timeValue.text = seconds > 0f ? $"{(int)seconds / 60:00}:{(int)seconds % 60:00}" : "--:--";
+            _coinValue.text = "--";
 
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -97,13 +101,33 @@ namespace CoopGame.CarrySystem
                 SceneManager.LoadScene(scenePath, LoadSceneMode.Single);
             }
 
-            _restartButton.interactable = false;
-            _status.text = "Restarting level...";
+            _restartButton.interactable = _lobbyButton.interactable = false;
+            _status.text = "กำลังเริ่มด่านใหม่...";
         }
 
+        /// <summary>Host (or offline): everyone back to the Lobby, the session stays connected.</summary>
+        private void OnLobbyClicked()
+        {
+            const string lobby = CoopGame.Player.PlayerAppearance.LobbySceneName;
+            NetworkManager manager = NetworkManager.Singleton;
+            if (manager != null && manager.IsListening)
+            {
+                if (!manager.IsServer || manager.SceneManager == null) return;
+                if (manager.SceneManager.LoadScene(lobby, LoadSceneMode.Single) != SceneEventProgressStatus.Started)
+                {
+                    _status.text = "กลับ Lobby ไม่สำเร็จ ลองอีกครั้ง";
+                    return;
+                }
+            }
+            else SceneManager.LoadScene(lobby, LoadSceneMode.Single);
+            _restartButton.interactable = _lobbyButton.interactable = false;
+            _status.text = "กำลังกลับ Lobby...";
+        }
+
+        /// <summary>Cute kit result card (George's mockup 2026-11-02), matching MissionCompleteUI: red plank title,
+        /// beige card with cargo HP / time / coins, "ลองใหม่" and "กลับ Lobby" on the bottom edge.</summary>
         private void BuildUI()
         {
-            Font font = UITheme.Font;
             _overlay = new GameObject("Failure Overlay", typeof(RectTransform), typeof(Image));
             _overlay.transform.SetParent(transform, false);
             RectTransform full = _overlay.GetComponent<RectTransform>();
@@ -113,51 +137,47 @@ namespace CoopGame.CarrySystem
             full.offsetMax = Vector2.zero;
             _overlay.GetComponent<Image>().color = UITheme.Overlay;
 
-            GameObject panel = new GameObject("Failure Panel", typeof(RectTransform), typeof(Image));
+            GameObject panel = new GameObject("Failure Panel", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
             panel.transform.SetParent(_overlay.transform, false);
             RectTransform panelRect = panel.GetComponent<RectTransform>();
-            panelRect.sizeDelta = new Vector2(650f, 350f);
-            UITheme.StyleSolidPanel(panel.GetComponent<Image>());
+            panelRect.sizeDelta = new Vector2(700f, 400f);
+            panelRect.anchoredPosition = new Vector2(0f, -10f);
+            UITheme.StyleCuteCard(panel.GetComponent<Image>());
+            VerticalLayoutGroup layout = panel.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(70, 70, 92, 96);
+            layout.spacing = 6f;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            panel.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            Text title = CreateText("Title", panel.transform, font, "ภารกิจล้มเหลว", 52,
-                new Vector2(0f, 94f), new Vector2(580f, 76f), UITheme.Danger);
+            Text title = UITheme.MakeCutePlank(panel.transform, "ส่งพัสดุไม่สำเร็จ", 500f, 118f, 0f, 44);
             UITheme.SetWeight(title, UITheme.FontBold);
-            _status = CreateText("Status", panel.transform, font, "The item was destroyed.", 26,
-                new Vector2(0f, 15f), new Vector2(580f, 95f), UITheme.TextPrimary);
+            title.transform.parent.GetComponent<Image>().color = new Color(1f, 0.62f, 0.62f); // wood tinted red
+            UITheme.AddCuteTape(panel.transform, 3, new Vector2(0f, 1f), new Vector2(26f, -44f), 30f, 100f);
+            UITheme.AddCuteTape(panel.transform, 7, new Vector2(1f, 0f), new Vector2(-28f, 42f), -30f, 100f);
 
-            GameObject buttonObject = new GameObject("Restart Level", typeof(RectTransform), typeof(Image), typeof(Button));
-            buttonObject.transform.SetParent(panel.transform, false);
-            RectTransform buttonRect = buttonObject.GetComponent<RectTransform>();
-            buttonRect.anchoredPosition = new Vector2(0f, -92f);
-            buttonRect.sizeDelta = new Vector2(310f, 68f);
-            
-            _restartButton = buttonObject.GetComponent<Button>();
-            buttonObject.AddComponent<UIButtonHover>();
+            _hpValue = CoopGame.Network.MissionCompleteUI.StatRow(panel.transform, "พัสดุ HP");
+            _hpValue.color = UITheme.Danger;
+            _timeValue = CoopGame.Network.MissionCompleteUI.StatRow(panel.transform, "เวลา");
+            _coinValue = CoopGame.Network.MissionCompleteUI.StatRow(panel.transform, "เหรียญที่ได้รับ", false);
+            _status = UITheme.MakeText(panel.transform, "Status", "", 22, UITextRole.OnLight, TextAnchor.MiddleCenter);
+            UITheme.StyleCuteText(_status, true);
+            UITheme.SetPreferredHeight(_status.gameObject, 34f);
+
+            GameObject buttons = new GameObject("Buttons", typeof(RectTransform), typeof(LayoutElement));
+            buttons.transform.SetParent(panel.transform, false);
+            buttons.GetComponent<LayoutElement>().ignoreLayout = true;
+            RectTransform buttonsRect = buttons.GetComponent<RectTransform>();
+            buttonsRect.anchorMin = buttonsRect.anchorMax = new Vector2(.5f, 0f);
+            buttonsRect.sizeDelta = Vector2.zero;
+            _restartButton = UITheme.MakeButton(buttons.transform, "Restart Level", "ลองใหม่", UIButtonStyle.Pink, new Vector2(320f, 92f), 32);
+            _restartButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-175f, -34f);
             _restartButton.onClick.AddListener(OnRestartClicked);
-            CreateText("Button Label", buttonObject.transform, font, "เริ่มด่านใหม่", 27,
-                Vector2.zero, buttonRect.sizeDelta, UITheme.OnPrimary);
-            _restartButton.targetGraphic = buttonObject.GetComponent<Image>();
-            UITheme.StyleButton(_restartButton, UIButtonStyle.Primary);
+            _lobbyButton = UITheme.MakeButton(buttons.transform, "Back To Lobby", "กลับ Lobby", UIButtonStyle.White, new Vector2(320f, 92f), 32);
+            _lobbyButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(175f, -34f);
+            _lobbyButton.onClick.AddListener(OnLobbyClicked);
             _overlay.SetActive(false);
-        }
-
-        private static Text CreateText(string name, Transform parent, Font font, string value,
-            int fontSize, Vector2 position, Vector2 size, Color color)
-        {
-            GameObject objectWithText = new GameObject(name, typeof(RectTransform), typeof(Text));
-            objectWithText.transform.SetParent(parent, false);
-            RectTransform rect = objectWithText.GetComponent<RectTransform>();
-            rect.anchoredPosition = position;
-            rect.sizeDelta = size;
-            Text label = objectWithText.GetComponent<Text>();
-            label.font = font;
-            label.fontSize = fontSize;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.color = color;
-            label.raycastTarget = false;
-            label.verticalOverflow = VerticalWrapMode.Overflow;
-            label.text = value;
-            return label;
         }
     }
 }
