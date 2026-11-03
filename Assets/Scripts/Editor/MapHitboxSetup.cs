@@ -229,11 +229,13 @@ namespace CoopGame.EditorTools
 
                 foreach (GameObject root in scene.GetRootGameObjects())
                 {
-                    if (root.name.Equals("Island", StringComparison.OrdinalIgnoreCase))
+                    if (root.name.Equals("Island", StringComparison.OrdinalIgnoreCase) ||
+                        root.name.Equals("Map Prefap", StringComparison.OrdinalIgnoreCase) ||
+                        root.name.Equals("Map Model", StringComparison.OrdinalIgnoreCase))
                         return root;
 
                     // Also search direct children
-                    Transform found = root.transform.Find("Island");
+                    Transform found = root.transform.Find("Island") ?? root.transform.Find("Map Prefap");
                     if (found != null)
                         return found.gameObject;
                 }
