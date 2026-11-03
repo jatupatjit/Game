@@ -41,6 +41,7 @@ namespace CoopGame.Network
             public string results, cargoes;
             public bool devInfinite, devGod;
             public string devLog;
+            public string settings;
             public Vector2 moveInput;
             public bool grounded, climbing, localSession, portalActivated;
             public string transport;
@@ -213,6 +214,10 @@ namespace CoopGame.Network
             if (parts[1] == "hat") { Cosmetics.ProbeHat(int.Parse(parts[2]), int.Parse(parts[3])); return; }
             if (parts[1] == "resetsave") { PlayerPrefs.DeleteKey("hats_owned"); PlayerPrefs.DeleteKey("hat_equipped"); PlayerPrefs.DeleteKey("stars_Level01"); PlayerPrefs.DeleteKey("stars_Level02"); return; }
             if (parts[1] == "map") { LevelMap.SetOpen(parts[2] == "1"); return; }
+            if (parts[1] == "settings") { if (parts[2] == "close") SettingsMenu.Close(); else SettingsMenu.ShowTabForProbe(int.Parse(parts[2])); return; }
+            if (parts[1] == "screen") { GameSettings.SetScreen(int.Parse(parts[2]), int.Parse(parts[3]), (FullScreenMode)int.Parse(parts[4])); return; }
+            if (parts[1] == "settingsreset") { GameSettings.ResetCamera(); GameSettings.ResetGraphics(); GameSettings.ResetBindings(); return; }
+            if (parts[1] == "setfov") { GameSettings.FieldOfView = float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture); GameSettings.Quality = int.Parse(parts[3]); return; }
             if (parts[1] == "stars") { PlayerPrefs.SetInt("stars_" + parts[2], int.Parse(parts[3])); PlayerPrefs.Save(); return; }
             if (parts[1] == "photo") { PhotoMode.Set(parts[2] == "1"); return; }
             if (parts[1] == "title") { TitleScreen.ShowAgain(); return; }
@@ -392,7 +397,8 @@ namespace CoopGame.Network
                 portalActivated = portalState != null && portalState.Value,
                 realtime = Time.realtimeSinceStartup,
                 navAngle = ExpeditionHUD.NavAngle, navLabel = ExpeditionHUD.NavLabel, playLabel = ExpeditionHUD.PlayLabel,
-                aimedName = GameplayHighlights.AimedName, cues = GameplayFeedback.PlayCounts(), pingsShown = PlayerPings.ShownCount, cargoes = string.Join(" ", System.Array.ConvertAll(FindObjectsByType<FragileCargo>(), c => c.name + "=" + c.CurrentHP.Value + "/" + c.CurrentCarrierCount + "@" + c.transform.position.ToString("F1") + "e" + c.transform.eulerAngles.x.ToString("F0") + "," + c.transform.eulerAngles.z.ToString("F0"))), results = LevelResults.IsReady ? string.Join(" / ", LevelResults.Players().ConvertAll(p => LevelResults.NameOf(p) + " " + LevelResults.Line(p.Stats.Value))) + " | " + string.Join(" / ", LevelResults.Awards().ConvertAll(a => a.Title + "=" + a.Player)) : "", devInfinite = DevCheats.InfiniteStamina, devGod = DevCheats.GodMode, devLog = string.Join(" / ", DevCheats.Log), xrayCount = GameplayHighlights.XRayCount, markerCount = GameplayHighlights.MarkerCount,
+                settings = $"screen={Screen.width}x{Screen.height} {Screen.fullScreenMode} fov={(Camera.main != null ? Camera.main.fieldOfView : 0f)} quality={GameSettings.Quality} scale={(QualitySettings.renderPipeline is UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset urp ? urp.renderScale : 1f)} vsync={QualitySettings.vSyncCount} fps={Application.targetFrameRate} volume={AudioListener.volume}",
+                aimedName = GameplayHighlights.AimedName,cues = GameplayFeedback.PlayCounts(), pingsShown = PlayerPings.ShownCount, cargoes = string.Join(" ", System.Array.ConvertAll(FindObjectsByType<FragileCargo>(), c => c.name + "=" + c.CurrentHP.Value + "/" + c.CurrentCarrierCount + "@" + c.transform.position.ToString("F1") + "e" + c.transform.eulerAngles.x.ToString("F0") + "," + c.transform.eulerAngles.z.ToString("F0"))), results = LevelResults.IsReady ? string.Join(" / ", LevelResults.Players().ConvertAll(p => LevelResults.NameOf(p) + " " + LevelResults.Line(p.Stats.Value))) + " | " + string.Join(" / ", LevelResults.Awards().ConvertAll(a => a.Title + "=" + a.Player)) : "", devInfinite = DevCheats.InfiniteStamina, devGod = DevCheats.GodMode, devLog = string.Join(" / ", DevCheats.Log), xrayCount = GameplayHighlights.XRayCount, markerCount = GameplayHighlights.MarkerCount,
                 yaw = camera != null ? camera.Yaw : 0, pitch = camera != null ? camera.Pitch : 0,
                 speed = player != null ? player.GetComponent<PlayerMovement>().CurrentSpeed : 0,
                 moveInput = player != null ? player.GetComponent<PlayerInputReader>().MoveInput : Vector2.zero,

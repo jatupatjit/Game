@@ -451,6 +451,7 @@ namespace CoopGame.Network
         {
             if (_isPaused) RefreshRoomCodeSection();
             if (LobbyCharacterCustomizationUI.BlocksPause || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (SettingsMenu.IsOpen || SettingsMenu.ClosedFrame == Time.frameCount) return; // its own Esc closes it
             bool escPressed = UnityEngine.InputSystem.Keyboard.current != null &&
                               UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame;
             if (!escPressed) return;
@@ -540,7 +541,12 @@ namespace CoopGame.Network
 
         private void OnContinueClicked() => HidePause();
 
-        private void OnSettingsClicked()  { _settingsOpen = true;  ShowSettingsPanel(); }
+        /// <summary>Opens the full settings window over the pause card; the card comes back when it closes.</summary>
+        private void OnSettingsClicked()
+        {
+            if (_pausePanel != null) _pausePanel.SetActive(false);
+            SettingsMenu.Open(() => { if (_isPaused && _pausePanel != null) _pausePanel.SetActive(true); });
+        }
         private void OnBackFromSettings() { _settingsOpen = false; HideSettingsPanel(); }
 
         private void OnQuitToMenuClicked()

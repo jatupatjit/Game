@@ -281,7 +281,7 @@ namespace CoopGame.CarrySystem
 
             if (_deliveryFanfareClip != null)
             {
-                AudioSource.PlayClipAtPoint(_deliveryFanfareClip, deliveryPoint, 1.0f);
+                AudioSource.PlayClipAtPoint(_deliveryFanfareClip, deliveryPoint, CoopGame.Network.GameSettings.SfxVolume);
             }
             else CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Delivered, deliveryPoint);
         }

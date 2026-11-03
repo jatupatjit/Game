@@ -100,7 +100,7 @@ namespace CoopGame.Network
             audio.Stop();
             audio.transform.position = position;
             audio.clip = clip;
-            audio.volume = Volume[index] * Mathf.Lerp(.35f, 1f, Mathf.Clamp01(strength));
+            audio.volume = Volume[index] * Mathf.Lerp(.35f, 1f, Mathf.Clamp01(strength)) * GameSettings.SfxVolume;
             audio.pitch = Pitch[index] * Random.Range(.96f, 1.04f);
             audio.spatialBlend = Global[index] ? 0f : 1f;
             audio.minDistance = cue == Cue.Step ? 1.5f : 3f;

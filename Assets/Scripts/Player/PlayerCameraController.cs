@@ -291,8 +291,9 @@ namespace CoopGame.Player
             if (Cursor.lockState != CursorLockMode.Locked || CoopGame.Network.PhotoMode.IsOn) return;
             _isCursorLocked = true;
 
-            _yaw += lookDelta.x * _sensitivity;
-            _pitch -= lookDelta.y * _sensitivity;
+            float sensitivity = _sensitivity * CoopGame.Network.GameSettings.MouseSensitivity;
+            _yaw += lookDelta.x * sensitivity;
+            _pitch -= lookDelta.y * sensitivity * (CoopGame.Network.GameSettings.InvertY ? -1f : 1f);
             _pitch = Mathf.Clamp(_pitch, _minPitch, _maxPitch);
         }
 

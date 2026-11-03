@@ -75,16 +75,26 @@ namespace CoopGame.Player
         private void Awake()
         {
             InitializeInputActions();
+            ApplyKeySettings();
         }
 
         private void OnEnable()
         {
             EnableInput();
+            CoopGame.Network.GameSettings.Changed += ApplyKeySettings;
         }
 
         private void OnDisable()
         {
             DisableInput();
+            CoopGame.Network.GameSettings.Changed -= ApplyKeySettings;
+        }
+
+        /// <summary>Keys chosen in the settings menu (keyboard/mouse bindings only; gamepad keeps its buttons).</summary>
+        private void ApplyKeySettings()
+        {
+            foreach (InputAction action in new[] { _moveAction, _jumpAction, _sprintAction, _interactAction, _grabLeftAction, _grabRightAction, _throwAction })
+                CoopGame.Network.GameSettings.ApplyBindings(action);
         }
 
         private void Update()

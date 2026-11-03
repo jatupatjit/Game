@@ -397,7 +397,7 @@ namespace CoopGame.Network
         // ─────────────────────────────────────────── Navigation ───────────────
 
         private void OnHostRoomMenuClicked() => ShowPanel(MenuState.HostRoom);
-        private void OnSettingsMenuClicked() => ShowPanel(MenuState.Settings);
+        private void OnSettingsMenuClicked() => SettingsMenu.Open();
         private void OnJoinMenuClicked()     => ShowPanel(MenuState.Join);
         private void OnBackToMainMenu()      => ShowPanel(MenuState.Main);
         private void OnBackToHostRoom()      => ShowPanel(MenuState.HostRoom);

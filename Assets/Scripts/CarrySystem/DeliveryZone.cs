@@ -470,7 +470,7 @@ namespace CoopGame.CarrySystem
 
                 if (_deliverySuccessSfx != null && _audioSource != null)
                 {
-                    _audioSource.PlayOneShot(_deliverySuccessSfx);
+                    _audioSource.PlayOneShot(_deliverySuccessSfx, CoopGame.Network.GameSettings.SfxVolume);
                 }
 
                 // DeliveryPoint owns networked success, score, and cargo locking.

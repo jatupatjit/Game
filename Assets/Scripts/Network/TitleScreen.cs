@@ -84,6 +84,11 @@ namespace CoopGame.Network
             var quit = UITheme.MakeButton(card.transform, "Quit", "ออกจากเกม", UIButtonStyle.White, new Vector2(320f, 96f), 32);
             ((RectTransform)quit.transform).anchoredPosition = new Vector2(200f, -190f);
             quit.onClick.AddListener(Application.Quit);
+            var settings = UITheme.MakeButton(_root.transform, "Settings", "ตั้งค่า", UIButtonStyle.White, new Vector2(240f, 84f), 30);
+            var settingsRect = (RectTransform)settings.transform;
+            settingsRect.anchorMin = settingsRect.anchorMax = new Vector2(1f, 1f);
+            settingsRect.anchoredPosition = new Vector2(-170f, -80f);
+            settings.onClick.AddListener(() => SettingsMenu.Open());
 
             var hint = UITheme.MakeText(_root.transform, "Hint", "Enter = เริ่ม", 22, UITextRole.Secondary, TextAnchor.MiddleCenter);
             var hintRect = (RectTransform)hint.transform;
@@ -112,7 +117,7 @@ namespace CoopGame.Network
             var manager = NetworkManager.Singleton;
             if (!_forced && manager != null && manager.IsListening) { Hide(); return; }
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
-            if (keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame)) { Hide(); return; }
+            if (!SettingsMenu.IsOpen && keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame)) { Hide(); return; }
             _crate.anchoredPosition = new Vector2(0f, -20f + 10f * Mathf.Sin(Time.unscaledTime * 2.2f));
             _crate.localRotation = Quaternion.Euler(0f, 0f, 6f * Mathf.Sin(Time.unscaledTime * 1.3f));
             if (Cursor.lockState != CursorLockMode.None) { Cursor.lockState = CursorLockMode.None; Cursor.visible = true; }

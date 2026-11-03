@@ -223,6 +223,7 @@ namespace CoopGame.Player
         private Animator _clone;
         private readonly Transform[] _cloneBones = new Transform[BoneCount];
         private readonly Quaternion[] _holdArmRel = new Quaternion[BoneCount]; // idle arm pose relative to the chest
+        private Vector3 _holdChestForwardLocal = Vector3.forward; // the idle pose's forward in the chest bone's frame
         private bool _hasHoldPose;
         private float _nextBumpTime;
         private static readonly int SpeedParam = Animator.StringToHash("Speed");
@@ -571,6 +572,7 @@ namespace CoopGame.Player
         private void UpdateArms(float pitch, Quaternion facing, bool physics)
         {
             Vector3 right = facing * Vector3.right;
+            if (_carry != null && _hasHoldPose) FaceUpperBodyForward(facing);
             for (int h = 0; h < 2; h++)
             {
                 int upper = h == 0 ? ArmL : ArmR;
@@ -598,6 +600,22 @@ namespace CoopGame.Player
                 SolveArm(upper, shoulder, target, pole);
             }
             _target[Head] = Quaternion.AngleAxis(Mathf.Clamp(pitch, -40f, 40f) * .4f, right) * _target[Head];
+        }
+
+        /// <summary>
+        /// Carrying: the strafe and run clips twist the chest up to ~50 deg off the heading, and the holding arms are
+        /// built from the chest, so on A/D their elbows swung in across the crate. The chest keeps facing the crate
+        /// (spine takes half the correction); hips and legs keep the clip.
+        /// </summary>
+        private void FaceUpperBodyForward(Quaternion facing)
+        {
+            Vector3 chestForward = Flat(_target[Chest] * _holdChestForwardLocal);
+            if (chestForward.sqrMagnitude < 1e-4f) return;
+            float twist = Vector3.SignedAngle(chestForward, facing * Vector3.forward, Vector3.up);
+            Quaternion full = Quaternion.AngleAxis(twist, Vector3.up), half = Quaternion.AngleAxis(twist * .5f, Vector3.up);
+            _target[Hips + 1] = half * _target[Hips + 1];
+            _target[Chest] = full * _target[Chest];
+            _target[Head] = full * _target[Head];
         }
 
         /// <summary>Hand target of a wave (right hand swings side to side above the shoulder) or cheer (both up).</summary>
@@ -1674,6 +1692,7 @@ namespace CoopGame.Player
             animator.Update(0f);
             Quaternion chest = Quaternion.Inverse(_cloneBones[Chest].rotation);
             for (int i = ArmL; i <= HandR; i++) _holdArmRel[i] = chest * _cloneBones[i].rotation;
+            _holdChestForwardLocal = chest * Vector3.forward;
             _hasHoldPose = true;
         }
 

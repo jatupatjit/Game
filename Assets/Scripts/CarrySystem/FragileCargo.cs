@@ -572,7 +572,7 @@ namespace CoopGame.CarrySystem
             if (strength > .25f) CoopGame.Network.CameraShake.Add(impactPoint, strength * .6f);
             if (_impactSound != null)
             {
-                AudioSource.PlayClipAtPoint(_impactSound, impactPoint, 1.0f);
+                AudioSource.PlayClipAtPoint(_impactSound, impactPoint, CoopGame.Network.GameSettings.SfxVolume);
             }
         }
 
@@ -606,7 +606,7 @@ namespace CoopGame.CarrySystem
             if (_destructionSound == null) CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Broken, destructionPoint);
             if (_destructionSound != null)
             {
-                AudioSource.PlayClipAtPoint(_destructionSound, destructionPoint, 1.0f);
+                AudioSource.PlayClipAtPoint(_destructionSound, destructionPoint, CoopGame.Network.GameSettings.SfxVolume);
             }
         }
 
