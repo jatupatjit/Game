@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using CoopGame.Obstacles;
 
 namespace CoopGame.CarrySystem
 {
@@ -37,7 +38,7 @@ namespace CoopGame.CarrySystem
 
         // Called only in PlayerCarry.FixedUpdate after server ownership validation (and by the full-physics player,
         // whose ragdoll limbs live outside the player hierarchy and are passed as extraCarrierColliders).
-        public bool TryPlaceGently(ulong carrierId, Collider[] extraCarrierColliders = null)
+        public virtual bool TryPlaceGently(ulong carrierId, Collider[] extraCarrierColliders = null)
         {
             if ((IsSpawned && !IsServer) || IsSecured || IsPlacing || !HasCarrier(carrierId)) return false;
             _placingExtraColliders = extraCarrierColliders;
