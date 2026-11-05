@@ -243,6 +243,7 @@ namespace CoopGame.CarrySystem
             DetachAllCarriers();
             _secured.Value = true;
             _throwPending = false;
+            SetInFlight(false);
         }
 
         /// <summary>
@@ -351,9 +352,11 @@ namespace CoopGame.CarrySystem
                 }
                 return;
             }
+            TickFlight();
             if (_throwPending)
             {
                 _throwPending = false;
+                BeginFlight();
                 _rigidbody.isKinematic = false;
                 _rigidbody.useGravity = true;
                 _rigidbody.constraints = RigidbodyConstraints.None;

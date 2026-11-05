@@ -32,6 +32,8 @@ namespace CoopGame.Player
         // Cached references
         private PlayerStamina _stamina;
         private PlayerCarry _playerCarry;
+        private RagdollCharacter _ragdoll;
+        private Text _throwLabel;
         private PlayerMovement _movement;
         private Wallclimb _wallClimb;
         private PlayerInputReader _inputReader;
@@ -56,11 +58,13 @@ namespace CoopGame.Player
 
         // Kit stamina bar size at 1080p reference (art drawn at 1.25x its imported size).
         private const float BarScale = 1.25f, BarWidth = 460f, BarHeight = 34f * BarScale;
+        private static readonly Color ThrowFull = new Color(1f, .55f, .15f);
 
         private void Awake()
         {
             _stamina = GetComponent<PlayerStamina>();
             _playerCarry = GetComponent<PlayerCarry>();
+            _ragdoll = GetComponent<RagdollCharacter>();
             _movement = GetComponent<PlayerMovement>();
             _wallClimb = GetComponent<Wallclimb>();
             _inputReader = GetComponent<PlayerInputReader>();
@@ -129,8 +133,10 @@ namespace CoopGame.Player
 
             float targetNormStamina = _stamina.NormalizedStamina;
             bool isExhausted = _stamina.IsExhausted;
-            bool isChargingThrow = (_playerCarry != null && _playerCarry.IsChargingThrow);
-            float throwCharge = (_playerCarry != null) ? _playerCarry.CurrentThrowCharge : 0f;
+            // The full-ragdoll player aims with Q (RagdollCharacter); the old PlayerCarry is off then.
+            bool ragdollThrow = _ragdoll != null && _ragdoll.FullRagdoll;
+            bool isChargingThrow = ragdollThrow ? _ragdoll.AimingThrow : (_playerCarry != null && _playerCarry.IsChargingThrow);
+            float throwCharge = ragdollThrow ? _ragdoll.ThrowChargeNow : (_playerCarry != null) ? _playerCarry.CurrentThrowCharge : 0f;
 
             // 1. Smoothly glide displayed stamina down/up continuously
             _displayedStamina = Mathf.MoveTowards(_displayedStamina, targetNormStamina, Time.deltaTime * _smoothDrainSpeed);
@@ -178,10 +184,15 @@ namespace CoopGame.Player
                 if (isChargingThrow)
                 {
                     UITheme.SetBarFill(_throwFillImage, throwCharge);
-
-                    _throwFillImage.color = (throwCharge >= 0.98f)
-                        ? Color.Lerp(UITheme.Primary, UITheme.TextPrimary, 0.6f * Mathf.PingPong(Time.time * 8f, 1f))
-                        : UITheme.Primary;
+                    // White -> orange as it charges, flashing once full; the bar swells a little at full power.
+                    Color charged = Color.Lerp(new Color(1f, .95f, .8f), ThrowFull, throwCharge);
+                    _throwFillImage.color = throwCharge >= 0.98f
+                        ? Color.Lerp(ThrowFull, Color.white, 0.6f * Mathf.PingPong(Time.time * 8f, 1f))
+                        : charged;
+                    float swell = throwCharge >= 0.98f ? 1.04f + .03f * Mathf.Sin(Time.time * 18f) : 1f;
+                    _throwBarContainer.transform.localScale = Vector3.one * swell;
+                    if (_throwLabel != null)
+                        _throwLabel.text = throwCharge >= 0.98f ? "แรงเต็ม!" : "แรงโยน " + Mathf.RoundToInt(throwCharge * 100f) + "%";
                 }
             }
 
@@ -318,34 +329,67 @@ namespace CoopGame.Player
             iconRect.sizeDelta = new Vector2(76f, 72f);
             UITheme.StyleIcon(iconObj.GetComponent<Image>(), UITheme.IconCarrier);
 
-            // 6. Throw Charge Bar Container & Background
-            _throwBarContainer = new GameObject("ThrowBar_Container");
+            // 6. Throw charge bar (hold Q): same kit bar as stamina, just above it, with the throw badge on the
+            //    left cap (IconThrow, cut from the LONG THROW card art) and "แรงโยน NN%" above.
+            _throwBarContainer = new GameObject("ThrowBar_Container", typeof(RectTransform));
             _throwBarContainer.transform.SetParent(hudRoot.transform, false);
-
-            RectTransform throwBgRect = _throwBarContainer.AddComponent<RectTransform>();
-            throwBgRect.anchorMin = new Vector2(0.5f, 0.0f);
-            throwBgRect.anchorMax = new Vector2(0.5f, 0.0f);
-            throwBgRect.pivot = new Vector2(0.5f, 0.0f);
-            throwBgRect.anchoredPosition = new Vector2(16f, BarHeight + 10f);
-            throwBgRect.sizeDelta = new Vector2(BarWidth - 120f, 14f);
+            RectTransform throwBgRect = (RectTransform)_throwBarContainer.transform;
+            throwBgRect.anchorMin = throwBgRect.anchorMax = new Vector2(0.5f, 0.0f);
+            throwBgRect.pivot = new Vector2(0.5f, 0.5f);
+            throwBgRect.anchoredPosition = new Vector2(0f, BarHeight + 34f + BarHeight * .5f);
+            throwBgRect.sizeDelta = new Vector2(BarWidth, BarHeight);
 
             Image throwBgImg = _throwBarContainer.AddComponent<Image>();
-            UITheme.StyleTrack(throwBgImg);
+            UITheme.StyleShape(throwBgImg, UITheme.StaminaInnerSprite, Color.white);
+            throwBgImg.pixelsPerUnitMultiplier = 1f / BarScale;
             throwBgImg.raycastTarget = false;
+
+            GameObject throwWindow = new GameObject("ThrowBar_Window", typeof(RectTransform));
+            throwWindow.transform.SetParent(_throwBarContainer.transform, false);
+            var throwWindowRect = (RectTransform)throwWindow.transform;
+            throwWindowRect.anchorMin = Vector2.zero;
+            throwWindowRect.anchorMax = Vector2.one;
+            throwWindowRect.offsetMin = new Vector2(w.left * BarScale, w.bottom * BarScale);
+            throwWindowRect.offsetMax = new Vector2(-w.right * BarScale, -w.top * BarScale);
 
             // 7. Throw Charge Fill Image
             GameObject throwFillObj = new GameObject("ThrowBar_Fill");
-            throwFillObj.transform.SetParent(_throwBarContainer.transform, false);
-
+            throwFillObj.transform.SetParent(throwWindow.transform, false);
             _throwFillRect = throwFillObj.AddComponent<RectTransform>();
             _throwFillRect.anchorMin = Vector2.zero;
             _throwFillRect.anchorMax = Vector2.one;
-            _throwFillRect.offsetMin = new Vector2(2f, 2f);
-            _throwFillRect.offsetMax = new Vector2(-2f, -2f);
-
+            _throwFillRect.offsetMin = _throwFillRect.offsetMax = Vector2.zero;
             _throwFillImage = throwFillObj.AddComponent<Image>();
-            UITheme.StyleFill(_throwFillImage, UITheme.Primary);
+            UITheme.StyleFill(_throwFillImage, ThrowFull);
             _throwFillImage.raycastTarget = false;
+
+            GameObject throwFrame = new GameObject("ThrowBar_Frame", typeof(RectTransform), typeof(Image));
+            throwFrame.transform.SetParent(_throwBarContainer.transform, false);
+            var throwFrameRect = (RectTransform)throwFrame.transform;
+            throwFrameRect.anchorMin = Vector2.zero;
+            throwFrameRect.anchorMax = Vector2.one;
+            throwFrameRect.offsetMin = throwFrameRect.offsetMax = Vector2.zero;
+            Image throwFrameImg = throwFrame.GetComponent<Image>();
+            UITheme.StyleShape(throwFrameImg, UITheme.StaminaFrameSprite, Color.white);
+            throwFrameImg.pixelsPerUnitMultiplier = 1f / BarScale;
+            throwFrameImg.raycastTarget = false;
+
+            GameObject throwIcon = new GameObject("ThrowIcon", typeof(RectTransform), typeof(Image));
+            throwIcon.transform.SetParent(_throwBarContainer.transform, false);
+            var throwIconRect = (RectTransform)throwIcon.transform;
+            throwIconRect.anchorMin = throwIconRect.anchorMax = new Vector2(0f, 0.5f);
+            throwIconRect.anchoredPosition = new Vector2(w.left * BarScale * 0.5f, 4f);
+            throwIconRect.sizeDelta = new Vector2(78f, 78f);
+            UITheme.StyleIcon(throwIcon.GetComponent<Image>(), UITheme.IconThrow);
+
+            _throwLabel = UITheme.MakeText(_throwBarContainer.transform, "ThrowLabel", "", 22, UITextRole.Primary, TextAnchor.MiddleCenter);
+            var labelRect = (RectTransform)_throwLabel.transform;
+            labelRect.anchorMin = labelRect.anchorMax = new Vector2(0.5f, 1f);
+            labelRect.pivot = new Vector2(0.5f, 0f);
+            labelRect.anchoredPosition = new Vector2(0f, 2f);
+            labelRect.sizeDelta = new Vector2(300f, 30f);
+            _throwLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            UITheme.AddOutline(_throwLabel, 2f);
 
             _throwBarContainer.SetActive(false);
         }

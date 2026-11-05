@@ -10,7 +10,7 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>Rebindable keyboard/mouse controls (the gameplay actions in <see cref="Player.PlayerInputReader"/>).</summary>
-    public enum BindRole { Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, GrabLeft, GrabRight }
+    public enum BindRole { Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, GrabLeft, GrabRight, Carry }
 
     /// <summary>
     /// This PC's settings (PlayerPrefs, never sent over the network), applied when the game starts.
@@ -30,7 +30,7 @@ namespace CoopGame.Network
         private static readonly string[] DefaultBindings =
         {
             "<Keyboard>/w", "<Keyboard>/s", "<Keyboard>/a", "<Keyboard>/d", "<Keyboard>/space",
-            "<Keyboard>/leftShift", "<Keyboard>/e", "<Keyboard>/q", "<Mouse>/leftButton", "<Mouse>/rightButton",
+            "<Keyboard>/leftShift", "<Keyboard>/e", "<Keyboard>/q", "<Mouse>/leftButton", "<Mouse>/rightButton", "<Keyboard>/f",
         };
 
         /// <summary>Raised after any setting changes (input readers re-apply their bindings).</summary>
@@ -208,7 +208,7 @@ namespace CoopGame.Network
         private int _rebindEndedFrame = -1;
 
         private static readonly string[] TabNames = { "เมาส์และกล้อง", "กราฟิก", "เสียง", "ปุ่มกด" };
-        private static readonly string[] RoleNames = { "เดินหน้า", "ถอยหลัง", "เดินซ้าย", "เดินขวา", "กระโดด", "วิ่ง", "ใช้ / กด", "โยน", "ยกลัง / มือซ้าย", "วางลัง / มือขวา" };
+        private static readonly string[] RoleNames = { "เดินหน้า", "ถอยหลัง", "เดินซ้าย", "เดินขวา", "กระโดด", "วิ่ง", "ใช้ / กด", "ชาร์จโยน (ค้าง)", "ปีน มือซ้าย", "ปีน มือขวา", "ยก / วาง / ค้างรับ" };
 
         public static void Open(Action onClosed = null)
         {
@@ -386,7 +386,7 @@ namespace CoopGame.Network
             var roles = (BindRole[])Enum.GetValues(typeof(BindRole));
             Transform left = Column(_content, -262f, 510f), right = Column(_content, 262f, 510f);
             for (int i = 0; i < roles.Length; i++)
-                KeyRow(i < 5 ? left : right, roles[i]);
+                KeyRow(i < 6 ? left : right, roles[i]);
             Note(_content, "กดช่องปุ่มแล้วกดปุ่มใหม่ (Esc = ยกเลิก)", -420f);
         }
 

@@ -172,7 +172,7 @@ namespace CoopGame.Player
         {
             foreach (var source in root.GetComponentsInChildren<Renderer>(true))
             {
-                if (!source.enabled || source.name.StartsWith("Outline") || source.name == CloneName) continue;
+                if (!source.enabled || source.name.StartsWith("Outline") || source.name.StartsWith("CatchGlow") || source.name == CloneName) continue;
                 if (source.transform.Find(CloneName) != null) continue;
                 if (source is SkinnedMeshRenderer skinned && skinned.sharedMesh != null)
                 {

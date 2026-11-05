@@ -740,9 +740,12 @@ namespace CoopGame.Network
             var hintFit = _hintBar.AddComponent<ContentSizeFitter>();
             hintFit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             _hintBar.AddComponent<CanvasGroup>().alpha = 1f;
-            Hint("คลิกซ้าย", "จับ", true);
-            Hint("คลิกขวา", "วาง");
-            Hint("Q", "โยน");
+            // Keys follow the settings menu bindings (read when the HUD is built).
+            string Key(BindRole role) => GameSettings.KeyLabel(GameSettings.Binding(role));
+            Hint(Key(BindRole.Carry), "ยก / วาง (ค้าง = รับลัง)");
+            Hint(Key(BindRole.Throw), "ค้างเล็ง ปล่อยโยน");
+            KeyCap(_hintBar.transform, Key(BindRole.GrabLeft), 56f, 35f); // both mouse buttons climb
+            Hint(Key(BindRole.GrabRight), "ปีน");
 
             // Own card icon (mockup 3, bottom-right) with the ability tooltip.
             var own = Box("OwnCardIcon", transform, new Vector2(1f, 0f), new Vector2(-72, 72), new Vector2(84, 84), Color.white);
@@ -751,7 +754,7 @@ namespace CoopGame.Network
             _ownCardIcon.raycastTarget = true;
             _ownCardTip = own.AddComponent<UITooltip>();
             _ownCardTip.Side = new Vector2(-1f, 0f);
-            // "H ดูการ์ด" key hint to the left of the own-card icon (child of the icon, so it hides with it).
+            // "V มุมมอง" and "H ดูการ์ด" key hints to the left of the own-card icon (child of the icon, so it hides with it).
             var viewHint = Box("ViewCardHint", own.transform, new Vector2(0f, .5f), new Vector2(-12f, 0f), new Vector2(10f, 10f), Color.clear);
             ((RectTransform)viewHint.transform).pivot = new Vector2(1f, .5f);
             viewHint.GetComponent<Image>().raycastTarget = false;
@@ -761,6 +764,14 @@ namespace CoopGame.Network
             viewLayout.childForceExpandWidth = viewLayout.childForceExpandHeight = false;
             var viewFit = viewHint.AddComponent<ContentSizeFitter>();
             viewFit.horizontalFit = viewFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            // "V มุมมอง" sits here too (George 2026-11-05: on the left it ran into the stamina bar).
+            KeyCap(viewHint.transform, "V", 32f, 35f);
+            var cameraLabel = UITheme.MakeText(viewHint.transform, "Hint V", "มุมมอง", 20, UITextRole.Primary);
+            cameraLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            UITheme.AddOutline(cameraLabel);
+            var cameraElement = cameraLabel.gameObject.AddComponent<LayoutElement>();
+            cameraElement.preferredHeight = 35f;
+            cameraElement.minWidth = cameraLabel.preferredWidth + 18f;
             KeyCap(viewHint.transform, "H", 32f, 35f);
             var viewLabel = UITheme.MakeText(viewHint.transform, "Hint H", "ดูการ์ด", 20, UITextRole.Primary);
             viewLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
@@ -928,7 +939,7 @@ namespace CoopGame.Network
 
         private void Hint(string key, string action, bool wide = false)
         {
-            KeyCap(_hintBar.transform, key, wide ? 56f : 32f, 35f);
+            KeyCap(_hintBar.transform, key, wide || key.Length > 1 ? 56f : 32f, 35f);
             var text = UITheme.MakeText(_hintBar.transform, "Hint " + key, action, 20, UITextRole.Primary);
             text.horizontalOverflow = HorizontalWrapMode.Overflow;
             UITheme.AddOutline(text);

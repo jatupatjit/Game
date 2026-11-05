@@ -26,7 +26,7 @@ namespace CoopGame.Player
     /// </summary>
     [DisallowMultipleComponent]
     [DefaultExecutionOrder(40)] // after Wallclimb's FixedUpdate; LateUpdate before the camera (60)
-    public sealed class RagdollCharacter : NetworkBehaviour
+    public sealed partial class RagdollCharacter : NetworkBehaviour
     {
         public const int BoneCount = 16;
         private static readonly HumanBodyBones[] Bones =
@@ -88,7 +88,7 @@ namespace CoopGame.Player
         [Tooltip("Replaces the controller's run clip (empty = Running_A)")]
         [SerializeField] private AnimationClip _runClip;
 
-        [Header("Carry (left click lift, right click place, Q throw)")]
+        [Header("Carry (F tap lift / place, hold F catch, hold Q aim + charge, release throw)")]
         [Tooltip("How far from the body centre a crate may be to lift it")]
         [SerializeField] private float _carryPickupReach = 1.1f;
         [Tooltip("Half the distance between the hands on a wide crate's near face")]
@@ -97,7 +97,12 @@ namespace CoopGame.Player
         [SerializeField] private float _carryHandForce = 150f;
         [Tooltip("How hard the body is drawn back to the crate when it lags behind (m/s^2)")]
         [SerializeField] private float _carryLeash = 20f;
-        [SerializeField] private float _throwSpeed = 8f;
+        [Tooltip("Throw speed of a quick tap of Q (m/s)")]
+        [SerializeField] private float _throwMinSpeed = 4.5f;
+        [Tooltip("Throw speed after holding Q for the full charge time (m/s)")]
+        [SerializeField] private float _throwMaxSpeed = 13.5f;
+        [Tooltip("Seconds of holding Q to reach the full throw speed")]
+        [SerializeField] private float _throwChargeTime = 1f;
         [SerializeField] private float _throwStaminaCost = 8f;
 
         [Header("Climb (Wallclimb)")]
@@ -115,6 +120,8 @@ namespace CoopGame.Player
         [SerializeField] private float _climbShiftSpeed = 1.2f;
         [Tooltip("Opacity of your own body while climbing, so the wall behind it shows (gloves stay solid; only on your screen)")]
         [SerializeField, Range(0f, 1f)] private float _climbFadeAlpha = .3f;
+        [Tooltip("Opacity of your own body while holding Q to aim a throw (only on your screen; the crate goes to 0.2)")]
+        [SerializeField, Range(0f, 1f)] private float _aimBodyFadeAlpha = .5f;
         [Tooltip("Seconds to fade the body out when a climb starts and back in when it ends")]
         [SerializeField] private float _climbFadeTime = .2f;
         [Tooltip("Transparent copy of the body material used while climbing")]
@@ -240,6 +247,11 @@ namespace CoopGame.Player
         private float _facingYaw, _slowTurnUntil;           // where the body faces (turns at a capped rate)
         private bool _slowTurnUntilLanded;
         private const float TurnRate = 720f, SlowTurnRate = 240f; // deg/s
+        // Carrying turns the body (and the crate, which is held in front of the body, not the camera) slower: a fast
+        // mouse flick swung the crate round faster than the body and the hands dragged the body off (1.4 m slide and
+        // a dropped crate at 540 deg/s, 2026-11-05). The camera still turns freely.
+        private const float CarryTurnRate = 200f;
+        private const float CarryStopSpeed = .25f, CarryBrake = 12f;
         private const float OldPlayerGravity = 24f; // PlayerMovement._gravity
         private float _airborneUntil, _boostSteerUntil;
 
@@ -333,6 +345,7 @@ namespace CoopGame.Player
 
         public override void OnDestroy()
         {
+            DestroyCatchThrowVisuals();
             DestroyPhysics();
             base.OnDestroy();
         }
@@ -355,10 +368,12 @@ namespace CoopGame.Player
             AimedCargo = _carry == null && canAct && !Exhausted && (_wallclimb == null || !_wallclimb.IsClimbing) &&
                          FindAimedCargo(out CarryableObject aimed) ? aimed : null;
 
+            UpdateCatchInput(canAct);
             if (_carry != null)
             {
-                if (_input.ThrowTriggered && canAct) RequestThrow();
-                else if (_input.GrabRightPressed && canAct) RequestPlace();
+                if (UpdateThrowAim(canAct)) { }
+                // F sets the crate down (George 2026-11-05: the mouse buttons are for climbing only).
+                else if (_input.CarryPressed && canAct) RequestPlace();
                 if (_input.ScrollStep != 0)
                     _liftSteps = Mathf.Clamp(_liftSteps + _input.ScrollStep, -CarryableObject.HoldLowerSteps, CarryableObject.HoldRaiseSteps);
 
@@ -369,9 +384,13 @@ namespace CoopGame.Player
                     if (_stamina.IsExhausted) RequestDrop();
                 }
             }
-            else if (_input.GrabLeftPressed && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
+            else if (_carryTapReleased && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
             {
                 RequestCarry(AimedCargo);
+            }
+            else if (CatchReady && (!_carryRequestPending || Time.time > _carryRequestTimeout) && FindCatchableCargo(out CarryableObject flying))
+            {
+                RequestCarry(flying);
             }
         }
 
@@ -431,6 +450,7 @@ namespace CoopGame.Player
             }
             bool slowTurn = Time.time < _slowTurnUntil;
             float turnRate = slowTurn ? SlowTurnRate : TurnRate;
+            if (_carry != null) turnRate = Mathf.Min(turnRate, CarryTurnRate);
             _facingYaw = Mathf.MoveTowardsAngle(_facingYaw, yaw, turnRate * dt);
             Quaternion bodyFacing = Quaternion.Euler(0f, _facingYaw, 0f);
             if (_clone != null) UpdateClonePose(flatVel, bodyFacing, IsGrounded);
@@ -455,8 +475,15 @@ namespace CoopGame.Player
                 bool carryHold = IsGrounded && !moving && _carry != null && _carry.CurrentCarrierCount < 2;
                 bool still = IsGrounded && desired == Vector3.zero && (carryHold || flatVel.sqrMagnitude < .25f);
                 Vector3 hipsFlat = Flat(_bodies[Hips].position);
-                if (!still || !_holding || (!carryHold && (hipsFlat - _holdSpot).sqrMagnitude > .25f)) { _holdSpot = hipsFlat; _holding = still; }
+                // Just after letting go of a key the carry hold waits for the body to stop before it pins the spot:
+                // pinning it at the release point pulled the body back after it coasted on (A/D slid back ~0.2 m).
+                bool coasting = carryHold && !_holding && flatVel.sqrMagnitude > CarryStopSpeed * CarryStopSpeed;
+                if (carryHold && coasting) desired = Vector3.zero;
+                if (!still || !_holding || coasting || (!carryHold && (hipsFlat - _holdSpot).sqrMagnitude > .25f))
+                { _holdSpot = hipsFlat; _holding = still && !coasting; }
                 else hold = (_holdSpot - hipsFlat) * HoldSpring;
+                // Carrying, no input: brake firmly so the body stops where the key was let go instead of coasting.
+                if (carryHold && coasting) hold = -flatVel * CarryBrake;
                 accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
 
@@ -480,7 +507,7 @@ namespace CoopGame.Player
                 _joints[i].targetRotation = Quaternion.Inverse(desiredRel) * _restRelative[i];
             }
 
-            UpdateCarry(move, facing, hipsVel);
+            UpdateCarry(move, facing, bodyFacing, hipsVel);
         }
 
         private void TryJump()
@@ -952,12 +979,9 @@ namespace CoopGame.Player
             else PlaceCarryRpc();
         }
 
-        private void RequestThrow()
+        private void RequestThrow(float charge)
         {
-            float pitch = _camera != null ? _camera.Pitch : 0f;
-            float yaw = _camera != null ? _camera.Yaw : transform.eulerAngles.y;
-            Vector3 dir = Quaternion.Euler(Mathf.Clamp(pitch - 20f, -60f, 30f), yaw, 0f) * Vector3.forward;
-            Vector3 velocity = dir * _throwSpeed + Flat(_bodies[Hips].linearVelocity) * .5f;
+            Vector3 velocity = ThrowVelocity(charge);
             _throwCostPending = true; // stamina is paid when the server has really let go (OnCarryEnded)
             if (HasAuthority) ServerThrow(velocity);
             else ThrowCarryRpc(velocity);
@@ -1006,11 +1030,12 @@ namespace CoopGame.Player
             _carry = null;
         }
 
-        private void UpdateCarry(Vector2 move, Quaternion facing, Vector3 hipsVel)
+        private void UpdateCarry(Vector2 move, Quaternion facing, Quaternion bodyFacing, Vector3 hipsVel)
         {
             RestoreCargoCollisionWhenClear();
             if (_carry == null) return;
-            Vector3 heading = facing * Vector3.forward;
+            // The crate is held in front of the body (which turns at CarryTurnRate), walking input stays camera-relative.
+            Vector3 heading = bodyFacing * Vector3.forward;
             Vector3 direction = Vector3.ClampMagnitude(facing * new Vector3(move.x, 0f, move.y), 1f);
             float height = CarryableObject.NeutralHoldHeight + _liftSteps * CarryableObject.HoldStepHeight;
             if (HasAuthority) ServerCarryInput(direction, heading, height, transform.position, Flat(hipsVel));
@@ -1303,6 +1328,7 @@ namespace CoopGame.Player
         private void LateUpdate()
         {
             if (!_fullRagdoll || !EnsureBones()) return;
+            UpdateCatchGlow();
             if (IsLocal)
             {
                 if (_physicsRoot == null) return;
@@ -1460,7 +1486,8 @@ namespace CoopGame.Player
 
         private void UpdateClimbFade()
         {
-            float target = _climbing && !_fpShown && _climbFadeBody != null ? _climbFadeAlpha : 1f;
+            // Climbing fades the body most; aiming a throw fades it less (the crate is ghosted harder, ThrowPreview).
+            float target = _fpShown || _climbFadeBody == null ? 1f : _climbing ? _climbFadeAlpha : _aimingThrow ? _aimBodyFadeAlpha : 1f;
             if (!_fadeSwapped && target >= 1f) { _fadeAlpha = 1f; return; }
             if (_fadeBodyRenderer == null && !FindFadeRenderers()) return;
             _fadeAlpha = Mathf.MoveTowards(_fadeAlpha, target, Time.deltaTime / Mathf.Max(.01f, _climbFadeTime));

@@ -13,6 +13,7 @@ namespace CoopGame.Player
     ///   * Left Hand: Left Mouse Button / Gamepad Left Trigger
     ///   * Right Hand: Right Mouse Button / Gamepad Right Trigger
     ///   * Interact (one hand, does not pick up cargo): 'E' key / Gamepad West Button
+    ///   * Lift / catch cargo: 'F' key / Gamepad Left Shoulder (tap lifts, hold readies a catch)
     /// - Continuous polling of button hold states for interactive physical lifting.
     /// </summary>
     [DisallowMultipleComponent]
@@ -33,6 +34,7 @@ namespace CoopGame.Player
         private InputAction _grabLeftAction;
         private InputAction _grabRightAction;
         private InputAction _throwAction;
+        private InputAction _carryAction;
 
         // Exposed properties for movement & camera controllers
         public Vector2 MoveInput { get; private set; }
@@ -51,6 +53,11 @@ namespace CoopGame.Player
 
         // Throwing controls (Hold-to-charge, release-to-throw)
         public bool ThrowHeld { get; private set; }
+
+        /// <summary>Lift / catch key (F): a tap lifts the aimed crate, holding it readies a catch.</summary>
+        public bool CarryHeld { get; private set; }
+        public bool CarryPressed { get; private set; }
+        public bool CarryReleased { get; private set; }
 
         /// <summary>
         /// True if ANY grab input is currently pressed (Left Hand, Right Hand, or 'E').
@@ -93,7 +100,7 @@ namespace CoopGame.Player
         /// <summary>Keys chosen in the settings menu (keyboard/mouse bindings only; gamepad keeps its buttons).</summary>
         private void ApplyKeySettings()
         {
-            foreach (InputAction action in new[] { _moveAction, _jumpAction, _sprintAction, _interactAction, _grabLeftAction, _grabRightAction, _throwAction })
+            foreach (InputAction action in new[] { _moveAction, _jumpAction, _sprintAction, _interactAction, _grabLeftAction, _grabRightAction, _throwAction, _carryAction })
                 CoopGame.Network.GameSettings.ApplyBindings(action);
         }
 
@@ -102,6 +109,8 @@ namespace CoopGame.Player
             GrabLeftPressed = false;
             GrabRightPressed = false;
             InteractPressed = false;
+            CarryPressed = false;
+            CarryReleased = false;
             ScrollStep = 0;
             // 1. If game is paused, suppress ALL gameplay inputs completely
             if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
@@ -113,6 +122,7 @@ namespace CoopGame.Player
                 GrabRightHeld = false;
                 InteractHeld = false;
                 ThrowHeld = false;
+                CarryHeld = false;
 
                 if (_wasGrabbing)
                 {
@@ -163,6 +173,14 @@ namespace CoopGame.Player
             if (_throwAction != null)
             {
                 ThrowHeld = !pointerOverUI && _throwAction.IsPressed();
+            }
+
+            if (_carryAction != null)
+            {
+                bool held = !pointerOverUI && _carryAction.IsPressed();
+                CarryPressed = held && !CarryHeld;
+                CarryReleased = !held && CarryHeld;
+                CarryHeld = held;
             }
 
             // Mouse wheel this frame: +1 up, -1 down, 0 none (raises/lowers held cargo).
@@ -267,7 +285,15 @@ namespace CoopGame.Player
                 _grabRightAction.AddBinding("<Gamepad>/rightTrigger");
             }
 
-            // Q / RB throw; F gently places on a validated support surface.
+            // F / LB: tap lifts a crate, hold readies a catch.
+            if (_carryAction == null)
+            {
+                _carryAction = new InputAction("FallbackCarry", InputActionType.Button);
+                _carryAction.AddBinding("<Keyboard>/f");
+                _carryAction.AddBinding("<Gamepad>/leftShoulder");
+            }
+
+            // Q / RB: hold to charge and aim a throw, release to throw.
             if (_throwAction == null)
             {
                 _throwAction = new InputAction("FallbackThrow", InputActionType.Button);
@@ -320,6 +346,7 @@ namespace CoopGame.Player
             _grabLeftAction?.Enable();
             _grabRightAction?.Enable();
             _throwAction?.Enable();
+            _carryAction?.Enable();
         }
 
         public void DisableInput()
@@ -333,6 +360,7 @@ namespace CoopGame.Player
             _grabLeftAction?.Disable();
             _grabRightAction?.Disable();
             _throwAction?.Disable();
+            _carryAction?.Disable();
 
             MoveInput = Vector2.zero;
             LookInput = Vector2.zero;

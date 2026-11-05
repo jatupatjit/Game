@@ -12,6 +12,9 @@ Shader "Custom/CarryableOutline"
         _ZWrite("ZWrite", Float) = 0
         _Extrude("Extrude", Float) = 1
         [Enum(UnityEngine.Rendering.CullMode)] _Cull("Cull", Float) = 1 // Front (inverted hull); the mask uses Back
+        // 1 = extrude along the mesh normal and ignore TEXCOORD1 (meshes without baked smooth normals, e.g. the
+        // player body for the catch outline: its missing UV2 stream does not read back as zero).
+        _UseMeshNormal("Use Mesh Normal", Float) = 0
     }
     SubShader
     {
@@ -55,6 +58,7 @@ Shader "Custom/CarryableOutline"
                 half4 _OutlineColor;
                 float _OutlineWidth;
                 float _Extrude;
+                float _UseMeshNormal;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -62,7 +66,7 @@ Shader "Custom/CarryableOutline"
                 Varyings output;
 
                 // If smoothed normal was baked into TEXCOORD1, use it. Otherwise fallback to normalOS
-                float3 norm = (dot(input.smoothNormalOS, input.smoothNormalOS) > 0.001) ? input.smoothNormalOS : input.normalOS;
+                float3 norm = (_UseMeshNormal < 0.5 && dot(input.smoothNormalOS, input.smoothNormalOS) > 0.001) ? input.smoothNormalOS : input.normalOS;
 
                 // Base clip-space position
                 float4 posCS = TransformObjectToHClip(input.positionOS.xyz);

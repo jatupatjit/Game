@@ -86,6 +86,8 @@ public static class UITheme
     public static Sprite KeyCapSprite => Kit("KeyCap");
     public static Sprite BackdropSprite => Kit("BackdropBlur");
     public static Sprite IconCarrier => Kit("IconCarrier");
+    /// <summary>Round badge cut from the LONG THROW card art (crate in flight), left cap of the throw charge bar.</summary>
+    public static Sprite IconThrow => Kit("IconThrow");
     public static Sprite IconStrength => Kit("IconStrength");
     public static Sprite IconCube => Kit("IconCube");
     public static Sprite IconCargoHud => Kit("IconCargoHud");
