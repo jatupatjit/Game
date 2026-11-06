@@ -82,6 +82,59 @@ public static class Level02CapstanSetup
         return "[Level02CapstanSetup] " + string.Join("; ", log);
     }
 
+    /// <summary>
+    /// The FBX art George placed in Level02 has no colliders. Pine trunks and the wooden barricade logs get convex
+    /// mesh colliders; the round trees (one mesh with the canopy) get a trunk capsule only, so the canopy stays open.
+    /// </summary>
+    [MenuItem("Tools/Expedition/Level02 Art Colliders")]
+    public static void ArtCollidersMenu() => Debug.Log(AddArtColliders());
+
+    public static string AddArtColliders()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return "[Level02CapstanSetup] Stop Play mode first.";
+        var scene = EditorSceneManager.GetActiveScene();
+        if (scene.path != ScenePath) return "[Level02CapstanSetup] Open " + ScenePath + " first.";
+        int added = 0;
+        foreach (var root in scene.GetRootGameObjects())
+            foreach (var renderer in root.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (renderer.GetComponent<Collider>() != null) continue;
+                var source = PrefabUtility.GetCorrespondingObjectFromOriginalSource(renderer.gameObject);
+                string file = source != null ? System.IO.Path.GetFileName(AssetDatabase.GetAssetPath(source)) : "";
+                if (file == "ต้นสน.fbx" && renderer.name == "ทรงกระบอก.001" ||
+                    file == "หนามไม้.fbx" && renderer.name.StartsWith("ทรงกระบอก"))
+                {
+                    renderer.gameObject.AddComponent<MeshCollider>().convex = true;
+                    added++;
+                }
+                else if (file == "ต้นไม้กลม.fbx")
+                {
+                    AddTrunkCapsule(renderer);
+                    added++;
+                }
+            }
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        return "[Level02CapstanSetup] Added " + added + " art colliders.";
+    }
+
+    private static void AddTrunkCapsule(MeshRenderer tree)
+    {
+        Transform t = tree.transform;
+        Bounds world = tree.bounds;
+        const float radius = .45f, height = 3.4f;
+        Vector3 up = t.InverseTransformDirection(Vector3.up);
+        int axis = Mathf.Abs(up.x) > Mathf.Abs(up.y) ? (Mathf.Abs(up.x) > Mathf.Abs(up.z) ? 0 : 2) : (Mathf.Abs(up.y) > Mathf.Abs(up.z) ? 1 : 2);
+        Vector3 scale = t.lossyScale;
+        float along = Mathf.Abs(scale[axis]);
+        float across = Mathf.Max(Mathf.Abs(scale[(axis + 1) % 3]), Mathf.Abs(scale[(axis + 2) % 3]));
+        var capsule = tree.gameObject.AddComponent<CapsuleCollider>();
+        capsule.direction = axis;
+        capsule.center = t.InverseTransformPoint(new Vector3(world.center.x, world.min.y + height * .5f, world.center.z));
+        capsule.height = height / along;
+        capsule.radius = radius / across;
+    }
+
     private static void SceneManager(GameObject go, UnityEngine.SceneManagement.Scene scene) =>
         UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, scene);
 
