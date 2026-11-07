@@ -384,7 +384,7 @@ namespace CoopGame.Player
                     if (_stamina.IsExhausted) RequestDrop();
                 }
             }
-            else if (_carryTapReleased && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
+            else if ((_carryTapReleased || (_input != null && _input.CarryPressed)) && Time.time >= _nextPickupAllowedTime && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
             {
                 RequestCarry(AimedCargo);
             }
@@ -932,27 +932,29 @@ namespace CoopGame.Player
             if (view != null)
             {
                 Ray ray = new Ray(view.transform.position, view.transform.forward);
-                int hits = Physics.SphereCastNonAlloc(ray, .15f, _aimHits, 8f, ~(1 << _limbLayer), QueryTriggerInteraction.Ignore);
+                int hits = Physics.SphereCastNonAlloc(ray, .15f, _aimHits, 8f, ~(1 << _limbLayer), QueryTriggerInteraction.Collide);
                 float nearest = float.MaxValue;
                 for (int i = 0; i < hits; i++)
                 {
                     var c = _aimHits[i].collider.GetComponentInParent<CarryableObject>();
                     if (c == null || !c.CanBeCarried || _aimHits[i].distance >= nearest) continue;
-                    if (Flat(_aimHits[i].collider.ClosestPoint(body) - body).magnitude > _carryPickupReach) continue;
+                    float maxReach = (c is CoopGame.CarrySystem.SeeSawWeight) ? _carryPickupReach * 1.5f : _carryPickupReach;
+                    if (Flat(_aimHits[i].collider.ClosestPoint(body) - body).magnitude > maxReach) continue;
                     nearest = _aimHits[i].distance;
                     cargo = c;
                 }
                 if (cargo != null) return true;
             }
             Vector3 forward = _camera != null ? _camera.HorizontalForward : transform.forward;
-            int count = Physics.OverlapSphereNonAlloc(body + forward * .5f, _carryPickupReach * .7f, _cargoNear, ~(1 << _limbLayer), QueryTriggerInteraction.Ignore);
+            int count = Physics.OverlapSphereNonAlloc(body + forward * .5f, _carryPickupReach * 1.2f, _cargoNear, ~(1 << _limbLayer), QueryTriggerInteraction.Collide);
             float best = float.MaxValue;
             for (int i = 0; i < count; i++)
             {
                 var c = _cargoNear[i].GetComponentInParent<CarryableObject>();
                 if (c == null || !c.CanBeCarried) continue;
                 Vector3 to = Flat(_cargoNear[i].ClosestPoint(body) - body);
-                if (to.magnitude > _carryPickupReach || Vector3.Dot(to.normalized, forward) < .3f || to.sqrMagnitude >= best) continue;
+                float maxReach = (c is CoopGame.CarrySystem.SeeSawWeight) ? _carryPickupReach * 1.5f : _carryPickupReach;
+                if (to.magnitude > maxReach || Vector3.Dot(to.normalized, forward) < .2f || to.sqrMagnitude >= best) continue;
                 best = to.sqrMagnitude;
                 cargo = c;
             }
@@ -974,6 +976,9 @@ namespace CoopGame.Player
 
         private void RequestPlace()
         {
+            _carryPressedAt = -1f;
+            _carryTapReleased = false;
+            _nextPickupAllowedTime = Time.time + 0.45f;
             _throwCostPending = false;
             if (HasAuthority) ServerPlace(_colliders);
             else PlaceCarryRpc();
@@ -1028,6 +1033,9 @@ namespace CoopGame.Player
             if (_carry != null && _throwCostPending && _stamina != null) _stamina.ConsumeStamina(_throwStaminaCost);
             _throwCostPending = false;
             _carry = null;
+            _carryPressedAt = -1f;
+            _carryTapReleased = false;
+            _nextPickupAllowedTime = Mathf.Max(_nextPickupAllowedTime, Time.time + 0.45f);
         }
 
         private void UpdateCarry(Vector2 move, Quaternion facing, Quaternion bodyFacing, Vector3 hipsVel)
@@ -1151,7 +1159,8 @@ namespace CoopGame.Player
             bool any = false;
             foreach (var c in colliders)
             {
-                if (c == null || !c.enabled || c.isTrigger) continue;
+                if (c == null || !c.enabled) continue;
+                if (c.isTrigger && c.GetComponentInParent<SeeSawWeight>() == null) continue;
                 if (!any) { bounds = c.bounds; any = true; } else bounds.Encapsulate(c.bounds);
             }
             if (!any) return false;
@@ -1193,8 +1202,10 @@ namespace CoopGame.Player
             float bestSqr = float.MaxValue;
             foreach (var c in colliders)
             {
-                if (c == null || !c.enabled || c.isTrigger || (c is MeshCollider m && !m.convex)) continue;
-                Vector3 p = c.ClosestPoint(point);
+                if (c == null || !c.enabled) continue;
+                if (c.isTrigger && c.GetComponentInParent<SeeSawWeight>() == null) continue;
+                if (c is MeshCollider m && !m.convex) continue;
+                Vector3 p = (c is BoxCollider || c is SphereCollider || c is CapsuleCollider) ? c.ClosestPoint(point) : c.bounds.ClosestPoint(point);
                 float sqr = (p - point).sqrMagnitude;
                 if (sqr < bestSqr) { bestSqr = sqr; best = p; }
             }

@@ -28,6 +28,7 @@ namespace CoopGame.Player
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         private bool _catchReadyLocal, _carryTapReleased;
         private float _carryPressedAt = -1f;
+        private float _nextPickupAllowedTime;
         private readonly Collider[] _catchNear = new Collider[16];
         // Your own throw cannot be caught straight back out of the air for a moment.
         private const float OwnThrowCatchDelay = .6f;
@@ -50,7 +51,12 @@ namespace CoopGame.Player
         private void UpdateCatchInput(bool canAct)
         {
             _carryTapReleased = false;
-            if (_input.CarryPressed) _carryPressedAt = Time.time;
+            if (_input.CarryPressed)
+            {
+                // When already carrying an object, pressing F is intent to PLACE it down, not to lift.
+                if (_carry != null) _carryPressedAt = -1f;
+                else _carryPressedAt = Time.time;
+            }
             bool held = _input.CarryHeld && _carryPressedAt >= 0f;
             if (_input.CarryReleased && _carryPressedAt >= 0f)
             {
