@@ -51,6 +51,23 @@ namespace CoopGame.Player
             }
         }
 
+        private static readonly System.Collections.Generic.List<RagdollCharacter> s_spawned = new();
+
+        /// <summary>The player a collider belongs to: an owner's ragdoll limb or a remote player's stand-in capsule.</summary>
+        public static RagdollCharacter FindByCollider(Collider c)
+        {
+            if (c == null) return null;
+            for (int i = s_spawned.Count - 1; i >= 0; i--)
+            {
+                var rc = s_spawned[i];
+                if (rc == null) { s_spawned.RemoveAt(i); continue; }
+                if (c == rc._remoteProxyCollider || rc.OwnsCollider(c)) return rc;
+            }
+            return null;
+        }
+
+        private void RegisterSpawned() { if (!s_spawned.Contains(this)) s_spawned.Add(this); }
+
         private void SetRemoteProxyIgnore(CarryableObject cargo, bool ignore)
         {
             if (cargo == null || _remoteProxyCollider == null) return;
@@ -60,6 +77,7 @@ namespace CoopGame.Player
 
         private void DestroyRemoteProxy()
         {
+            s_spawned.Remove(this);
             if (_remoteProxy != null) Destroy(_remoteProxy);
             _remoteProxy = null;
             _remoteProxyIgnored = null;

@@ -93,6 +93,23 @@ namespace CoopGame.Traps
             {
                 Collider other = s_hits[i];
                 if (other == null || other == _collider) continue;
+                // Crate first: a host carrier knocked down below lets go at once, and the team-carry check needs them still holding.
+                if (authority)
+                {
+                    var cargo = other.attachedRigidbody != null ? other.attachedRigidbody.GetComponent<FragileCargo>() : null;
+                    if (cargo == null) cargo = other.GetComponentInParent<FragileCargo>();
+                    if (cargo != null) { if (s_cargoThisStep.Add(cargo)) HitCargo(cargo, current, cargo.transform.position); }
+                    else
+                    {
+                        // Team carry: the crate hangs between the carriers, so the trap usually only touches a carrier and,
+                        // unlike a solo carry, nobody drops it, so it never took damage (George 2026-11-09).
+                        // A trap hitting a carrier of a crate held by 2+ players now hurts the crate as well.
+                        var carrier = RagdollCharacter.FindByCollider(other);
+                        var held = carrier != null ? carrier.CarriedCargo as FragileCargo : null;
+                        if (held != null && held.CurrentCarrierCount >= 2 && s_cargoThisStep.Add(held))
+                            HitCargo(held, current, other.bounds.center);
+                    }
+                }
                 if (!playerDone && IsLocalPlayer(other, local, ragdoll, activeRagdoll))
                 {
                     if (TryPush(other.bounds.center, current, out Vector3 velocity))
@@ -101,12 +118,6 @@ namespace CoopGame.Traps
                         _nextPlayerHit = Time.time + _cooldown;
                     }
                     playerDone = true;
-                }
-                if (authority)
-                {
-                    var cargo = other.attachedRigidbody != null ? other.attachedRigidbody.GetComponent<FragileCargo>() : null;
-                    if (cargo == null) cargo = other.GetComponentInParent<FragileCargo>();
-                    if (cargo != null && s_cargoThisStep.Add(cargo)) HitCargo(cargo, current);
                 }
             }
             System.Array.Clear(s_hits, 0, count);
@@ -223,11 +234,11 @@ namespace CoopGame.Traps
             s_bodies.Clear();
         }
 
-        private void HitCargo(FragileCargo cargo, Matrix4x4 current)
+        private void HitCargo(FragileCargo cargo, Matrix4x4 current, Vector3 point)
         {
             if (cargo.IsDestroyed || cargo.IsSecured) return;
             if (_nextCargoHit.TryGetValue(cargo, out float next) && Time.time < next) return;
-            if (!TryPush(cargo.transform.position, current, out Vector3 velocity)) return;
+            if (!TryPush(point, current, out Vector3 velocity)) return;
             _nextCargoHit[cargo] = Time.time + _cooldown;
             if (_cargoDamage > 0) cargo.ApplyDamageServer(_cargoDamage, _damageReason);
             var body = cargo.GetComponent<Rigidbody>();

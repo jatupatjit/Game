@@ -264,6 +264,7 @@ namespace CoopGame.Player
         private Vector3 _carryLocalL, _carryLocalR;
         private readonly ConfigurableJoint[] _carryHand = new ConfigurableJoint[2];
         private CarryableObject _ignoredAfterCarry;
+        private float _ignoredAfterCarrySince;
         private bool _carryRequestPending, _dropRequested, _throwCostPending;
         private float _carryRequestTimeout;
         private int _liftSteps;
@@ -406,6 +407,7 @@ namespace CoopGame.Player
         {
             if (!_fullRagdoll) return;
             if (HasAuthority) ServerWatchCarry();
+            RegisterSpawned();
             if (!IsLocal) { UpdateRemoteProxy(); return; }
             if (!EnsureBones()) return;
             if (_physicsRoot == null) BuildPhysics();
@@ -1061,7 +1063,7 @@ namespace CoopGame.Player
                 _carryHand[h] = null;
             }
             // Collisions come back once the body has stepped clear, so a set-down crate is not shoved.
-            if (_carry != null) _ignoredAfterCarry = _carry;
+            if (_carry != null) { _ignoredAfterCarry = _carry; _ignoredAfterCarrySince = Time.time; }
             if (_carry != null && _throwCostPending && _stamina != null) _stamina.ConsumeStamina(_throwStaminaCost);
             _throwCostPending = false;
             _carry = null;
@@ -1168,6 +1170,11 @@ namespace CoopGame.Player
         private void RestoreCargoCollisionWhenClear()
         {
             if (_ignoredAfterCarry == null) return;
+            // Knocked down while carrying: the limp body used to fall into the crate and stay inside it, because
+            // collisions only came back once nothing overlapped (George 2026-11-09). Restore them right after the fall
+            // starts so physics pushes the body out instead.
+            bool fallen = IsKnockedDown && Time.time > _ignoredAfterCarrySince + .12f;
+            if (!fallen)
             foreach (var cargoCollider in _ignoredAfterCarry.GetComponentsInChildren<Collider>())
             {
                 Bounds cargoBounds = cargoCollider.bounds;
@@ -1576,7 +1583,9 @@ namespace CoopGame.Player
         private void FollowHipsWithRoot()
         {
             Vector3 hips = _bodies[Hips].transform.position;
-            float yaw = _camera != null ? _camera.Yaw : transform.eulerAngles.y;
+            // Lying down: the root keeps its yaw. Following the camera here made other players see the fallen body
+            // spin with this player's mouse (the hips are sent relative to the root, and the root arrives late).
+            float yaw = IsKnockedDown || Time.time < _standUpUntil ? transform.eulerAngles.y : _camera != null ? _camera.Yaw : transform.eulerAngles.y;
             Vector3 root = new Vector3(hips.x, hips.y + _hipsAboveRoot, hips.z);
             transform.SetPositionAndRotation(root, Quaternion.Euler(0f, yaw, 0f));
             _lastRootSet = root;

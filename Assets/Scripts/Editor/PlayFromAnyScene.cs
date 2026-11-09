@@ -163,6 +163,10 @@ namespace CoopGame.EditorTools
         {
             _target = SessionState.GetString(TargetKey, string.Empty);
             if (string.IsNullOrEmpty(_target)) return;
+            // Multiplayer Play Mode Player 2 window: it must not host a game of its own (it used to, and so sat alone
+            // in the Lobby while the main editor played the level, George 2026-11-09). It boots the Lobby only for the
+            // NetworkManager; MppmLocalJoin then joins the main editor and the server moves it into the level.
+            if (!Unity.Multiplayer.PlayMode.CurrentPlayer.IsMainEditor && MppmLocalJoin.Enabled) return;
             _step = Step.WaitManager;
             _deadline = Time.realtimeSinceStartup + TimeoutSeconds;
             EditorApplication.update -= Drive;

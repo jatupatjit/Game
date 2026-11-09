@@ -18,6 +18,8 @@ namespace CoopGame.Network
         private const string PrefKey = "DDI.MppmLocalJoin";
         private const string MenuPath = "Tools/Multiplayer/Player 2 Auto-Join (Localhost)";
         private const ushort Port = 7777;
+        // Port the main editor hosts on when it plays a level through Tools > Expedition > Play From Any Scene.
+        private const ushort PlayFromAnyScenePort = 7788;
 
         public static bool Enabled
         {
@@ -101,9 +103,12 @@ namespace CoopGame.Network
                 yield break;
             }
             // Player 2: retry until the host is up (the main editor may still be loading).
-            for (int attempt = 1; attempt <= 15; attempt++)
+            for (int attempt = 1; attempt <= 20; attempt++)
             {
-                if (!manager.IsListening) Debug.Log($"[MppmLocalJoin] {who} join try {attempt}: " + manager.StartClient());
+                // The host is on 7777 (played from the Lobby) or 7788 (played from a level): try both in turn.
+                ushort port = attempt % 2 == 1 ? PlayFromAnyScenePort : Port;
+                transport.SetConnectionData("127.0.0.1", port);
+                if (!manager.IsListening) Debug.Log($"[MppmLocalJoin] {who} join try {attempt} (port {port}): " + manager.StartClient());
                 float t = 0f;
                 while (t < 4f && !manager.IsConnectedClient) { yield return null; t += Time.unscaledDeltaTime; }
                 if (manager.IsConnectedClient) { Debug.Log("[MppmLocalJoin] Player 2 joined."); yield break; }
