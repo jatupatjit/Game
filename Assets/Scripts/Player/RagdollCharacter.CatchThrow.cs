@@ -28,6 +28,7 @@ namespace CoopGame.Player
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         private bool _catchReadyLocal, _carryTapReleased;
         private float _carryPressedAt = -1f;
+        private float _nextPickupAllowedTime;
         private readonly Collider[] _catchNear = new Collider[16];
         // Your own throw cannot be caught straight back out of the air for a moment.
         private const float OwnThrowCatchDelay = .6f;
@@ -41,6 +42,62 @@ namespace CoopGame.Player
 
         private bool CatchReady => IsLocal ? _catchReadyLocal : _catchReadyNet.Value;
 
+        [Header("Hit by a thrown crate (not holding F)")]
+        [Tooltip("A flying crate this close to the chest (m) knocks the player back")]
+        [SerializeField] private float _crateHitRadius = .75f;
+        [Tooltip("The crate must fly at least this fast (m/s) to knock someone over")]
+        [SerializeField] private float _crateHitMinSpeed = 4f;
+        [Tooltip("Knock-back speed (m/s) at the slowest and fastest hit")]
+        [SerializeField] private Vector2 _crateHitPush = new Vector2(3f, 6f);
+        private CarryableObject _flyingNear;
+        private Vector3 _flyingNearPos;
+        private float _flyingNearTime, _crateHitCooldownUntil;
+
+        /// <summary>Owner, Update: a thrown crate that reaches this player while they are not readying a catch (hold F)
+        /// knocks them back along its flight. The crate's speed is measured here from its drawn position, so it works
+        /// the same on the host and on clients.</summary>
+        private void UpdateThrownCrateHit()
+        {
+            if (_physicsRoot == null || IsKnockedDown || _climbing || Time.time < _crateHitCooldownUntil) { _flyingNear = null; return; }
+            Vector3 chest = _bodies[Hips].position + Vector3.up * .3f;
+            int count = Physics.OverlapSphereNonAlloc(chest, 3f, _catchNear, ~(1 << _limbLayer), QueryTriggerInteraction.Ignore);
+            CarryableObject nearest = null;
+            float best = float.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                var c = _catchNear[i].GetComponentInParent<CarryableObject>();
+                if (c == null || !c.InFlight || c == _carry) continue;
+                if (c == _lastThrown && Time.time - _lastThrownAt < OwnThrowCatchDelay) continue;
+                float d = (_catchNear[i].ClosestPoint(chest) - chest).sqrMagnitude;
+                if (d >= best) continue;
+                best = d; nearest = c;
+            }
+            if (nearest == null) { _flyingNear = null; return; }
+            Vector3 pos = nearest.transform.position;
+            bool tracked = nearest == _flyingNear && Time.time > _flyingNearTime;
+            Vector3 velocity = tracked ? (pos - _flyingNearPos) / (Time.time - _flyingNearTime) : Vector3.zero;
+            if (tracked)
+            {
+                // Swept check: at a low frame rate a fast crate can jump past the chest between two frames, so also
+                // measure the chest's distance to the path the crate's surface travelled since last frame.
+                Vector3 surfaceOffset = pos - (chest + (best > 0f ? Mathf.Sqrt(best) : 0f) * (pos - chest).normalized);
+                Vector3 seg = pos - _flyingNearPos;
+                float t = seg.sqrMagnitude > 1e-6f ? Mathf.Clamp01(Vector3.Dot(chest - _flyingNearPos, seg) / seg.sqrMagnitude) : 1f;
+                float swept = Mathf.Max(0f, Vector3.Distance(chest, _flyingNearPos + seg * t) - surfaceOffset.magnitude);
+                best = Mathf.Min(best, swept * swept);
+            }
+            _flyingNear = nearest; _flyingNearPos = pos; _flyingNearTime = Time.time;
+            if (!tracked || CatchReady || _carry != null) return; // holding F catches it instead
+            float speed = velocity.magnitude;
+            if (speed < _crateHitMinSpeed || best > _crateHitRadius * _crateHitRadius) return;
+            Vector3 dir = Flat(velocity);
+            dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : -transform.forward;
+            float push = Mathf.Lerp(_crateHitPush.x, _crateHitPush.y, Mathf.InverseLerp(_crateHitMinSpeed, 20f, speed));
+            _crateHitCooldownUntil = Time.time + 1.5f;
+            _flyingNear = null;
+            Knockdown((dir * push + Vector3.up * 1.5f) * 45f);
+        }
+
         /// <summary>Owner: holding Q to aim a throw (the charge bar shows while true).</summary>
         public bool AimingThrow => _aimingThrow;
         /// <summary>Owner: 0..1 throw charge while aiming.</summary>
@@ -50,7 +107,12 @@ namespace CoopGame.Player
         private void UpdateCatchInput(bool canAct)
         {
             _carryTapReleased = false;
-            if (_input.CarryPressed) _carryPressedAt = Time.time;
+            if (_input.CarryPressed)
+            {
+                // When already carrying an object, pressing F is intent to PLACE it down, not to lift.
+                if (_carry != null) _carryPressedAt = -1f;
+                else _carryPressedAt = Time.time;
+            }
             bool held = _input.CarryHeld && _carryPressedAt >= 0f;
             if (_input.CarryReleased && _carryPressedAt >= 0f)
             {

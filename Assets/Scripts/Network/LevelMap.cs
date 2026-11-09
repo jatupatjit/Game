@@ -48,17 +48,32 @@ namespace CoopGame.Network
             PlayerPrefs.Save();
         }
 
-        /// <summary>Levels on the map: build scenes except the Lobby and test scenes, in build order.</summary>
+        // Play order (George 2026-11-06: Level02 Sky Kingdom is the first level). Scenes not listed follow in build order.
+        private static readonly string[] PlayOrder = { Training, "Level02 George", "Level02", "Level01" };
+
+        /// <summary>Name shown on the map for a scene.</summary>
+        public static string DisplayName(string scene) => scene switch
+        {
+            Training => "ฝึกซ้อม",
+            "Level02 George" or "Level02" => "ด่าน 1\nอาณาจักรลอยฟ้า",
+            "Level01" => "ด่าน 2\nปราสาท",
+            _ => scene
+        };
+
+        /// <summary>Levels on the map: build scenes except the Lobby and test scenes, in play order.</summary>
         public static List<(int index, string name)> Levels()
         {
-            var levels = new List<(int, string)>();
+            var levels = new List<(int index, string name)>();
             for (int i = 0; i < SceneManager.sceneCountInBuildSettings; i++)
             {
                 string path = SceneUtility.GetScenePathByBuildIndex(i);
                 string name = System.IO.Path.GetFileNameWithoutExtension(path);
                 if (name != Lobby && !path.Contains("/Test/")) levels.Add((i, name));
             }
-            return levels;
+            int Rank(string n) { int r = System.Array.IndexOf(PlayOrder, n); return r < 0 ? PlayOrder.Length : r; }
+            var sorted = new List<(int index, string name)>(levels);
+            sorted.Sort((a, b) => Rank(a.name) != Rank(b.name) ? Rank(a.name).CompareTo(Rank(b.name)) : a.index.CompareTo(b.index));
+            return sorted;
         }
 
         public static void SetOpen(bool open)
@@ -133,11 +148,11 @@ namespace CoopGame.Network
                 var image = node.GetComponent<Image>();
                 UITheme.StyleCuteCard(image);
                 image.color = unlocked ? Color.white : new Color(.75f, .75f, .75f);
-                var title = UITheme.MakeText(node.transform, "Name", name, 32, UITextRole.Primary, TextAnchor.MiddleCenter);
+                var title = UITheme.MakeText(node.transform, "Name", DisplayName(name), 30, UITextRole.Primary, TextAnchor.MiddleCenter);
                 UITheme.StyleCuteText(title);
                 UITheme.SetWeight(title, UITheme.FontBold);
                 ((RectTransform)title.transform).anchoredPosition = new Vector2(0f, 95f);
-                ((RectTransform)title.transform).sizeDelta = new Vector2(260f, 50f);
+                ((RectTransform)title.transform).sizeDelta = new Vector2(260f, 80f);
                 for (int s = 0; s < 3; s++)
                 {
                     var star = new GameObject("Star" + s, typeof(RectTransform), typeof(Image));

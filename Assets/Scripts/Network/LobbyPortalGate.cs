@@ -24,6 +24,10 @@ namespace CoopGame.Network
         [SerializeField] private Collider _portalEntryZone;
         [SerializeField, Min(0f)] private float _entryLoadDelay = 0.25f;
 
+        [Header("Level select")]
+        [Tooltip("Pressing the switch opens the level map (M) on every screen instead of opening the portal straight away.")]
+        [SerializeField] private bool _openLevelMap = true;
+
         [Header("Destination")]
         [SerializeField] private string _destinationSceneName = "Level01";
 
@@ -63,7 +67,7 @@ namespace CoopGame.Network
 
         private void Update()
         {
-            bool canInteract = IsSpawned && !_portalActivated.Value &&
+            bool canInteract = IsSpawned && !_portalActivated.Value && !LevelMap.IsOpen &&
                                _localPlayerTransform != null && _interactionPoint != null;
             bool isNearby = canInteract &&
                             (_localPlayerTransform.position - _interactionPoint.position).sqrMagnitude <=
@@ -163,6 +167,13 @@ namespace CoopGame.Network
                 Vector3.Distance(sender.PlayerObject.transform.position, _interactionPoint.position) > _interactionDistance)
                 return;
 
+            // The level map lets the host pick any level, so it does not need this gate's own destination scene.
+            if (_openLevelMap)
+            {
+                OpenLevelMapRpc();
+                return;
+            }
+
             if (!TryGetDestinationScenePath(out _))
             {
                 Debug.LogError($"[LobbyPortalGate] Destination scene '{_destinationSceneName}' is missing or not included in Build Settings.", this);
@@ -177,6 +188,10 @@ namespace CoopGame.Network
 
             _portalActivated.Value = true;
         }
+
+        /// <summary>Everyone: show the level map; the host picks the level there (M opens it again).</summary>
+        [Rpc(SendTo.Everyone)]
+        private void OpenLevelMapRpc() => LevelMap.SetOpen(true);
 
         private IEnumerator LoadDestinationAfterEntry(NetworkManager manager)
         {

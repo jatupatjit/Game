@@ -33,6 +33,10 @@ namespace CoopGame.Traps
         [SerializeField] private bool _knockDown = true;
         [Tooltip("Turns the fling speed into a ragdoll impulse (about the body mass that takes the hit)")]
         [SerializeField, Min(1f)] private float _ragdollMass = 45f;
+        [Tooltip("A player who is NOT carrying a crate is thrown with the whole body: fling speed x this")]
+        [SerializeField, Min(0f)] private float _freePlayerFlingScale = 1.5f;
+        [Tooltip("Smallest upward speed (m/s) for a player who is not carrying, so they always leave the ground")]
+        [SerializeField, Min(0f)] private float _freePlayerMinUpward = 5f;
 
         [Header("Cargo")]
         [SerializeField, Min(0)] private int _cargoDamage = 10;
@@ -93,7 +97,7 @@ namespace CoopGame.Traps
                 {
                     if (TryPush(other.bounds.center, current, out Vector3 velocity))
                     {
-                        HitPlayer(local, ragdoll, activeRagdoll, velocity);
+                        HitPlayer(local, ragdoll, activeRagdoll, velocity, other);
                         _nextPlayerHit = Time.time + _cooldown;
                     }
                     playerDone = true;
@@ -145,6 +149,8 @@ namespace CoopGame.Traps
 
         private static bool IsLocalPlayer(Collider other, Component player, RagdollCharacter ragdoll, ActiveRagdoll activeRagdoll)
         {
+            // Full ragdoll: only the limbs count (they are what gets thrown).
+            if (ragdoll != null && ragdoll.isActiveAndEnabled && ragdoll.FullRagdoll) return ragdoll.OwnsCollider(other);
             if (ragdoll != null && ragdoll.OwnsCollider(other)) return true;
             if (activeRagdoll != null && activeRagdoll.OwnsCollider(other)) return true;
             return other.transform.IsChildOf(player.transform);
@@ -177,17 +183,44 @@ namespace CoopGame.Traps
             return true;
         }
 
-        private void HitPlayer(Component player, RagdollCharacter ragdoll, ActiveRagdoll activeRagdoll, Vector3 velocity)
+        private void HitPlayer(Component player, RagdollCharacter ragdoll, ActiveRagdoll activeRagdoll, Vector3 velocity, Collider touched)
         {
             if (ragdoll != null && ragdoll.isActiveAndEnabled && ragdoll.FullRagdoll)
             {
-                if (_knockDown) ragdoll.Knockdown(velocity * _ragdollMass);
+                if (ragdoll.HoldingCargo)
+                {
+                    // Carrying: unchanged (falls, and the existing knockdown lets go of the crate).
+                    if (_knockDown) ragdoll.Knockdown(velocity * _ragdollMass);
+                    return;
+                }
+                // Not carrying: go limp, then throw every body part at the same speed so the whole player flies.
+                if (_knockDown) ragdoll.Knockdown(Vector3.zero);
+                Vector3 fling = new(velocity.x * _freePlayerFlingScale, 0f, velocity.z * _freePlayerFlingScale);
+                fling.y = Mathf.Max(velocity.y * _freePlayerFlingScale, _freePlayerMinUpward);
+                FlingBodies(ragdoll, touched, fling);
                 return;
             }
             // Animated player (option A): fling the controller, then let the visual ragdoll fall.
             var movement = player.GetComponent<PlayerMovement>();
             if (movement != null) movement.ApplyImpulse(velocity);
             if (_knockDown && activeRagdoll != null) activeRagdoll.Knockdown(velocity * _ragdollMass);
+        }
+
+        private static readonly List<Rigidbody> s_bodies = new();
+
+        /// <summary>Sets the same velocity change on every limb of the local ragdoll (its physics root is a scene root).</summary>
+        private static void FlingBodies(RagdollCharacter ragdoll, Collider touched, Vector3 velocity)
+        {
+            if (touched == null || !ragdoll.OwnsCollider(touched)) return;
+            touched.transform.root.GetComponentsInChildren(s_bodies);
+            foreach (var body in s_bodies)
+            {
+                if (body == null || body.isKinematic) continue;
+                var col = body.GetComponent<Collider>();
+                if (col != null && !ragdoll.OwnsCollider(col)) continue;
+                body.AddForce(velocity, ForceMode.VelocityChange);
+            }
+            s_bodies.Clear();
         }
 
         private void HitCargo(FragileCargo cargo, Matrix4x4 current)

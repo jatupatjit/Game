@@ -18,7 +18,7 @@ namespace CoopGame.EditorTools.Traps
     {
         public const string PrefabPath = "Assets/Prefabs/Traps/Coop/Coop_CapstanLift.prefab";
         private const string MaterialFolder = "Assets/Prefabs/Traps/Materials";
-        private const string Medieval = "Assets/Prefabs/Hazards/Medieval/Materials/";
+        private const string Medieval = "Assets/Prefabs/Traps/Materials/Medieval/";
         private const float Rise = 5f;
         private const float WalkRadius = 2.2f;
         private static readonly Vector3 PlatformRest = new(0f, .15f, 4.5f);
@@ -154,6 +154,15 @@ namespace CoopGame.EditorTools.Traps
             rope.localPosition = (drum + end) * .5f;
             rope.localRotation = Quaternion.FromToRotation(Vector3.up, end - drum);
             rope.localScale = new Vector3(.07f, (end - drum).magnitude * .5f, .07f);
+
+            // Platform rope at rest (the script stretches it at runtime): pulley down to the platform top.
+            var platformRope = root.transform.Find("PlatformRope");
+            var platform = root.transform.Find("Platform");
+            if (platformRope == null || platform == null) return;
+            Vector3 bottom = root.transform.InverseTransformPoint(platform.position + Vector3.up * platform.lossyScale.y * .5f);
+            platformRope.localPosition = (bottom + end) * .5f;
+            platformRope.localRotation = Quaternion.FromToRotation(Vector3.up, end - bottom);
+            platformRope.localScale = new Vector3(.07f, Mathf.Max(.01f, (end - bottom).magnitude * .5f), .07f);
         }
 
         private static Material Load(string path) => AssetDatabase.LoadAssetAtPath<Material>(path);

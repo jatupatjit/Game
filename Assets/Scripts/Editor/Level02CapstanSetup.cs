@@ -10,7 +10,7 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Level02 climb island: places Coop_CapstanLift (capstan on SpikeIslet 3, platform against the climb island cliff),
+/// Level02 climb island: places Coop_CapstanLift (capstan on SpikeIslet 10 beside the climb island top, platform against the climb island cliff),
 /// gives the climb island a collider, and adds the level's two checkpoints (start village, big forest).
 /// Safe to run again: it replaces only the objects it made.
 /// </summary>
@@ -18,7 +18,7 @@ public static class Level02CapstanSetup
 {
     private const string ScenePath = "Assets/Scenes/Level02.unity";
     private const string Shared = "Assets/Environment/FloatingCoop/";
-    private static readonly Vector3 CapstanPosition = new(21.66f, 7.6f, 18.2f);
+    private static readonly Vector3 CapstanPosition = new(31.4f, 13.2f, 26.4f);
     private static readonly Vector3 PlatformPosition = new(22.6f, 7.6f, 23.2f);
     private static readonly Vector3 VillagePad = new(10.5f, 8f, -1.5f);
     private static readonly Vector3 ForestPad = new(14f, 14.9f, 52.5f);
@@ -56,7 +56,7 @@ public static class Level02CapstanSetup
         var platform = lift.transform.Find("Platform");
         var frame = lift.transform.Find("LiftFrame");
         platform.localPosition = offset;
-        frame.localPosition = new Vector3(offset.x, 0f, offset.z);
+        frame.localPosition = new Vector3(offset.x, offset.y, offset.z);
         CapstanLiftBuilder.FitWindRope(lift);
         log.Add("capstan at " + CapstanPosition + ", platform at " + PlatformPosition);
 

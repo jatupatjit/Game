@@ -28,6 +28,13 @@ namespace CoopGame.Network
         private Image[] _colorRings;
         private int _draft;
         private int _draftColor;
+        private InputField _nicknameInput;
+        // Hats bought in the shop (K): owned ones can be worn from here too.
+        private int _draftHat, _savedHat;
+        private Button[] _hatButtons;
+        private Image[] _hatRings;
+        private Text[] _hatLabels;
+        private int _refreezeFrames;
         private bool _restoreCursorLock;
         private Font _font;
         private static Sprite _hangerSprite;
@@ -36,9 +43,10 @@ namespace CoopGame.Network
         // RenderTexture with a bokeh depth of field on its own volume layer, so the face stays sharp and
         // the lobby behind it is blurred. The main camera's volume mask never includes that layer.
         private const int PreviewVolumeLayer = 31;
-        private const int PreviewWidth = 576, PreviewHeight = 808;
-        private const float PreviewDistance = 2.1f, PreviewFov = 30f;
+        private const int PreviewWidth = 544, PreviewHeight = 832;
+        private const float PreviewDistance = 3.3f, PreviewFov = 30f;
         private Camera _previewCamera;
+        private Light _previewLight;
         private RenderTexture _previewTexture;
         private VolumeProfile _previewProfile;
         // Frozen copy of the player's visible meshes, posed once when the panel opens. Only the preview camera
@@ -176,7 +184,10 @@ namespace CoopGame.Network
 
         private void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
         {
-            if (camera != _previewCamera || _frozenCopies.Count == 0) return;
+            // The portrait's own front light shines only while the preview camera renders.
+            bool preview = camera == _previewCamera;
+            if (_previewLight != null && _previewLight.enabled != preview) _previewLight.enabled = preview;
+            if (!preview || _frozenCopies.Count == 0) return;
             _previewRendering = true;
             for (int i = 0; i < _frozenCopies.Count; i++)
             {
@@ -187,7 +198,9 @@ namespace CoopGame.Network
 
         private void OnEndCameraRendering(ScriptableRenderContext context, Camera camera)
         {
-            if (camera == _previewCamera) RestoreRealBody();
+            if (camera != _previewCamera) return;
+            RestoreRealBody();
+            if (_previewLight != null) _previewLight.enabled = false;
         }
 
         private void RestoreRealBody()
@@ -228,10 +241,25 @@ namespace CoopGame.Network
             dof.focusDistance.Override(PreviewDistance);
             dof.aperture.Override(2f);
             dof.focalLength.Override(90f);
+            // The lobby is lit from above/behind, so the face read dark (George 2026-11-07): lift exposure a little
+            // and add a soft front light from just above the camera.
+            var color = _previewProfile.Add<ColorAdjustments>(true);
+            color.postExposure.Override(0.45f);
             var volume = go.AddComponent<Volume>();
             volume.isGlobal = true;
             volume.priority = 100f;
             volume.sharedProfile = _previewProfile;
+
+            var lightGo = new GameObject("PortraitLight");
+            lightGo.transform.SetParent(go.transform, false);
+            lightGo.transform.localPosition = new Vector3(0.35f, 0.45f, 0.2f);
+            _previewLight = lightGo.AddComponent<Light>();
+            _previewLight.type = LightType.Point;
+            _previewLight.range = PreviewDistance + 2f;
+            _previewLight.intensity = 2.2f;
+            _previewLight.color = new Color(1f, 0.97f, 0.92f);
+            _previewLight.shadows = LightShadows.None;
+            _previewLight.enabled = false;
         }
 
         /// <summary>Puts the preview camera in front of the face renderer (once, at the frozen pose).</summary>
@@ -245,13 +273,16 @@ namespace CoopGame.Network
             Vector3 forward = Vector3.ProjectOnPlane(face.transform.forward, Vector3.up);
             if (forward.sqrMagnitude < 0.01f) forward = player.transform.forward;
             forward.Normalize();
-            Vector3 target = center - Vector3.up * 0.24f;
-            _previewCamera.transform.position = center + forward * PreviewDistance + Vector3.up * 0.15f;
+            // Head and upper body with some room above for a hat (George 2026-11-08: the old shot was too close).
+            Vector3 target = center - Vector3.up * 0.28f;
+            _previewCamera.transform.position = center + forward * PreviewDistance + Vector3.up * 0.05f;
             _previewCamera.transform.rotation = Quaternion.LookRotation(target - _previewCamera.transform.position, Vector3.up);
         }
 
         private void LateUpdate()
         {
+            // A new hat is built on the real head a frame later: copy the pose again so the portrait shows it.
+            if (IsVisible && _refreezeFrames > 0 && !_freezePending && --_refreezeFrames == 0) FreezePose();
             if (!IsVisible || !_freezePending) return;
             var player = PlayerAppearance.LocalInstance;
             Renderer face = player != null && player.TryGetComponent(out CharacterRig rig) ? rig.FaceRenderer : null;
@@ -310,6 +341,9 @@ namespace CoopGame.Network
             if (!CanCustomize || PauseMenu.IsPaused || IsVisible) return;
             _draft = PlayerAppearance.LocalInstance != null ? PlayerAppearance.LocalInstance.CurrentFace : PlayerAppearance.SavedFace;
             _draftColor = PlayerAppearance.LocalInstance != null ? PlayerAppearance.LocalInstance.CurrentColor : PlayerAppearance.SavedColor;
+            if (_nicknameInput != null) _nicknameInput.SetTextWithoutNotify(PlayerExpeditionState.SavedNickname);
+            var localState = LocalState();
+            _savedHat = _draftHat = localState != null ? localState.Hat.Value : 0;
             _restoreCursorLock = Cursor.lockState == CursorLockMode.Locked;
             IsVisible = true;
             _panel.SetActive(true);
@@ -327,6 +361,8 @@ namespace CoopGame.Network
                 PlayerAppearance.LocalInstance.ApplyFace(PlayerAppearance.LocalInstance.CurrentFace);
                 PlayerAppearance.LocalInstance.ApplyColor(PlayerAppearance.LocalInstance.CurrentColor);
             }
+            var state = LocalState();
+            if (state != null && state.Hat.Value != _savedHat) Cosmetics.Equip(_savedHat, state.HatColor.Value);
             Close(true);
         }
 
@@ -345,9 +381,28 @@ namespace CoopGame.Network
             }
         }
 
+        private static PlayerExpeditionState LocalState()
+        {
+            var manager = NetworkManager.Singleton;
+            var player = manager != null && manager.IsListening && manager.LocalClient != null ? manager.LocalClient.PlayerObject : null;
+            return player != null ? player.GetComponent<PlayerExpeditionState>() : null;
+        }
+
+        private void PickHat(int hat)
+        {
+            var state = LocalState();
+            if (state == null || !Cosmetics.Owns(hat)) return;
+            _draftHat = hat;
+            // Worn right away so the portrait shows it; Cancel puts the old hat back.
+            if (state.Hat.Value != hat) { Cosmetics.Equip(hat, state.HatColor.Value); _refreezeFrames = 3; }
+            Refresh();
+        }
+
         private void ChangeStyle(int direction)
         {
-            _draft = (_draft + direction + PlayerAppearance.FaceCount) % PlayerAppearance.FaceCount;
+            int count = PlayerAppearance.PickableFaces.Length;
+            int slot = Mathf.Max(0, System.Array.IndexOf(PlayerAppearance.PickableFaces, _draft));
+            _draft = PlayerAppearance.PickableFaces[(slot + direction + count) % count];
             Refresh();
         }
 
@@ -355,14 +410,15 @@ namespace CoopGame.Network
         {
             int style = _draft;
             Color bodyColor = PlayerAppearance.GetPastelColor(_draftColor);
-            _styleLabel.text = $"ใบหน้า {style + 1}/{PlayerAppearance.FaceCount}";
+            int styleSlot = System.Array.IndexOf(PlayerAppearance.PickableFaces, style);
+            _styleLabel.text = $"ใบหน้า {styleSlot + 1}/{PlayerAppearance.PickableFaces.Length}";
             // Live 3D portrait when the preview camera runs; the flat face texture is the fallback.
             if (_previewTexture == null)
                 _preview.texture = _faceTextures != null && style < _faceTextures.Length ? _faceTextures[style] : null;
             _preview.color = Color.white;
             for (int i = 0; i < _faceOutlines.Length; i++)
             {
-                _faceOutlines[i].enabled = i == style;
+                _faceOutlines[i].enabled = PlayerAppearance.PickableFaces[i] == style;
                 if (_faceBgImages != null && i < _faceBgImages.Length && _faceBgImages[i] != null)
                     _faceBgImages[i].color = bodyColor;
             }
@@ -370,6 +426,16 @@ namespace CoopGame.Network
             {
                 for (int i = 0; i < _colorRings.Length; i++)
                     _colorRings[i].enabled = i == _draftColor;
+            }
+            if (_hatButtons != null)
+            {
+                for (int i = 0; i < _hatButtons.Length; i++)
+                {
+                    bool owned = Cosmetics.Owns(i);
+                    _hatRings[i].enabled = i == _draftHat;
+                    _hatButtons[i].interactable = owned;
+                    _hatLabels[i].text = owned ? Cosmetics.HatNames[i] : $"{Cosmetics.HatNames[i]}\n{Cosmetics.HatPrices[i]} เหรียญ";
+                }
             }
             if (PlayerAppearance.LocalInstance != null)
             {
@@ -384,7 +450,11 @@ namespace CoopGame.Network
         private void Save()
         {
             if (!CanCustomize || PauseMenu.IsPaused) { Close(false); return; }
-            if (PlayerAppearance.SaveLocal(_draft, _draftColor)) Close(true);
+            if (PlayerAppearance.SaveLocal(_draft, _draftColor))
+            {
+                if (_nicknameInput != null) PlayerExpeditionState.SaveNickname(_nicknameInput.text);
+                Close(true);
+            }
         }
 
         private void Build()
@@ -407,14 +477,15 @@ namespace CoopGame.Network
             overlayRect.anchorMin = Vector2.zero; overlayRect.anchorMax = Vector2.one;
             overlayRect.offsetMin = overlayRect.offsetMax = Vector2.zero;
 
-            // Cute kit (Canva page 70): wide beige card, plank title, preview left, faces + colours right.
-            var content = Box(_panel.transform, "FaceCustomization", new Vector2(1300, 664), Vector2.zero, Color.white);
+            // Cute kit (Canva page 70): wide beige card, plank title, preview left, options right.
+            // Order top to bottom (George 2026-11-08): nickname > character colour > face > hat.
+            var content = Box(_panel.transform, "FaceCustomization", new Vector2(1300, 800), Vector2.zero, Color.white);
             UITheme.StyleCuteCard(content.GetComponent<Image>(), true);
             UITheme.MakeCutePlank(content.transform, "แต่งตัวละคร", 400f, 96f, 40f, 32);
-            UITheme.AddCuteTape(content.transform, 6, new Vector2(.5f, .5f), new Vector2(-560, 250), 35f, 96f);
-            UITheme.AddCuteTape(content.transform, 5, new Vector2(.5f, .5f), new Vector2(560, 250), -30f, 96f);
+            UITheme.AddCuteTape(content.transform, 6, new Vector2(.5f, .5f), new Vector2(-560, 318), 35f, 96f);
+            UITheme.AddCuteTape(content.transform, 5, new Vector2(.5f, .5f), new Vector2(560, 318), -30f, 96f);
 
-            var previewBox = Box(content.transform, "Preview", new Vector2(300, 420), new Vector2(-400, -10), Color.white);
+            var previewBox = Box(content.transform, "Preview", new Vector2(360, 551), new Vector2(-400, -8), Color.white);
             _previewBoxImage = previewBox.GetComponent<Image>();
             UITheme.StyleShape(_previewBoxImage, UITheme.SmallSprite, Color.white);
             var previewGO = new GameObject("Portrait", typeof(RectTransform), typeof(RawImage));
@@ -425,17 +496,70 @@ namespace CoopGame.Network
             _preview = previewGO.GetComponent<RawImage>(); _preview.raycastTarget = false;
 
             const float column = 170f;
-            _styleLabel = Label(content.transform, "", 26, new Vector2(340, 44), new Vector2(column, 220));
+            const float left = column - 290f; // left edge of the option column (section titles line up here)
+
+            // 1) Nickname: shown in the top-left player list and to every player (PlayerExpeditionState.DisplayName).
+            var nickLabel = Label(content.transform, "ชื่อเล่น", 24, new Vector2(120, 50), new Vector2(left + 60, 262));
+            nickLabel.alignment = TextAnchor.MiddleLeft;
+            UITheme.StyleCuteText(nickLabel);
+            UITheme.SetWeight(nickLabel, UITheme.FontMedium);
+            var (nickGO, nickInput) = ProceduralUIUtility.MakeInputField(content, "NicknameInput", "พิมพ์ชื่อเล่น (ไม่เกิน 16 ตัว)", 54);
+            var nickRect = (RectTransform)nickGO.transform;
+            nickRect.sizeDelta = new Vector2(440, 54);
+            nickRect.anchoredPosition = new Vector2(column + 70, 262);
+            nickInput.characterLimit = PlayerExpeditionState.NicknameMaxChars;
+            nickInput.lineType = InputField.LineType.SingleLine;
+            // Match the cute card: white rounded box, dark ink text.
+            UITheme.StyleShape(nickGO.GetComponent<Image>(), UITheme.SmallSprite, Color.white);
+            nickInput.textComponent.color = UITheme.CuteInk;
+            nickInput.textComponent.fontSize = 24;
+            if (nickInput.placeholder is Text ph) { ph.color = UITheme.CuteInkSoft; ph.fontSize = 20; ph.fontStyle = FontStyle.Normal; }
+            var nickTint = nickInput.colors; nickTint.normalColor = nickTint.selectedColor = Color.white; nickTint.highlightedColor = UITheme.Hover(Color.white); nickTint.pressedColor = UITheme.Pressed(Color.white); nickInput.colors = nickTint;
+            nickInput.selectionColor = new Color(UITheme.Primary.r, UITheme.Primary.g, UITheme.Primary.b, .35f);
+            _nicknameInput = nickInput;
+
+            // 2) Character colour.
+            var colorTitle = Label(content.transform, "สีตัวละคร", 22, new Vector2(580, 34), new Vector2(column, 200));
+            colorTitle.alignment = TextAnchor.MiddleLeft;
+            UITheme.StyleCuteText(colorTitle);
+            UITheme.SetWeight(colorTitle, UITheme.FontMedium);
+            _colorRings = new Image[PlayerAppearance.ColorCount];
+            Sprite round = ProceduralUIUtility.GetRoundedSprite(30, 0);
+            float colorCenterIndex = (PlayerAppearance.ColorCount - 1) * 0.5f;
+            for (int i = 0; i < PlayerAppearance.ColorCount; i++)
+            {
+                int colorIndex = i;
+                Vector2 at = new Vector2(column + (i - colorCenterIndex) * 84f, 146);
+                var ring = Box(content.transform, "SelectedRing", new Vector2(76, 76), at, UITheme.Primary);
+                UITheme.StyleShape(ring.GetComponent<Image>(), round, UITheme.Primary);
+                ring.GetComponent<Image>().raycastTarget = false;
+                _colorRings[i] = ring.GetComponent<Image>();
+                var colorBtn = Button(content.transform, "", new Vector2(62, 62), at, () =>
+                {
+                    _draftColor = colorIndex;
+                    Refresh();
+                });
+                Color pastel = PlayerAppearance.GetPastelColor(i);
+                UITheme.StyleShape(colorBtn.GetComponent<Image>(), round, pastel);
+                var tint = colorBtn.colors;
+                tint.normalColor = tint.selectedColor = Color.white;
+                tint.highlightedColor = UITheme.Hover(Color.white);
+                tint.pressedColor = UITheme.Pressed(Color.white);
+                colorBtn.colors = tint;
+            }
+
+            // 3) Face: header "ใบหน้า n/10" with arrows, then 10 faces in two rows of 5 (knockdown faces left out).
+            _styleLabel = Label(content.transform, "", 24, new Vector2(340, 44), new Vector2(column, 80));
             UITheme.StyleCuteText(_styleLabel);
             UITheme.SetWeight(_styleLabel, UITheme.FontMedium);
-            UITheme.StyleButton(Button(content.transform, "<", new Vector2(76, 60), new Vector2(column - 230, 222), () => ChangeStyle(-1)), UIButtonStyle.WhiteShort);
-            UITheme.StyleButton(Button(content.transform, ">", new Vector2(76, 60), new Vector2(column + 230, 222), () => ChangeStyle(1)), UIButtonStyle.WhiteShort);
-            _faceOutlines = new Outline[PlayerAppearance.FaceCount];
-            _faceBgImages = new Image[PlayerAppearance.FaceCount];
+            UITheme.StyleButton(Button(content.transform, "<", new Vector2(70, 54), new Vector2(column - 230, 80), () => ChangeStyle(-1)), UIButtonStyle.WhiteShort);
+            UITheme.StyleButton(Button(content.transform, ">", new Vector2(70, 54), new Vector2(column + 230, 80), () => ChangeStyle(1)), UIButtonStyle.WhiteShort);
+            _faceOutlines = new Outline[PlayerAppearance.PickableFaces.Length];
+            _faceBgImages = new Image[PlayerAppearance.PickableFaces.Length];
             for (int i = 0; i < _faceOutlines.Length; i++)
             {
-                int index = i;
-                var button = Button(content.transform, "", new Vector2(92, 80), new Vector2(column + (i % 6 - 2.5f) * 104, 128 - i / 6 * 92), () =>
+                int index = PlayerAppearance.PickableFaces[i];
+                var button = Button(content.transform, "", new Vector2(92, 78), new Vector2(column + (i % 5 - 2f) * 112, 4 - i / 5 * 88), () =>
                 {
                     _draft = index;
                     Refresh();
@@ -450,47 +574,45 @@ namespace CoopGame.Network
                 thumbnailRect.anchorMin = Vector2.zero; thumbnailRect.anchorMax = Vector2.one;
                 thumbnailRect.offsetMin = thumbnailRect.offsetMax = Vector2.zero;
                 var thumbnailImage = thumbnail.GetComponent<RawImage>();
-                thumbnailImage.texture = _faceTextures != null && i < _faceTextures.Length ? _faceTextures[i] : null;
+                thumbnailImage.texture = _faceTextures != null && index < _faceTextures.Length ? _faceTextures[index] : null;
                 thumbnailImage.raycastTarget = false;
                 var outline = button.gameObject.AddComponent<Outline>();
                 outline.effectColor = UITheme.Primary; outline.effectDistance = new Vector2(4, -4);
                 _faceOutlines[i] = outline;
             }
 
-            var colorTitle = Label(content.transform, "เลือกสีตัวละคร", 22, new Vector2(620, 34), new Vector2(column, -44));
-            colorTitle.alignment = TextAnchor.MiddleLeft;
-            UITheme.StyleCuteText(colorTitle);
-            UITheme.SetWeight(colorTitle, UITheme.FontMedium);
-            _colorRings = new Image[PlayerAppearance.ColorCount];
-            Sprite round = ProceduralUIUtility.GetRoundedSprite(30, 0);
-            float colorCenterIndex = (PlayerAppearance.ColorCount - 1) * 0.5f;
-            for (int i = 0; i < PlayerAppearance.ColorCount; i++)
+            // 4) Hat: hats bought in the shop (K) can be worn here; ones not bought yet show their price.
+            var hatTitle = Label(content.transform, "หมวก (ซื้อเพิ่มที่ร้าน K)", 22, new Vector2(580, 34), new Vector2(column, -146));
+            hatTitle.alignment = TextAnchor.MiddleLeft;
+            UITheme.StyleCuteText(hatTitle);
+            UITheme.SetWeight(hatTitle, UITheme.FontMedium);
+            int hatCount = Cosmetics.HatNames.Length;
+            _hatButtons = new Button[hatCount];
+            _hatRings = new Image[hatCount];
+            _hatLabels = new Text[hatCount];
+            for (int i = 0; i < hatCount; i++)
             {
-                int colorIndex = i;
-                Vector2 at = new Vector2(column + (i - colorCenterIndex) * 88f, -110);
-                var ring = Box(content.transform, "SelectedRing", new Vector2(80, 80), at, UITheme.Primary);
-                UITheme.StyleShape(ring.GetComponent<Image>(), round, UITheme.Primary);
+                int hat = i;
+                Vector2 at = new Vector2(column + (i - (hatCount - 1) * .5f) * 112, -204);
+                var ring = Box(content.transform, "HatRing", new Vector2(104, 66), at, UITheme.Primary);
+                UITheme.StyleShape(ring.GetComponent<Image>(), UITheme.SmallSprite, UITheme.Primary);
                 ring.GetComponent<Image>().raycastTarget = false;
-                _colorRings[i] = ring.GetComponent<Image>();
-                var colorBtn = Button(content.transform, "", new Vector2(66, 66), at, () =>
-                {
-                    _draftColor = colorIndex;
-                    Refresh();
-                });
-                Color pastel = PlayerAppearance.GetPastelColor(i);
-                UITheme.StyleShape(colorBtn.GetComponent<Image>(), round, pastel);
-                var tint = colorBtn.colors;
-                tint.normalColor = tint.selectedColor = Color.white;
-                tint.highlightedColor = UITheme.Hover(Color.white);
-                tint.pressedColor = UITheme.Pressed(Color.white);
-                colorBtn.colors = tint;
+                _hatRings[i] = ring.GetComponent<Image>();
+                var hatBtn = Button(content.transform, "", new Vector2(94, 56), at, () => PickHat(hat));
+                UITheme.StyleShape(hatBtn.GetComponent<Image>(), UITheme.SmallSprite, Color.white);
+                var tint = hatBtn.colors; tint.normalColor = tint.selectedColor = Color.white; tint.highlightedColor = UITheme.Hover(Color.white); tint.pressedColor = UITheme.Pressed(Color.white); tint.disabledColor = new Color(1f, 1f, 1f, .45f); hatBtn.colors = tint;
+                var hatLabel = Label(hatBtn.transform, Cosmetics.HatNames[i], 16, new Vector2(94, 56), Vector2.zero);
+                UITheme.StyleCuteText(hatLabel);
+                hatLabel.lineSpacing = .85f;
+                _hatButtons[i] = hatBtn;
+                _hatLabels[i] = hatLabel;
             }
 
             // Colour name line from the old panel; the kit layout has no room for it.
-            _status = Label(content.transform, "", 15, new Vector2(610, 32), new Vector2(column, -170));
+            _status = Label(content.transform, "", 15, new Vector2(610, 32), new Vector2(column, -240));
             _status.gameObject.SetActive(false);
-            UITheme.StyleButton(Button(content.transform, "ยกเลิก", new Vector2(270, 74), new Vector2(column - 145, -262), Cancel), UIButtonStyle.White);
-            UITheme.StyleButton(Button(content.transform, "บันทึก", new Vector2(270, 74), new Vector2(column + 145, -262), Save), UIButtonStyle.Pink);
+            UITheme.StyleButton(Button(content.transform, "ยกเลิก", new Vector2(270, 70), new Vector2(column - 145, -312), Cancel), UIButtonStyle.White);
+            UITheme.StyleButton(Button(content.transform, "บันทึก", new Vector2(270, 70), new Vector2(column + 145, -312), Save), UIButtonStyle.Pink);
             _panel.SetActive(false);
         }
 

@@ -155,6 +155,10 @@ namespace CoopGame.Player
         [SerializeField] private float _knockdownTilt = 70f;
         [SerializeField] private float _knockdownSeconds = 1.5f;
         [SerializeField] private float _standUpSeconds = .8f;
+        [Tooltip("While knocked down on the ground, horizontal speed fades at this rate (1/s), so a fall does not slide far on the frictionless limbs.")]
+        [SerializeField, Min(0f)] private float _knockdownGroundDrag = 4f;
+        [Tooltip("Seconds after a knockdown before the ground drag starts (lets the hit or trip still throw the body a little).")]
+        [SerializeField, Min(0f)] private float _knockdownSlideGrace = .15f;
 
         public bool FullRagdoll => _fullRagdoll;
         public const byte EmoteWave = 1, EmoteCheer = 2;
@@ -346,13 +350,14 @@ namespace CoopGame.Player
         public override void OnDestroy()
         {
             DestroyCatchThrowVisuals();
+            DestroyRemoteProxy();
             DestroyPhysics();
             base.OnDestroy();
         }
 
         private bool Blocked =>
             CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput ||
-            CoopGame.Network.DevCheatMenu.IsOpen || CoopGame.Network.PhotoMode.IsOn || CoopGame.Network.TitleScreen.IsVisible ||
+            CoopGame.Network.PhotoMode.IsOn || CoopGame.Network.TitleScreen.IsVisible ||
             CoopGame.Network.LevelMap.IsOpen || CoopGame.Network.Cosmetics.IsOpen;
 
         private bool Exhausted => _stamina != null && _stamina.IsExhausted;
@@ -369,6 +374,7 @@ namespace CoopGame.Player
                          FindAimedCargo(out CarryableObject aimed) ? aimed : null;
 
             UpdateCatchInput(canAct);
+            UpdateThrownCrateHit();
             if (_carry != null)
             {
                 if (UpdateThrowAim(canAct)) { }
@@ -384,7 +390,7 @@ namespace CoopGame.Player
                     if (_stamina.IsExhausted) RequestDrop();
                 }
             }
-            else if (_carryTapReleased && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
+            else if ((_carryTapReleased || (_input != null && _input.CarryPressed)) && Time.time >= _nextPickupAllowedTime && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
             {
                 RequestCarry(AimedCargo);
             }
@@ -400,7 +406,8 @@ namespace CoopGame.Player
         {
             if (!_fullRagdoll) return;
             if (HasAuthority) ServerWatchCarry();
-            if (!IsLocal || !EnsureBones()) return;
+            if (!IsLocal) { UpdateRemoteProxy(); return; }
+            if (!EnsureBones()) return;
             if (_physicsRoot == null) BuildPhysics();
 
             float dt = Time.fixedDeltaTime;
@@ -427,6 +434,11 @@ namespace CoopGame.Player
             Vector3 hipsVel = _bodies[Hips].linearVelocity;
             Vector3 flatVel = Flat(hipsVel);
             Vector3 carryPush = Vector3.zero;
+            // Carrying together (George 2026-11-09): every carrier walks with the crate, and the crate moves with the
+            // team's averaged input. Same speed in every direction, and a carrier who stops slows the team (instead of
+            // sliding after it on their own).
+            bool teamCarry = _carry != null && _carry.CurrentCarrierCount >= 2;
+            if (teamCarry) desired = CarriedCargoVelocity();
             if (_carry != null) desired = CarryStance(desired, moving, flatVel, out carryPush);
 
             // Ground: sphere cast from the hips; the limb layer is left out of the mask.
@@ -439,6 +451,18 @@ namespace CoopGame.Player
             bool limp = IsKnockedDown;
             float recover = !limp && Time.time < _standUpUntil ? 1f - (_standUpUntil - Time.time) / _standUpSeconds : 1f;
             UpdateDrives(limp ? 0f : Mathf.SmoothStep(.15f, 1f, recover));
+            if (limp && IsGrounded && Time.time > _knockdownUntil - _knockdownSeconds + _knockdownSlideGrace)
+            {
+                // Limbs have no friction (so walking never snags); while lying down, bleed off the slide instead.
+                float keep = Mathf.Exp(-_knockdownGroundDrag * dt);
+                for (int b = 0; b < _bodies.Length; b++)
+                {
+                    if (_bodies[b] == null) continue;
+                    Vector3 v = _bodies[b].linearVelocity;
+                    v.x *= keep; v.z *= keep;
+                    _bodies[b].linearVelocity = v;
+                }
+            }
 
             // The body turns to the camera heading at a capped rate (slower just after a climb), so letting go of a
             // wall and grabbing again never snaps it round between the wall and the camera.
@@ -451,7 +475,15 @@ namespace CoopGame.Player
             bool slowTurn = Time.time < _slowTurnUntil;
             float turnRate = slowTurn ? SlowTurnRate : TurnRate;
             if (_carry != null) turnRate = Mathf.Min(turnRate, CarryTurnRate);
-            _facingYaw = Mathf.MoveTowardsAngle(_facingYaw, yaw, turnRate * dt);
+            // Carrying together: the body keeps facing the crate (the camera still looks around freely), so turning
+            // the camera away can no longer swing the grips round and twist the arms.
+            float bodyYaw = yaw;
+            if (teamCarry)
+            {
+                Vector3 toCrate = Flat(CarryGripMid() - _bodies[Hips].position);
+                if (toCrate.sqrMagnitude > .0025f) bodyYaw = Quaternion.LookRotation(toCrate).eulerAngles.y;
+            }
+            _facingYaw = Mathf.MoveTowardsAngle(_facingYaw, bodyYaw, turnRate * dt);
             Quaternion bodyFacing = Quaternion.Euler(0f, _facingYaw, 0f);
             if (_clone != null) UpdateClonePose(flatVel, bodyFacing, IsGrounded);
             else UpdateTargetPose(flatVel.magnitude, bodyFacing, dt);
@@ -673,7 +705,7 @@ namespace CoopGame.Player
             }
             if (IsKnockedDown || _wallclimb == null || _ikTargets == null) return false;
             bool gripping = h == 0 ? _wallclimb.LeftHandGripping : _wallclimb.RightHandGripping;
-            bool reaching = _input != null && !Blocked && (h == 0 ? _input.GrabLeftHeld : _input.GrabRightHeld);
+            bool reaching = _input != null && !Blocked && !CoopGame.Network.DevCheatMenu.IsOpen && (h == 0 ? _input.GrabLeftHeld : _input.GrabRightHeld);
             if (!gripping && !reaching) return false;
             Transform hand = h == 0 ? _ikTargets.LeftHand : _ikTargets.RightHand;
             if (hand == null) return false;
@@ -932,27 +964,29 @@ namespace CoopGame.Player
             if (view != null)
             {
                 Ray ray = new Ray(view.transform.position, view.transform.forward);
-                int hits = Physics.SphereCastNonAlloc(ray, .15f, _aimHits, 8f, ~(1 << _limbLayer), QueryTriggerInteraction.Ignore);
+                int hits = Physics.SphereCastNonAlloc(ray, .15f, _aimHits, 8f, ~(1 << _limbLayer), QueryTriggerInteraction.Collide);
                 float nearest = float.MaxValue;
                 for (int i = 0; i < hits; i++)
                 {
                     var c = _aimHits[i].collider.GetComponentInParent<CarryableObject>();
                     if (c == null || !c.CanBeCarried || _aimHits[i].distance >= nearest) continue;
-                    if (Flat(_aimHits[i].collider.ClosestPoint(body) - body).magnitude > _carryPickupReach) continue;
+                    float maxReach = (c is CoopGame.CarrySystem.SeeSawWeight) ? _carryPickupReach * 1.5f : _carryPickupReach;
+                    if (Flat(_aimHits[i].collider.ClosestPoint(body) - body).magnitude > maxReach) continue;
                     nearest = _aimHits[i].distance;
                     cargo = c;
                 }
                 if (cargo != null) return true;
             }
             Vector3 forward = _camera != null ? _camera.HorizontalForward : transform.forward;
-            int count = Physics.OverlapSphereNonAlloc(body + forward * .5f, _carryPickupReach * .7f, _cargoNear, ~(1 << _limbLayer), QueryTriggerInteraction.Ignore);
+            int count = Physics.OverlapSphereNonAlloc(body + forward * .5f, _carryPickupReach * 1.2f, _cargoNear, ~(1 << _limbLayer), QueryTriggerInteraction.Collide);
             float best = float.MaxValue;
             for (int i = 0; i < count; i++)
             {
                 var c = _cargoNear[i].GetComponentInParent<CarryableObject>();
                 if (c == null || !c.CanBeCarried) continue;
                 Vector3 to = Flat(_cargoNear[i].ClosestPoint(body) - body);
-                if (to.magnitude > _carryPickupReach || Vector3.Dot(to.normalized, forward) < .3f || to.sqrMagnitude >= best) continue;
+                float maxReach = (c is CoopGame.CarrySystem.SeeSawWeight) ? _carryPickupReach * 1.5f : _carryPickupReach;
+                if (to.magnitude > maxReach || Vector3.Dot(to.normalized, forward) < .2f || to.sqrMagnitude >= best) continue;
                 best = to.sqrMagnitude;
                 cargo = c;
             }
@@ -974,6 +1008,9 @@ namespace CoopGame.Player
 
         private void RequestPlace()
         {
+            _carryPressedAt = -1f;
+            _carryTapReleased = false;
+            _nextPickupAllowedTime = Time.time + 0.45f;
             _throwCostPending = false;
             if (HasAuthority) ServerPlace(_colliders);
             else PlaceCarryRpc();
@@ -1028,6 +1065,9 @@ namespace CoopGame.Player
             if (_carry != null && _throwCostPending && _stamina != null) _stamina.ConsumeStamina(_throwStaminaCost);
             _throwCostPending = false;
             _carry = null;
+            _carryPressedAt = -1f;
+            _carryTapReleased = false;
+            _nextPickupAllowedTime = Mathf.Max(_nextPickupAllowedTime, Time.time + 0.45f);
         }
 
         private void UpdateCarry(Vector2 move, Quaternion facing, Quaternion bodyFacing, Vector3 hipsVel)
@@ -1151,7 +1191,8 @@ namespace CoopGame.Player
             bool any = false;
             foreach (var c in colliders)
             {
-                if (c == null || !c.enabled || c.isTrigger) continue;
+                if (c == null || !c.enabled) continue;
+                if (c.isTrigger && c.GetComponentInParent<SeeSawWeight>() == null) continue;
                 if (!any) { bounds = c.bounds; any = true; } else bounds.Encapsulate(c.bounds);
             }
             if (!any) return false;
@@ -1193,8 +1234,10 @@ namespace CoopGame.Player
             float bestSqr = float.MaxValue;
             foreach (var c in colliders)
             {
-                if (c == null || !c.enabled || c.isTrigger || (c is MeshCollider m && !m.convex)) continue;
-                Vector3 p = c.ClosestPoint(point);
+                if (c == null || !c.enabled) continue;
+                if (c.isTrigger && c.GetComponentInParent<SeeSawWeight>() == null) continue;
+                if (c is MeshCollider m && !m.convex) continue;
+                Vector3 p = (c is BoxCollider || c is SphereCollider || c is CapsuleCollider) ? c.ClosestPoint(point) : c.bounds.ClosestPoint(point);
                 float sqr = (p - point).sqrMagnitude;
                 if (sqr < bestSqr) { bestSqr = sqr; best = p; }
             }

@@ -1,7 +1,7 @@
 # Trap Prefabs (กับดักทำงานตลอด)
 
 กับดักชุดนี้ **ไม่มีตัวจับเวลา ไม่มีสีเตือน ไม่มีช่วงพัก** ทำงานตลอดและเร็ว
-ทุกตัวเป็น Prefab ลากไปวางในด่านได้เลย ไม่มี NetworkObject (ยกเว้น `Coop_ClimbSwitchLift` และ `Remake_Hazard_CollapsingStone*`)
+ทุกตัวเป็น Prefab ลากไปวางในด่านได้เลย ไม่มี NetworkObject (ยกเว้น `Coop_ClimbSwitchLift` และ `Hazard_CollapsingStone*`)
 ทุกเครื่อง (Host/Client) เห็นจังหวะเดียวกัน เพราะท่าทางคำนวณจากเวลาเซิร์ฟเวอร์
 
 ดูของจริงทั้งหมด: เปิด `Assets/Scenes/Test/TrapGym.unity` แล้วกด Play (กับดักขยับเองโดยไม่ต้องมีผู้เล่น)
@@ -11,13 +11,18 @@
 - **ลัง**: HP ลด (นับเป็นดาเมจ "ความเสี่ยงจริง" ลังพังได้) + กระเด็น
 - พัดลม/สายพาน: ผลักต่อเนื่อง ไม่ทำให้ล้ม
 
-## โฟลเดอร์
+## โฟลเดอร์ (กับดักทั้งหมดอยู่ที่นี่ที่เดียว)
 | โฟลเดอร์ | มีอะไร |
 |---|---|
-| `New/` | กับดักใหม่ 12 แบบ: Sweeper, TwinSweeper, Pendulum, PistonWall, SpinPost, Turntable, SpikeRoller, WallSaw, WindFan, Conveyor, Bumper, SlamDoor |
-| `Obstacles/` | อุปสรรค Ragdoll: BoulderChute, SteepSlope 25/35/45, ScreeSlope, CliffLedge, ChasmGap 2/3/4m, RollingLogBridge, WobblyBridge, FallingRocks, TiltPlate, SlipperyPatch |
+| `Moving/` | กับดักใหม่ 12 แบบ: Sweeper, TwinSweeper, Pendulum, PistonWall, SpinPost, Turntable, SpikeRoller, WallSaw, WindFan, Conveyor, Bumper, SlamDoor |
+| `Classic/` | กับดักชุดเดิมที่ใช้ใน Level01/Level02 (Hazard_* และ Medieval_* ต่างกันแค่หน้าตา) ทำให้ทำงานตลอดแล้ว ไม่มีสีเตือน |
+| `Obstacles/` | อุปสรรค Ragdoll: BoulderChute, SteepSlope 25/35/45, ScreeSlope, CliffLedge, ChasmGap 2/3/4m, RollingLogBridge, WobblyBridge, FallingRocks, TiltPlate, SlipperyPatch, TripStone |
 | `Coop/` | `Coop_ClimbSwitchLift`: คนหนึ่งปีนกำแพงขึ้นไปกด E ที่ปุ่ม แท่นที่เพื่อนถือลังยืนรออยู่จะลอยขึ้นไปทางต่อไป |
-| `Remake/` | กับดักเก่าจาก `Prefabs/Hazards` ทำใหม่แบบไม่มีสีเตือน ทำงานตลอด (ของเก่ายังอยู่ ไม่ได้ลบ) |
+| `Materials/` | วัสดุของกับดัก (`Materials/Medieval/` = วัสดุไม้/หิน/เหล็กของชุด Medieval) |
+
+## ความไว
+ทุกกับดักที่ขยับมี **Trap Speed** ที่ตัวบนสุด: 1 = ปกติ, 2 = เร็ว 2 เท่า, 0.5 = ช้าครึ่งหนึ่ง (0.1 ถึง 5)
+ยิ่งเร็วยิ่งตีแรง ถ้าจะปรับแค่ชิ้นเดียว ใช้ช่อง Speed ใน TrapMotor ของชิ้นนั้น
 
 ## ทิศทาง
 ทางเดินของผู้เล่นคือแกน **Z (ลูกศรสีน้ำเงิน)** ของ Prefab: พัดลมเป่าไป +Z, สายพานดึงไป -Z, ลูกสูบพุ่งไป +X

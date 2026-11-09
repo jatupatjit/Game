@@ -508,6 +508,7 @@ MonoBehaviour:
   _ragdollPivotSmoothXZ: 0.05
   _ragdollPivotSmoothY: 0.12
   _ragdollNearClip: 0.05
+  _ragdollPivotMaxLag: 0.6
 --- !u!114 &8488112399802155468
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -883,7 +884,7 @@ MonoBehaviour:
   _grippingArmWeight: 0.15
   _drawSmoothing: 0.025
   _knockdownFallSpeed: 12
-  _knockdownSeconds: 1.6
+  _knockdownSeconds: 2.5
   _standUpSeconds: 0.9
   _limpSpringShare: 0.03
 --- !u!114 &4102790693013993052
@@ -899,6 +900,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Player.RagdollCharacter
   ShowTopMostFoldoutHeaderGroup: 1
+  _catchHoldTime: 0.25
+  _catchRadius: 1.8
+  _catchGlowColor: {r: 1, g: 0.8, b: 0.1, a: 1}
   _fullRagdoll: 1
   _walkSpeed: 4
   _sprintSpeed: 6.5
@@ -926,7 +930,9 @@ MonoBehaviour:
   _carryHandSpread: 0.2
   _carryHandForce: 150
   _carryLeash: 20
-  _throwSpeed: 8
+  _throwMinSpeed: 4.5
+  _throwMaxSpeed: 13.5
+  _throwChargeTime: 1
   _throwStaminaCost: 8
   _climbPullSpeed: 1.8
   _climbReachScale: 1.6
@@ -935,6 +941,7 @@ MonoBehaviour:
   _climbShiftDistance: 0.9
   _climbShiftSpeed: 1.2
   _climbFadeAlpha: 0.3
+  _aimBodyFadeAlpha: 0.5
   _climbFadeTime: 0.2
   _climbFadeBody: {fileID: 2100000, guid: 8cab34b87b7570b4489bbff3ef377835, type: 2}
   _climbFadeFace: {fileID: 2100000, guid: 08c01c98119566a41847a5499d7b44db, type: 2}
@@ -945,9 +952,10 @@ MonoBehaviour:
   _thighSwing: 30
   _kneeBend: 40
   _armSwing: 25
+  _relaxedArmTuck: 18
   _knockdownFallSpeed: 12
   _knockdownTilt: 70
-  _knockdownSeconds: 1.5
+  _knockdownSeconds: 2.5
   _standUpSeconds: 0.8
   _fistFingerAngle: 100
   _fistThumbAngle: 50

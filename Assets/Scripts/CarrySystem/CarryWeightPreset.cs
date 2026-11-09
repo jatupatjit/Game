@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace CoopGame.CarrySystem
 {
@@ -27,53 +26,8 @@ namespace CoopGame.CarrySystem
 
         public static float HandLoadScale(bool multiCarrier) => (multiCarrier ? CoopScale : SoloScale)[Index];
 
-        private sealed class Driver : MonoBehaviour
-        {
-            private float _flashUntil;
-
-            private void Update()
-            {
-                var keyboard = Keyboard.current;
-                if (keyboard != null && keyboard.f6Key.wasPressedThisFrame)
-                {
-                    Cycle();
-                    _flashUntil = Time.unscaledTime + 1.25f;
-                }
-            }
-
-            private GUIStyle _chip;
-
-            private void OnGUI()
-            {
-                // This is a playtest-only confirmation, so it disappears quickly for every preset.
-                if (Time.unscaledTime > _flashUntil) return;
-                if (_chip == null)
-                {
-                    // Small themed chip: soil panel, chamfered, GameThai, left-aligned single line.
-                    _chip = new GUIStyle(UITheme.ImguiLabel)
-                    {
-                        alignment = TextAnchor.MiddleLeft, wordWrap = false, fontSize = 14,
-                        padding = new RectOffset(16, 16, 4, 4),
-                        border = UITheme.ImguiPanelBorder
-                    };
-                    _chip.normal.background = UITheme.ImguiPanelTexture;
-                }
-                Color previous = GUI.color;
-                GUI.color = Color.white;
-                string value = UITheme.RichHex(UITheme.Primary);
-                GUI.Label(new Rect(Screen.width * 0.5f - 165f, 8f, 330f, 48f), $"Carry weight [F6]: <color={value}>{Name}</color>", _chip);
-                GUI.color = previous;
-            }
-        }
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void CreateDriver()
-        {
-            Index = 0;
-            if (!Debug.isDebugBuild) return; // editor and development builds only
-            var go = new GameObject("CarryWeightPresetDriver") { hideFlags = HideFlags.HideAndDontSave };
-            Object.DontDestroyOnLoad(go);
-            go.AddComponent<Driver>();
-        }
+        // F6 was removed (2026-11-08): the preset is now changed only from the dev cheat panel (F2).
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetIndex() => Index = 0;
     }
 }

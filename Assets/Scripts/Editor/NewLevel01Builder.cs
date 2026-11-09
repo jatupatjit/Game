@@ -178,11 +178,11 @@ namespace CoopGame.EditorTools
             _spikePrefab = LoadPrefab("Assets/Prefabs/หนามไม้.fbx");
             _cratePrefab = LoadPrefab("Assets/Prefabs/Items/WoodenCrateItem.prefab");
             _deliveryZonePrefab = LoadPrefab("Assets/Prefabs/DeliveryZone.prefab");
-            _swingHammerPrefab = LoadPrefab("Assets/Prefabs/Hazards/Hazard_SwingHammer.prefab");
-            _twinPendulumsPrefab = LoadPrefab("Assets/Prefabs/Hazards/Medieval/Medieval_TwinPendulums.prefab");
-            _rotatingLogPrefab = LoadPrefab("Assets/Prefabs/Hazards/Hazard_RotatingLog.prefab");
-            _crusherPrefab = LoadPrefab("Assets/Prefabs/Hazards/Hazard_Crusher_Entry.prefab");
-            _woodenSpikesPrefab = LoadPrefab("Assets/Prefabs/Hazards/Medieval/Medieval_WoodenSpikes.prefab");
+            _swingHammerPrefab = LoadPrefab("Assets/Prefabs/Traps/Classic/Hazard_SwingHammer.prefab");
+            _twinPendulumsPrefab = LoadPrefab("Assets/Prefabs/Traps/Classic/Medieval_TwinPendulums.prefab");
+            _rotatingLogPrefab = LoadPrefab("Assets/Prefabs/Traps/Classic/Hazard_RotatingLog.prefab");
+            _crusherPrefab = LoadPrefab("Assets/Prefabs/Traps/Classic/Hazard_Crusher_Entry.prefab");
+            _woodenSpikesPrefab = LoadPrefab("Assets/Prefabs/Traps/Classic/Medieval_WoodenSpikes.prefab");
         }
 
         private static Material LoadMat(string path) => AssetDatabase.LoadAssetAtPath<Material>(path);

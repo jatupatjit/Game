@@ -100,6 +100,16 @@ namespace CoopGame.CarrySystem
             _placementFloorCount = 0;
             Bounds bounds = SolidBounds();
             if (bounds.size.sqrMagnitude < .001f) return false;
+
+            // Direct check for See-Saw plank support:
+            // When standing on or placing over a tilting See-Saw plank, standard flat floor corner raycasts
+            // fail because of the incline (highest - lowest > 0.12m) and tilted normals.
+            // We project directly to the plank top surface if a SeeSawPlank is beneath.
+            if (TrySeeSawPlankTarget(bounds, out target))
+            {
+                return true;
+            }
+
             float highest = float.NegativeInfinity, lowest = float.PositiveInfinity;
             // All four inset corners and the centre must be supported. A narrow ledge is not a safe placement.
             for (int sample = 0; sample < 5; sample++)
@@ -134,6 +144,49 @@ namespace CoopGame.CarrySystem
             target.y += highest + .025f - bounds.min.y;
             if (target.y > _rigidbody.position.y + .1f || _rigidbody.position.y - target.y > 1.5f) return false;
             return PlacementClear(bounds, target - _rigidbody.position);
+        }
+
+        private bool TrySeeSawPlankTarget(Bounds bounds, out Vector3 target)
+        {
+            target = _rigidbody.position;
+            Vector3 origin = new(bounds.center.x, bounds.min.y + .15f, bounds.center.z);
+            int count = Physics.RaycastNonAlloc(origin, Vector3.down, _placeHits, 2.5f, PlacementMask, QueryTriggerInteraction.Ignore);
+            if (count == 0) return false;
+
+            RaycastHit nearest = default;
+            float distance = float.PositiveInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                if (!Own(_placeHits[i].collider) && !IsPlacingCarrier(_placeHits[i].collider) && _placeHits[i].distance < distance)
+                {
+                    nearest = _placeHits[i];
+                    distance = nearest.distance;
+                }
+            }
+
+            Collider floor = nearest.collider;
+            if (floor == null) return false;
+
+            SeeSawPlank plank = floor.GetComponentInParent<SeeSawPlank>();
+            if (plank == null || !plank.IsWithinPlankBounds(nearest.point)) return false;
+
+            _placementFloors[0] = floor;
+            _placementFloorCount = 1;
+
+            target = plank.ProjectToPlankSurface(nearest.point, bounds.extents.y + 0.02f);
+            if (target.y > _rigidbody.position.y + .25f || _rigidbody.position.y - target.y > 2.2f) return false;
+
+            // Check clearance above plank surface using slightly inset bounds
+            Vector3 offset = target - _rigidbody.position;
+            Vector3 clearHalfExtents = Vector3.Max(bounds.extents * 0.85f, Vector3.one * 0.05f);
+            int overlapCount = Physics.OverlapBoxNonAlloc(bounds.center + offset, clearHalfExtents, _placeOverlaps, plank.PlankTransform.rotation, PlacementMask, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < overlapCount; i++)
+            {
+                if (!Own(_placeOverlaps[i]) && !IsPlacingCarrier(_placeOverlaps[i]) && _placeOverlaps[i] != floor && !_placeOverlaps[i].transform.IsChildOf(plank.PlankTransform))
+                    return false;
+            }
+
+            return true;
         }
 
         private bool PlacementClear(Bounds bounds, Vector3 offset)
@@ -183,10 +236,11 @@ namespace CoopGame.CarrySystem
 
         protected bool IsGentleSupportContact(Collider other, Vector3 normal, Vector3 point)
         {
-            if (_throwPending || Time.fixedTime >= _supportProtectionEnd ||
-                normal.y < .8660254f || point.y > SolidBounds().min.y + .12f) return false;
+            if (_throwPending || Time.fixedTime >= _supportProtectionEnd) return false;
             for (int i = 0; i < _placementFloorCount; i++)
                 if (_placementFloors[i] == other) return true;
+            if (other != null && other.GetComponentInParent<SeeSawPlank>() != null) return true;
+            if (normal.y < .8660254f || point.y > SolidBounds().min.y + .12f) return false;
             return false;
         }
     }

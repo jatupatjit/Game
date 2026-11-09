@@ -14,18 +14,18 @@ namespace CoopGame.EditorTools.Traps
     /// <summary>
     /// Builds the always-on trap prefabs (Assets/Prefabs/Traps) from simple shapes, the remakes of the old timed hazards
     /// (no warning colours, never resting), and the TrapGym showcase scene. Safe to run again: it overwrites only its own
-    /// prefabs and scene. It never edits the old prefabs in Assets/Prefabs/Hazards or any level scene.
+    /// prefabs and scene. Classic (old) traps are converted in place with the Make Old Hazard Prefabs menu; this never edits a level scene.
     /// </summary>
     public static class TrapPrefabBuilder
     {
         private const string Root = "Assets/Prefabs/Traps";
-        private const string NewFolder = Root + "/New";
+        private const string NewFolder = Root + "/Moving";
         private const string ObstacleFolder = Root + "/Obstacles";
         private const string CoopFolder = Root + "/Coop";
-        private const string RemakeFolder = Root + "/Remake";
+        private const string ClassicFolder = Root + "/Classic";
         private const string MaterialFolder = Root + "/Materials";
         private const string GymScene = "Assets/Scenes/Test/TrapGym.unity";
-        private const string MedievalMaterials = "Assets/Prefabs/Hazards/Medieval/Materials/";
+        private const string MedievalMaterials = "Assets/Prefabs/Traps/Materials/Medieval/";
         private const int WallLayer = 3;
 
         private static Material _wood, _woodLight, _iron, _stone, _ember, _rock, _ice, _bumper, _dark, _ground, _button;
@@ -52,7 +52,6 @@ namespace CoopGame.EditorTools.Traps
                 made.AddRange(BuildNewTraps());
                 made.AddRange(BuildObstacles());
                 made.Add(BuildCoopLift());
-                made.AddRange(BuildRemakes());
             }
             finally
             {
@@ -68,7 +67,7 @@ namespace CoopGame.EditorTools.Traps
 
         private static void EnsureFolders()
         {
-            foreach (var path in new[] { Root, NewFolder, ObstacleFolder, CoopFolder, RemakeFolder, MaterialFolder, "Assets/Scenes/Test" })
+            foreach (var path in new[] { Root, NewFolder, ObstacleFolder, CoopFolder, ClassicFolder, MaterialFolder, "Assets/Scenes/Test" })
             {
                 if (AssetDatabase.IsValidFolder(path)) continue;
                 string parent = Path.GetDirectoryName(path).Replace('\\', '/');
@@ -231,6 +230,7 @@ namespace CoopGame.EditorTools.Traps
         private static string Save(GameObject root, string folder)
         {
             string path = folder + "/" + root.name + ".prefab";
+            AddSpeedKnob(root);
             PrefabUtility.SaveAsPrefabAsset(root, path, out bool ok);
             Object.DestroyImmediate(root);
             if (!ok) throw new Exception("Could not save " + path);
@@ -564,33 +564,66 @@ namespace CoopGame.EditorTools.Traps
         private static readonly string[] TelegraphNames =
             { "Warning", "_Status", "ThaiSignBacking", "WaitHereTip", "SafeWaitingBay", "Tip", "Sign", "Lamp", "CrushZone", "SweepZone", "PulseMarker", "RestoreSafetyVolume" };
 
-        private static IEnumerable<string> BuildRemakes()
+        /// <summary>Puts one TrapSpeed knob on the root of a trap that has moving parts.</summary>
+        private static bool AddSpeedKnob(GameObject root)
         {
-            var made = new List<string>();
-            foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs/Hazards" }))
+            if (root.GetComponent<TrapSpeed>() != null) return false;
+            if (root.GetComponentInChildren<TrapMotor>(true) == null && root.GetComponentInChildren<TrapRockStream>(true) == null) return false;
+            root.AddComponent<TrapSpeed>();
+            return true;
+        }
+
+        [MenuItem("Tools/Traps/Add Speed Knob To All Trap Prefabs")]
+        public static void AddSpeedKnobMenu() => Debug.Log(AddSpeedKnobToAll());
+
+        /// <summary>Adds a TrapSpeed (speed 1) to every trap prefab in Prefabs/Traps. Nothing else changes.</summary>
+        public static string AddSpeedKnobToAll()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return "[TrapPrefabBuilder] Stop Play mode first.";
+            var added = new List<string>();
+            foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { Root }))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
-                var source = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                var instance = (GameObject)PrefabUtility.InstantiatePrefab(source);
-                PrefabUtility.UnpackPrefabInstance(instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
-                instance.name = "Remake_" + source.name;
-                instance.SetActive(true); // some old hazard prefabs were saved switched off
-                // Several old hazards were switched off part by part; the remake shows every part again
-                // (except an unused spare log visual).
-                foreach (var part in instance.GetComponentsInChildren<Transform>(true))
-                    if (part.name != "RollingLogVisual") part.gameObject.SetActive(true);
+                var root = PrefabUtility.LoadPrefabContents(path);
                 try
                 {
-                    if (!Remake(instance)) { Object.DestroyImmediate(instance); continue; }
-                    made.Add(Save(instance, RemakeFolder));
+                    if (AddSpeedKnob(root)) { PrefabUtility.SaveAsPrefabAsset(root, path); added.Add(root.name); }
                 }
-                catch (Exception e)
-                {
-                    Debug.LogWarning("[TrapPrefabBuilder] Skipped " + source.name + ": " + e.Message);
-                    if (instance != null) Object.DestroyImmediate(instance);
-                }
+                finally { PrefabUtility.UnloadPrefabContents(root); }
             }
-            return made;
+            AssetDatabase.SaveAssets();
+            return "[TrapPrefabBuilder] Speed knob added to " + added.Count + ": " + string.Join(", ", added);
+        }
+
+        [MenuItem("Tools/Traps/Make Old Hazard Prefabs Always On (in place)")]
+        public static void ConvertOldInPlaceMenu() => Debug.Log(ConvertOldHazardsInPlace());
+
+        /// <summary>
+        /// Turns the classic prefabs in Assets/Prefabs/Traps/Classic (the ones placed in Level01/02) into always-on traps:
+        /// no rest, no warning, no colour lamps or signs, and hits knock players down and throw them.
+        /// Back up the folder first; this rewrites those prefabs.
+        /// </summary>
+        public static string ConvertOldHazardsInPlace()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return "[TrapPrefabBuilder] Stop Play mode first.";
+            var done = new List<string>();
+            var skipped = new List<string>();
+            foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { ClassicFolder }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var root = PrefabUtility.LoadPrefabContents(path);
+                try
+                {
+                    if (root.GetComponent<TrapMotor>() != null || root.GetComponentInChildren<TrapHitbox>(true) != null) { skipped.Add(root.name + " (already done)"); continue; }
+                    if (!Remake(root)) { skipped.Add(root.name); continue; }
+                    PrefabUtility.SaveAsPrefabAsset(root, path);
+                    done.Add(root.name);
+                }
+                catch (Exception e) { skipped.Add(root.name + " (" + e.Message + ")"); }
+                finally { PrefabUtility.UnloadPrefabContents(root); }
+            }
+            AssetDatabase.SaveAssets();
+            return "[TrapPrefabBuilder] Always-on: " + done.Count + " converted [" + string.Join(", ", done) + "]; skipped: [" + string.Join(", ", skipped) + "]";
         }
 
         private static bool Remake(GameObject root)
@@ -792,7 +825,7 @@ namespace CoopGame.EditorTools.Traps
                 Box("Ground", null, new Vector3(45f, -.5f, 45f), new Vector3(150f, 1f, 130f), _ground);
                 // Obstacles stand over empty space (z < -15) so cliffs and chasms really drop away.
                 var rows = new (string folder, float z, float spacing)[]
-                    { (ObstacleFolder, -60f, 14f), (NewFolder, 0f, 14f), (RemakeFolder, 40f, 16f), (CoopFolder, 85f, 16f) };
+                    { (ObstacleFolder, -60f, 14f), (NewFolder, 0f, 14f), (ClassicFolder, 40f, 16f), (CoopFolder, 85f, 16f) };
                 foreach (var (folder, z, spacing) in rows)
                 {
                     var row = new GameObject("Row_" + Path.GetFileName(folder));

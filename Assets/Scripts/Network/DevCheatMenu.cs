@@ -7,7 +7,8 @@ namespace CoopGame.Network
     /// <summary>
     /// Developer cheat panel (F2), Editor and Development builds only. Buttons send requests to the host through
     /// <see cref="PlayerExpeditionState.DevCheatRpc"/>; the host acts and every screen gets the state and a log line.
-    /// While open the cursor is free and gameplay input (camera, grab) is ignored.
+    /// While open the cursor is free and camera look / mouse grab are ignored, but the player can still walk.
+    /// Opens with F2 or the backquote key (` under Esc), because the Editor can swallow F-keys.
     /// </summary>
     public sealed class DevCheatMenu : MonoBehaviour
     {
@@ -29,7 +30,7 @@ namespace CoopGame.Network
         private void Update()
         {
             var keyboard = Keyboard.current;
-            if (keyboard != null && keyboard.f2Key.wasPressedThisFrame) SetOpen(!IsOpen);
+            if (keyboard != null && (keyboard.f2Key.wasPressedThisFrame || keyboard.backquoteKey.wasPressedThisFrame)) SetOpen(!IsOpen);
             if (IsOpen && (Cursor.lockState != CursorLockMode.None || !Cursor.visible))
             {
                 Cursor.lockState = CursorLockMode.None;
@@ -71,10 +72,10 @@ namespace CoopGame.Network
             Styles();
             float scale = Screen.height / 1080f;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
-            var area = new Rect(20, 190, 470, 820);
+            var area = new Rect(20, 190, 700, 820);
             GUI.Box(area, GUIContent.none, _box);
             GUILayout.BeginArea(new Rect(area.x + 14, area.y + 10, area.width - 28, area.height - 20));
-            GUILayout.Label("DEV CHEATS  (F2 ปิด)", _title);
+            GUILayout.Label("DEV CHEATS  (F2 หรือ ` ปิด)", _title);
             if (LocalState() == null) { GUILayout.Label("ยังไม่ได้เชื่อมต่อเกม"); GUILayout.EndArea(); return; }
             _scroll = GUILayout.BeginScrollView(_scroll);
 
@@ -110,7 +111,7 @@ namespace CoopGame.Network
             GUILayout.EndHorizontal();
 
             GUILayout.Label("จำลองน้ำหนัก (ทุกเครื่อง)", _section);
-            GUILayout.Label("Preset น้ำหนัก (เหมือน F6): " + CarrySystem.CarryWeightPreset.Name);
+            GUILayout.Label("Preset น้ำหนัก: " + CarrySystem.CarryWeightPreset.Name);
             GUILayout.BeginHorizontal();
             for (int i = 0; i < CarrySystem.CarryWeightPreset.Names.Length; i++)
                 if (GUILayout.Button(CarrySystem.CarryWeightPreset.Names[i])) Send(DevCheat.WeightPreset, i);

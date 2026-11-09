@@ -67,6 +67,18 @@ namespace CoopGame.Traps
         private float Life => _mode == StreamMode.Roll ? _rollSeconds :
             Mathf.Sqrt(2f * _dropArea.y / 9.81f) + _restSeconds;
 
+        private TrapSpeed _speedSource;
+
+        /// <summary>Trap time, sped up or slowed down by a <see cref="TrapSpeed"/> on this object or a parent.</summary>
+        private double Clock
+        {
+            get
+            {
+                if (_speedSource == null) _speedSource = GetComponentInParent<TrapSpeed>(true);
+                return TrapClock.Now * (_speedSource != null ? _speedSource.Value : 1f);
+            }
+        }
+
         private double EmitTime(long i) => i * (double)_interval + _jitter * Hash(i, 1);
 
         private float Hash(long i, int salt) => TrapClock.Hash01((int)(i & 0x7fffffff), (int)_salt, salt, 91);
@@ -75,7 +87,7 @@ namespace CoopGame.Traps
         {
             int n = _rocks.Length;
             if (n == 0) return;
-            double t = TrapClock.Now;
+            double t = Clock;
             long newest = (long)System.Math.Floor(t / _interval);
             float life = Life;
             for (int slot = 0; slot < n; slot++)
@@ -105,7 +117,7 @@ namespace CoopGame.Traps
             for (int slot = 0; slot < _rocks.Length; slot++)
                 if (_rocks[slot] != null && !_slotVisible[slot] && _slotEmission[slot] != long.MinValue)
                 {
-                    double age = TrapClock.Now - EmitTime(_slotEmission[slot]);
+                    double age = Clock - EmitTime(_slotEmission[slot]);
                     if (age >= 0 && age <= Life) SetVisible(slot, true);
                 }
         }

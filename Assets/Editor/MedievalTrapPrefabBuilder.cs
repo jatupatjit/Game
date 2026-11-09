@@ -10,8 +10,8 @@ namespace CoopGame.EditorTools
     /// <summary>Creates reusable medieval prototype hazards without changing any scene.</summary>
     public static class MedievalTrapPrefabBuilder
     {
-        private const string Root = "Assets/Prefabs/Hazards/Medieval";
-        private const string Materials = Root + "/Materials";
+        private const string Root = "Assets/Prefabs/Traps/Classic";
+        private const string Materials = "Assets/Prefabs/Traps/Materials/Medieval";
 
         private static Material _wood;
         private static Material _woodLight;

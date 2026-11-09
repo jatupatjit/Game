@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Unity.Netcode;
 using UnityEngine;
 using CoopGame.Player;
@@ -658,8 +658,8 @@ namespace CoopGame.CarrySystem
             _throwReleaseCooldown = Mathf.Max(0f, _throwReleaseCooldown - Time.deltaTime);
             if (!_inputReader.IsGrabbing) _requireGrabRelease = false;
             _canAttemptGrab = !_requireGrabRelease && _throwReleaseCooldown <= 0f && !_grabPending && !_releasePending;
-            // Left click picks up with both hands; right click sets it down.
-            if (!IsCarrying && !_grabPending && _inputReader.GrabLeftPressed) _pendingDualToggle = true;
+            // Left click or F picks up with both hands; right click or F sets it down.
+            if (!IsCarrying && !_grabPending && _canAttemptGrab && (_inputReader.GrabLeftPressed || _inputReader.CarryPressed)) _pendingDualToggle = true;
             if (IsCarrying && _currentCarryable != null)
             {
                 if (_movement != null)
@@ -670,11 +670,13 @@ namespace CoopGame.CarrySystem
                     if (_expedition != null) speed *= _expedition.CardMagnitude(CoopGame.Network.CardEffect.FastCarrier);
                     _movement.SpeedMultiplier = speed;
                 }
-                if (_inputReader.GrabRightPressed && !_releasePending)
+                if ((_inputReader.GrabRightPressed || _inputReader.CarryPressed) && !_releasePending)
                 {
                     _placeIntent = true;
                     _isChargingThrow = false;
                     _currentThrowCharge = 0f;
+                    _throwReleaseCooldown = 0.5f;
+                    _requireGrabRelease = true;
                 }
                 else if (_inputReader.ThrowHeld)
                 {
@@ -1002,7 +1004,7 @@ namespace CoopGame.CarrySystem
             for (int i = 0; i < colliders.Count; i++)
             {
                 Collider col = colliders[i];
-                if (col == null || !col.enabled || col.isTrigger || !col.gameObject.activeInHierarchy) continue;
+                if (col == null || !col.enabled || (col.isTrigger && col.GetComponentInParent<SeeSawWeight>() == null) || !col.gameObject.activeInHierarchy) continue;
                 Vector3 outward = normal.sqrMagnitude > .001f ? normal.normalized : (reference - col.bounds.center).normalized;
                 if (outward.sqrMagnitude < .001f) outward = Vector3.up;
                 float distance = col.bounds.size.magnitude + .2f;
@@ -1010,7 +1012,15 @@ namespace CoopGame.CarrySystem
                 {
                     Vector3 toward = point - reference;
                     if (toward.sqrMagnitude < .001f) toward = col.bounds.center - reference;
-                    if (!col.Raycast(new Ray(reference, toward.normalized), out hit, toward.magnitude + distance)) continue;
+                    if (!col.Raycast(new Ray(reference, toward.normalized), out hit, toward.magnitude + distance))
+                    {
+                        if (col.GetComponentInParent<SeeSawWeight>() != null)
+                        {
+                            hit.point = col.bounds.ClosestPoint(point);
+                            hit.normal = Vector3.up;
+                        }
+                        else continue;
+                    }
                 }
                 float score = (hit.point - point).sqrMagnitude;
                 if (score >= nearest) continue;
@@ -1074,7 +1084,7 @@ namespace CoopGame.CarrySystem
             // Raycast into the world, ignoring player capsule and aim markers
             Ray aimRay = new Ray(rayOrigin, rayDirection);
             int hitCount = Physics.RaycastNonAlloc(aimRay, _aimHits, _maxScanDistance,
-                _scanLayers, QueryTriggerInteraction.Ignore);
+                _scanLayers, QueryTriggerInteraction.Collide);
 
             RaycastHit validHit = default;
             bool foundValidHit = false;
@@ -1089,6 +1099,7 @@ namespace CoopGame.CarrySystem
                 if (_leftMarker != null && (h.collider.transform == _leftMarker || h.collider.transform.IsChildOf(_leftMarker))) continue;
                 if (_rightMarker != null && (h.collider.transform == _rightMarker || h.collider.transform.IsChildOf(_rightMarker))) continue;
                 if (_persistentMarker != null && (h.collider.transform == _persistentMarker || h.collider.transform.IsChildOf(_persistentMarker))) continue;
+                if (h.collider.isTrigger && h.collider.GetComponentInParent<CarryableObject>() == null) continue;
 
                 if (h.distance < nearestDistance)
                 {
@@ -1287,7 +1298,7 @@ namespace CoopGame.CarrySystem
             GetArmGeometry(false, out Vector3 nearbyShoulderR, out _);
             Vector3 chestPos = (nearbyShoulderL + nearbyShoulderR) * .5f;
             int colliderCount = Physics.OverlapSphereNonAlloc(chestPos, _grabContactDistance,
-                _nearbyColliders, _scanLayers, QueryTriggerInteraction.Ignore);
+                _nearbyColliders, _scanLayers, QueryTriggerInteraction.Collide);
 
             CarryableObject closestCarryable = null;
             float closestDistanceSqr = float.MaxValue;

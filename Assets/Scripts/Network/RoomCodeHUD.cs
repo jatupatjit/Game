@@ -171,6 +171,7 @@ namespace CoopGame.Network
         private void RefreshRows(List<string> names, bool local)
         {
             if (!_cuteBuilt) return;
+            if (RefreshRowsFromPlayers()) return;
             var mgr = SteamLobbyManager.Instance;
             string self = mgr != null && !local && mgr.IsSteamInitialized ? mgr.SteamPlayerName : null;
             var nm = NetworkManager.Singleton;
@@ -192,6 +193,32 @@ namespace CoopGame.Network
                 _rowName[i].color = joined ? UITheme.CuteInk : UITheme.CuteInkSoft;
                 _rowHost[i].enabled = joined && names[i].EndsWith(" (Host)");
             }
+        }
+
+        /// <summary>Rows from the spawned players' replicated names (nicknames), host first. False when no player is spawned yet.</summary>
+        private bool RefreshRowsFromPlayers()
+        {
+            var players = new List<PlayerExpeditionState>();
+            foreach (var p in PlayerExpeditionState.Everyone)
+                if (p != null && p.IsSpawned) players.Add(p);
+            if (players.Count == 0) return false;
+            players.Sort((a, b) => a.OwnerClientId.CompareTo(b.OwnerClientId));
+            for (int i = 0; i < MaxSlots; i++)
+            {
+                if (_rowBg[i] == null) continue;
+                var p = i < players.Count ? players[i] : null;
+                bool joined = p != null;
+                bool you = joined && p.IsOwner;
+                string name = joined ? p.DisplayName.Value.ToString() : "";
+                if (joined && string.IsNullOrEmpty(name)) name = $"Player {p.OwnerClientId + 1}";
+                _rowBg[i].sprite = UITheme.CutePlayerRowSprite(you);
+                _rowIcon[i].sprite = UITheme.CutePlayerIcon(joined);
+                _rowFace[i].enabled = joined;
+                _rowName[i].text = !joined ? "Waiting..." : you ? name + " (You)" : name;
+                _rowName[i].color = joined ? UITheme.CuteInk : UITheme.CuteInkSoft;
+                _rowHost[i].enabled = joined && p.OwnerClientId == NetworkManager.ServerClientId;
+            }
+            return true;
         }
 
         private static string StripHost(string name) =>

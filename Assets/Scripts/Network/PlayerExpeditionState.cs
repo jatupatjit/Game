@@ -28,6 +28,59 @@ namespace CoopGame.Network
         /// Presentation only; no gameplay reads it.</summary>
         public readonly NetworkVariable<Unity.Collections.FixedString64Bytes> DisplayName =
             new(default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        public const string NicknameKey = "Player.Nickname.v1";
+        public const int NicknameMaxChars = 16;
+        /// <summary>Nickname typed in the customize screen (empty = use the Steam name / "Player N").</summary>
+        public static string SavedNickname => CleanNickname(PlayerPrefs.GetString(NicknameKey, ""));
+
+        /// <summary>Trimmed, single-line, no rich-text tags, at most NicknameMaxChars and 64 UTF-8 bytes.</summary>
+        public static string CleanNickname(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            var sb = new System.Text.StringBuilder(value.Length);
+            foreach (char ch in value)
+                if (!char.IsControl(ch) && ch != '<' && ch != '>') sb.Append(ch);
+            string name = sb.ToString().Trim();
+            if (name.Length > NicknameMaxChars) name = name.Substring(0, NicknameMaxChars).Trim();
+            while (name.Length > 0 && System.Text.Encoding.UTF8.GetByteCount(name) > FixedString64Bytes.UTF8MaxLengthInBytes)
+                name = name.Substring(0, name.Length - 1);
+            return name;
+        }
+
+        /// <summary>Saves the nickname locally and, when in a session, shows it to everyone right away.</summary>
+        public static void SaveNickname(string value)
+        {
+            string name = CleanNickname(value);
+            PlayerPrefs.SetString(NicknameKey, name);
+            PlayerPrefs.Save();
+            for (int i = 0; i < All.Count; i++)
+                if (All[i] != null && All[i].IsSpawned && All[i].IsOwner) All[i].PublishName();
+        }
+
+        /// <summary>The name this machine's own player shows (nickname, else Steam name / "Player N").</summary>
+        public static string LocalDisplayName
+        {
+            get
+            {
+                for (int i = 0; i < All.Count; i++)
+                    if (All[i] != null && All[i].IsSpawned && All[i].IsOwner) return All[i].DisplayName.Value.ToString();
+                return SavedNickname;
+            }
+        }
+
+        private void PublishName()
+        {
+            string name = SavedNickname;
+            if (name.Length == 0)
+            {
+                var lobby = SteamLobbyManager.Instance;
+                name = lobby != null && !lobby.IsLocalSession && lobby.IsSteamMultiplayerAvailable
+                    ? lobby.SteamPlayerName : $"Player {OwnerClientId + 1}";
+                name = CleanNickname(name);
+            }
+            DisplayName.Value = new FixedString64Bytes(name);
+        }
+
         private int _stageStartCoins;
         private byte _start1, _start2, _start3;
         private string _stageScene;
@@ -84,16 +137,7 @@ namespace CoopGame.Network
             _ragdoll = GetComponent<RagdollCharacter>();
             SceneManager.sceneLoaded += OnSceneLoaded;
             if (!All.Contains(this)) All.Add(this);
-            if (IsOwner)
-            {
-                var lobby = SteamLobbyManager.Instance;
-                string name = lobby != null && !lobby.IsLocalSession && lobby.IsSteamMultiplayerAvailable
-                    ? lobby.SteamPlayerName : $"Player {OwnerClientId + 1}";
-                while (name.Length > 0 && System.Text.Encoding.UTF8.GetByteCount(name) > FixedString64Bytes.UTF8MaxLengthInBytes)
-                    name = name.Substring(0, name.Length - 1); // UTF-8 byte-safe (Thai is 3 bytes/char)
-                var fixedName = new FixedString64Bytes(name);
-                DisplayName.Value = fixedName;
-            }
+            if (IsOwner) PublishName(); // nickname, else Steam name / "Player N" (UTF-8 byte-safe: Thai is 3 bytes/char)
             if (IsServer)
             {
                 DeliveryPoint.OnDeliverySuccessGlobal += AwardDelivery;

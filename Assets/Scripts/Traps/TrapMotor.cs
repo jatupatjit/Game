@@ -41,12 +41,15 @@ namespace CoopGame.Traps
         [Tooltip("Blink: part of the cycle the objects are on")]
         [SerializeField, Range(.05f, .95f)] private float _blinkOnPortion = .5f;
         [SerializeField] private GameObject[] _blinkObjects = System.Array.Empty<GameObject>();
+        [Tooltip("Speed of this part only: 1 = normal, 2 = twice as fast. A TrapSpeed on the trap's root multiplies it.")]
+        [SerializeField, Range(.1f, 5f)] private float _speed = 1f;
         [Tooltip("Seconds added to the clock for this trap")]
         [SerializeField] private float _phaseOffset;
         [Tooltip("Add a phase from where the trap stands, so two copies never move in step")]
         [SerializeField] private bool _randomPhaseFromPosition = true;
 
         private Rigidbody _body;
+        private TrapSpeed _speedSource;
         private Vector3 _restPosition;
         private Quaternion _restRotation;
         private float _phase;
@@ -55,10 +58,14 @@ namespace CoopGame.Traps
 
         public MotionMode Mode => _mode;
 
+        /// <summary>Final speed: this part's own speed times the trap's <see cref="TrapSpeed"/>.</summary>
+        public float Speed => _speed * (_speedSource != null ? _speedSource.Value : 1f);
+
         private void Awake()
         {
             _restPosition = transform.localPosition;
             _restRotation = transform.localRotation;
+            _speedSource = GetComponentInParent<TrapSpeed>(true);
             if (_mode != MotionMode.Blink)
             {
                 _body = GetComponent<Rigidbody>();
@@ -84,7 +91,7 @@ namespace CoopGame.Traps
 
         private void Apply(bool physics)
         {
-            double t = TrapClock.Now + _phase;
+            double t = TrapClock.Now * Speed + _phase;
             Vector3 axis = _axis.sqrMagnitude > 1e-6f ? _axis.normalized : Vector3.up;
             Vector3 position = _restPosition;
             Quaternion rotation = _restRotation;

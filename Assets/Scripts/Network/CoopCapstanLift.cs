@@ -34,8 +34,10 @@ namespace CoopGame.Network
         [SerializeField, Min(1)] private int _notches = 4;
         [Tooltip("Walking speed around the pole (degrees per second) that counts as pushing")]
         [SerializeField, Min(1f)] private float _minAngularSpeed = 25f;
-        [Tooltip("Pole turns from bottom to top (visual)")]
-        [SerializeField, Min(.25f)] private float _hubTurns = 3f;
+        [Tooltip("Walking speed round the pole (degrees per second) that gives the full platform speed")]
+        [SerializeField, Min(5f)] private float _fullSpeedDegrees = 45f;
+        [Tooltip("How far (degrees) the push bar stays ahead of the walker, so it never passes through them")]
+        [SerializeField, Range(10f, 40f)] private float _barLead = 24f;
         [Tooltip("Rope from the pulley beam down to the platform; stretched to follow it")]
         [SerializeField] private Transform _platformRope;
         [SerializeField] private Transform _ropeTop;
@@ -44,11 +46,14 @@ namespace CoopGame.Network
         [SerializeField] private Material _activeMaterial;
         [SerializeField] private TextMesh _statusText;
 
-        private const float PushMemory = .3f;
+        private const float PushMemory = .15f;
+        private const float BarSpacing = 90f;
 
         private readonly NetworkVariable<float> _progress = new(0f);
         private readonly NetworkVariable<byte> _walkers = new(0);
         private readonly NetworkVariable<byte> _required = new(1);
+        // Pole angle (degrees, unwrapped). It follows the walkers and holds still when nobody pushes (a pawl).
+        private readonly NetworkVariable<float> _hubAngle = new(0f);
         private readonly Dictionary<ulong, float> _lastAngle = new();
         private readonly Dictionary<ulong, float> _lastPush = new();
         private readonly Dictionary<ulong, int> _pushDirection = new();
@@ -56,6 +61,7 @@ namespace CoopGame.Network
         private Vector3 _rest;
         private Quaternion _hubRest;
         private float _shown;
+        private float _hubShown;
         private int _visualState = -1;
 
         public float Progress => _progress.Value;
@@ -76,6 +82,7 @@ namespace CoopGame.Network
         public override void OnNetworkSpawn()
         {
             _shown = _progress.Value;
+            _hubShown = _hubAngle.Value;
             _visualState = -1;
             _lastAngle.Clear();
             _lastPush.Clear();
@@ -93,13 +100,17 @@ namespace CoopGame.Network
             if (_platform != null)
                 _platform.MovePosition(transform.TransformPoint(_rest + _rise * _shown));
             if (_hub != null)
-                _hub.localRotation = _hubRest * Quaternion.Euler(0f, _shown * _hubTurns * 360f, 0f);
+            {
+                _hubShown = Mathf.MoveTowards(_hubShown, IsSpawned ? _hubAngle.Value : 0f, 540f * Time.fixedDeltaTime);
+                _hub.localRotation = _hubRest * Quaternion.Euler(0f, _hubShown, 0f);
+            }
             if (_platformRope != null && _ropeTop != null && _platform != null)
             {
                 // Rope ends on the platform's top face at its rest position plus the current rise.
                 Vector3 bottom = transform.TransformPoint(_rest + _rise * _shown) + Vector3.up * _platform.transform.lossyScale.y * .5f;
                 Vector3 top = _ropeTop.position;
                 _platformRope.position = (top + bottom) * .5f;
+                _platformRope.rotation = Quaternion.FromToRotation(Vector3.up, top - bottom);
                 Vector3 scale = _platformRope.localScale;
                 scale.y = Mathf.Max(.01f, (top - bottom).magnitude * .5f / Mathf.Max(.0001f, _platformRope.parent != null ? _platformRope.parent.lossyScale.y : 1f));
                 _platformRope.localScale = scale;
@@ -117,6 +128,7 @@ namespace CoopGame.Network
             int players = SessionPlayers.Count(manager);
             byte required = (byte)(players > 1 ? 2 : 1);
             int up = 0, down = 0;
+            float upLead = float.NaN, downLead = float.NaN;
             float now = Time.time;
             Vector3 centre = _pole != null ? _pole.position : transform.position;
 
@@ -149,7 +161,9 @@ namespace CoopGame.Network
                 _lastAngle[id] = angle;
                 if (_lastPush.TryGetValue(id, out float pushed) && now - pushed <= PushMemory)
                 {
-                    if (_pushDirection[id] > 0) up++; else down++;
+                    // The walker furthest along in the push direction carries the bar.
+                    if (_pushDirection[id] > 0) { up++; upLead = float.IsNaN(upLead) ? angle : Lead(upLead, angle, 1f); }
+                    else { down++; downLead = float.IsNaN(downLead) ? angle : Lead(downLead, angle, -1f); }
                 }
             }
             for (int i = 0; i < _stale.Count; i++)
@@ -163,10 +177,22 @@ namespace CoopGame.Network
             int walkers = Mathf.Abs(net);
             float distance = Mathf.Max(.01f, _rise.magnitude);
             float progress = _progress.Value;
+            float hub = _hubAngle.Value;
             if (walkers > 0)
             {
-                float rate = _speed * (walkers >= required ? 1f : _shortHandedFactor) / distance;
-                progress = Mathf.Clamp01(progress + Mathf.Sign(net) * rate * Time.fixedDeltaTime);
+                float sign = Mathf.Sign(net);
+                float lead = sign > 0f ? upLead : downLead;
+                // Put the nearest bar just ahead of the leading walker (bars repeat every 90 degrees).
+                float desired = lead + sign * _barLead;
+                float gap = Mathf.Repeat(desired - hub + BarSpacing * .5f, BarSpacing) - BarSpacing * .5f;
+                float step = Mathf.Clamp(gap, -540f * Time.fixedDeltaTime, 540f * Time.fixedDeltaTime);
+                // The pole only turns the way they push; never backwards under them.
+                if (step * sign < 0f) step = 0f;
+                hub += step;
+                float factor = walkers >= required ? 1f : _shortHandedFactor;
+                float metres = Mathf.Abs(step) / _fullSpeedDegrees * _speed * factor;
+                float cap = _speed * factor * 1.25f * Time.fixedDeltaTime;
+                progress = Mathf.Clamp01(progress + sign * Mathf.Min(metres, cap) / distance);
             }
             else
             {
@@ -175,9 +201,12 @@ namespace CoopGame.Network
             }
 
             if (!Mathf.Approximately(_progress.Value, progress)) _progress.Value = progress;
+            if (!Mathf.Approximately(_hubAngle.Value, hub)) _hubAngle.Value = hub;
             if (_walkers.Value != (byte)Mathf.Max(up, down)) _walkers.Value = (byte)Mathf.Max(up, down);
             if (_required.Value != required) _required.Value = required;
         }
+
+        private static float Lead(float a, float b, float sign) => Mathf.DeltaAngle(a, b) * sign > 0f ? b : a;
 
         private void ApplyVisual(int state)
         {

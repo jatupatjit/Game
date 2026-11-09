@@ -325,6 +325,8 @@ namespace CoopGame.CarrySystem
             if (routeHazard != null && routeHazard.OwnsColliderContact(other)) return;
             var rotatingHazard = other.GetComponentInParent<CoopGame.Network.RotatingLogHazard>();
             if (rotatingHazard != null && rotatingHazard.OwnsColliderContact(other)) return;
+            // Hay bales cushion the crate: no impact or scrape damage on them.
+            if (HayCushion.IsCushion(other)) return;
 
             Vector3 relativeVelocity = collision.relativeVelocity;
             for (int i = 0; i < collision.contactCount && _physicsContactCount < _physicsContacts.Length; i++)

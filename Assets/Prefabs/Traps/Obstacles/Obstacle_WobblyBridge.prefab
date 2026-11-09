@@ -85,6 +85,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 1.17
   _randomPhaseFromPosition: 0
 --- !u!1 &957948169073003339
@@ -262,6 +263,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 1.3
   _randomPhaseFromPosition: 0
 --- !u!1 &1153478222532769548
@@ -349,6 +351,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.65
   _randomPhaseFromPosition: 0
 --- !u!1 &1881983156779350556
@@ -660,6 +663,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 1.04
   _randomPhaseFromPosition: 0
 --- !u!1 &2919556669678257300
@@ -1061,6 +1065,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.78
   _randomPhaseFromPosition: 0
 --- !u!1 &3571504705513835042
@@ -1148,6 +1153,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.90999997
   _randomPhaseFromPosition: 0
 --- !u!1 &3881779945820269583
@@ -1347,6 +1353,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.52
   _randomPhaseFromPosition: 0
 --- !u!1 &4074361671463027830
@@ -1546,6 +1553,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.26
   _randomPhaseFromPosition: 0
 --- !u!1 &4953975443819925674
@@ -1857,6 +1865,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 1.43
   _randomPhaseFromPosition: 0
 --- !u!1 &5468631614310154501
@@ -1980,6 +1989,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7742777226549714043}
+  - component: {fileID: 1145588078049612745}
   m_Layer: 0
   m_Name: Obstacle_WobblyBridge
   m_TagString: Untagged
@@ -2018,6 +2028,19 @@ Transform:
   - {fileID: 5795491571755468263}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1145588078049612745
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6122158333567962992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c54f0337bf9efab4f818b55fccea53fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Traps.TrapSpeed
+  _speed: 1
 --- !u!1 &6279282958347980918
 GameObject:
   m_ObjectHideFlags: 0
@@ -2215,6 +2238,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.13
   _randomPhaseFromPosition: 0
 --- !u!1 &7306526939000601503
@@ -2638,6 +2662,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0.39
   _randomPhaseFromPosition: 0
 --- !u!1 &8384872812672507586
@@ -2725,6 +2750,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0
   _randomPhaseFromPosition: 0
 --- !u!1 &9142447972232073662

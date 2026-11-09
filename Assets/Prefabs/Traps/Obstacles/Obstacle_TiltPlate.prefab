@@ -85,6 +85,7 @@ MonoBehaviour:
   _loopRollDegrees: 0
   _blinkOnPortion: 0.5
   _blinkObjects: []
+  _speed: 1
   _phaseOffset: 0
   _randomPhaseFromPosition: 1
 --- !u!1 &4515659013195875839
@@ -320,6 +321,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3064358821871394143}
+  - component: {fileID: 1061362848231437423}
   m_Layer: 0
   m_Name: Obstacle_TiltPlate
   m_TagString: Untagged
@@ -344,3 +346,16 @@ Transform:
   - {fileID: 7890762225242506408}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1061362848231437423
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8324201646649027997}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c54f0337bf9efab4f818b55fccea53fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoopGame.Traps.TrapSpeed
+  _speed: 1

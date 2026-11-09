@@ -20,7 +20,7 @@ namespace CoopGame.EditorTools
     /// </summary>
     public static class HazardPrefabConverter
     {
-        private const string Folder = "Assets/Prefabs/Hazards";
+        private const string Folder = "Assets/Prefabs/Traps/Classic";
         private static readonly string[] Scenes = { "Assets/Scenes/Level01.unity", "Assets/Scenes/Level02.unity" };
         private static readonly string SnapshotDir = "Temp/HazardSnapshots";
 

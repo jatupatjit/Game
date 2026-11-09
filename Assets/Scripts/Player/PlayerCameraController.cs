@@ -499,19 +499,32 @@ namespace CoopGame.Player
         private readonly Collider[] _wallOverlaps = new Collider[16];
         private SphereCollider _wallProbe;
 
+        [Tooltip("Most the smoothed pivot may trail the body (metres); a fast fall would otherwise drift it out of shot")]
+        [SerializeField] private float _ragdollPivotMaxLag = .6f;
+        private Vector3 _lastPivotTarget;
+
         private Vector3 SmoothPivot(Vector3 target)
         {
-            if (!_hasSmoothedPivot || (target - _smoothedPivot).sqrMagnitude > 4f) // first frame or teleport
+            // A teleport is the body jumping between two frames, not the pivot trailing it: a fast fall builds a
+            // lag of speed x smooth time (2 m at ~17 m/s), and treating that as a teleport snapped the camera,
+            // zeroed its speed and let the lag build again, so it jittered every few frames before the respawn.
+            if (!_hasSmoothedPivot || (target - _lastPivotTarget).sqrMagnitude > 4f) // first frame or teleport
             {
                 _smoothedPivot = target;
                 _pivotVelocity = Vector3.zero;
                 _hasSmoothedPivot = true;
+                _lastPivotTarget = target;
                 return target;
             }
+            _lastPivotTarget = target;
             float dt = Time.deltaTime;
             _smoothedPivot.x = Mathf.SmoothDamp(_smoothedPivot.x, target.x, ref _pivotVelocity.x, _ragdollPivotSmoothXZ, Mathf.Infinity, dt);
             _smoothedPivot.z = Mathf.SmoothDamp(_smoothedPivot.z, target.z, ref _pivotVelocity.z, _ragdollPivotSmoothXZ, Mathf.Infinity, dt);
             _smoothedPivot.y = Mathf.SmoothDamp(_smoothedPivot.y, target.y, ref _pivotVelocity.y, _ragdollPivotSmoothY, Mathf.Infinity, dt);
+            // Fast moves (falling) keep the pivot on a short leash, moved with the body, so it never jerks.
+            Vector3 lag = _smoothedPivot - target;
+            if (lag.sqrMagnitude > _ragdollPivotMaxLag * _ragdollPivotMaxLag)
+                _smoothedPivot = target + lag.normalized * _ragdollPivotMaxLag;
             return _smoothedPivot;
         }
 

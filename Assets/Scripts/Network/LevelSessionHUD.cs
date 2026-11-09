@@ -161,8 +161,9 @@ namespace CoopGame.Network
                 byte card = player.Card.Value;
                 if (!row.Root.activeSelf) row.Root.SetActive(true);
                 UITheme.StyleIcon(row.Face, UITheme.FaceForClient(player.OwnerClientId));
-                string name = player.IsOwner ? "You" : player.DisplayName.Value.ToString();
+                string name = player.DisplayName.Value.ToString();
                 if (string.IsNullOrEmpty(name)) name = $"Player {player.OwnerClientId + 1}";
+                if (player.IsOwner) name += " (You)";
                 row.Name.text = name;
                 UITheme.StyleIcon(row.Card, UITheme.CardIcon(card));
                 row.Card.raycastTarget = true;

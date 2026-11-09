@@ -61,6 +61,9 @@ namespace CoopGame.Obstacles
         [Tooltip("Base torque weight unit for every single player (1 to 4). Guaranteed identical for all players.")]
         [SerializeField] private float _playerTorqueMass = 1.0f;
 
+        [Tooltip("Torque multiplier specifically applied to SeeSawWeight objects so they firmly hold down the see-saw against multiple players and cargo.")]
+        [SerializeField] private float _counterweightTorqueMultiplier = 2.0f;
+
         [Tooltip("Torque threshold required to begin tilting.")]
         [SerializeField] private float _torqueThreshold = 0.1f;
 
@@ -90,6 +93,7 @@ namespace CoopGame.Obstacles
         private readonly HashSet<Transform> _evaluatedPlayers = new HashSet<Transform>();
         private readonly HashSet<Transform> _evaluatedObjects = new HashSet<Transform>();
         private readonly Collider[] _overlapBuffer = new Collider[48];
+        private readonly List<SeeSawWeight> _anchoredWeights = new List<SeeSawWeight>();
 
         public Transform PlankTransform => _plankTransform != null ? _plankTransform : transform;
         public float CurrentTiltAngle => _displayedAngle;
@@ -97,6 +101,22 @@ namespace CoopGame.Obstacles
         public float PlankLength => _plankLength;
         public float PlankWidth => _plankWidth;
         public float PlankThickness => _plankThickness;
+
+        public void RegisterAnchoredWeight(SeeSawWeight weight)
+        {
+            if (weight != null && !_anchoredWeights.Contains(weight))
+            {
+                _anchoredWeights.Add(weight);
+            }
+        }
+
+        public void UnregisterAnchoredWeight(SeeSawWeight weight)
+        {
+            if (weight != null)
+            {
+                _anchoredWeights.Remove(weight);
+            }
+        }
 
         private void Awake()
         {
@@ -256,7 +276,30 @@ namespace CoopGame.Obstacles
                 }
             }
 
-            // 2. EVALUATE ALL OBJECTS RESTING ON THE PLANK
+            // 2. EVALUATE DIRECTLY ANCHORED COUNTERWEIGHTS
+            for (int i = _anchoredWeights.Count - 1; i >= 0; i--)
+            {
+                var weight = _anchoredWeights[i];
+                if (weight == null || !weight.gameObject.activeInHierarchy)
+                {
+                    _anchoredWeights.RemoveAt(i);
+                    continue;
+                }
+                if (weight.IsAnchored && !weight.IsCarried)
+                {
+                    if (_evaluatedObjects.Add(weight.transform))
+                    {
+                        entitiesFound++;
+                        Vector3 localPos = _plankTransform.InverseTransformPoint(weight.transform.position);
+                        if (Mathf.Abs(localPos.z) > _centerDeadzone)
+                        {
+                            netTorque += localPos.z * (weight.WeightMass * _counterweightTorqueMultiplier);
+                        }
+                    }
+                }
+            }
+
+            // 3. EVALUATE ALL OBJECTS RESTING ON THE PLANK
             Vector3 plankCenter = _plankTransform.position + _plankTransform.up * (_plankThickness * 0.5f + 0.8f);
             Vector3 halfExtents = new Vector3(_plankWidth * 0.5f + 0.15f, 0.9f, _plankLength * 0.5f);
             Quaternion orientation = _plankTransform.rotation;
@@ -292,7 +335,7 @@ namespace CoopGame.Obstacles
                             Vector3 localPos = _plankTransform.InverseTransformPoint(weight.transform.position);
                             if (Mathf.Abs(localPos.z) > _centerDeadzone)
                             {
-                                netTorque += localPos.z * weight.WeightMass;
+                                netTorque += localPos.z * (weight.WeightMass * _counterweightTorqueMultiplier);
                             }
                         }
                     }
@@ -360,14 +403,28 @@ namespace CoopGame.Obstacles
             float totalWeight = _playerTorqueMass;
 
             // If player is carrying an object, add the carried object's weight!
+            CarryableObject carriedObj = null;
             PlayerCarry carry = playerRoot.GetComponent<PlayerCarry>();
             if (carry != null && carry.IsCarrying && carry.CurrentCarryable != null)
             {
-                if (carry.CurrentCarryable is SeeSawWeight sw)
+                carriedObj = carry.CurrentCarryable as CarryableObject;
+            }
+            if (carriedObj == null)
+            {
+                RagdollCharacter ragdoll = playerRoot.GetComponent<RagdollCharacter>();
+                if (ragdoll != null)
+                {
+                    carriedObj = ragdoll.CarriedCargo;
+                }
+            }
+
+            if (carriedObj != null)
+            {
+                if (carriedObj is SeeSawWeight sw)
                 {
                     totalWeight += sw.WeightMass;
                 }
-                else if (carry.CurrentCarryable is CarryableObject co && co.TryGetComponent<Rigidbody>(out var crb))
+                else if (carriedObj.TryGetComponent<Rigidbody>(out var crb))
                 {
                     totalWeight += Mathf.Max(0.5f, crb.mass / 10f);
                 }
@@ -448,14 +505,11 @@ namespace CoopGame.Obstacles
 
         private void ApplyPlankRotation(float angle)
         {
-            Quaternion rot = _restRotation * Quaternion.Euler(angle, 0f, 0f);
+            Quaternion localRot = _restRotation * Quaternion.Euler(angle, 0f, 0f);
+            _plankTransform.localRotation = localRot;
             if (_plankRigidbody != null && _plankRigidbody.isKinematic)
             {
-                _plankRigidbody.MoveRotation(rot);
-            }
-            else
-            {
-                _plankTransform.localRotation = rot;
+                _plankRigidbody.MoveRotation(_plankTransform.rotation);
             }
         }
 
