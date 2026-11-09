@@ -18,6 +18,10 @@ namespace CoopGame.Network
         public readonly NetworkVariable<byte> Hat = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<byte> HatColor = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<byte> Card = new(0);
+        /// <summary>Room difficulty (GameRoom), copied by the server into every player so every machine can read it.</summary>
+        public readonly NetworkVariable<byte> RoomDifficulty = new(0);
+        /// <summary>Saved player level (PlayerProgress), written by the owner; shown on the scoreboard.</summary>
+        public readonly NetworkVariable<byte> PlayerLevel = new(1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         /// <summary>The three card ids the server offered this player (CardCatalog packing). Only the owner (and the
         /// server) can read it; SelectCardRpc accepts nothing else.</summary>
         public readonly NetworkVariable<uint> Offer = new(0, NetworkVariableReadPermission.Owner, NetworkVariableWritePermission.Server);
@@ -82,6 +86,8 @@ namespace CoopGame.Network
         }
 
         private int _stageStartCoins;
+        /// <summary>Server: coins gained (or spent, negative) since this stage started.</summary>
+        public int StageCoinsDelta => Coins.Value - _stageStartCoins;
         private byte _start1, _start2, _start3;
         private string _stageScene;
         private bool _rewarded;
@@ -138,16 +144,94 @@ namespace CoopGame.Network
             SceneManager.sceneLoaded += OnSceneLoaded;
             if (!All.Contains(this)) All.Add(this);
             if (IsOwner) PublishName(); // nickname, else Steam name / "Player N" (UTF-8 byte-safe: Thai is 3 bytes/char)
+            if (IsOwner)
+            {
+                // Local save: the wallet lives on the host, so send the saved coins once; save every later change.
+                PlayerLevel.Value = (byte)PlayerProgress.Level;
+                RestoreCoinsRpc(SaveSystem.Current.coins);
+                Coins.OnValueChanged += OnCoinsChanged;
+            }
             if (IsServer)
             {
                 DeliveryPoint.OnDeliverySuccessGlobal += AwardDelivery;
                 BeginStage(SceneManager.GetActiveScene().name);
+                GameRoom.ServerInitPlayer(this);
             }
         }
+
+        private bool _coinsRestored;
+        private float _nextRoomRequestAt, _nextLevelRequestAt;
+
+        private void OnCoinsChanged(int previous, int current)
+        {
+            if (_coinsRestored) SaveSystem.SetCoins(current);
+        }
+
+        /// <summary>Owner to host, once on spawn: the coins saved on the owner's machine.</summary>
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        private void RestoreCoinsRpc(int saved)
+        {
+            if (_coinsRestored) return;
+            _coinsRestored = true;
+            saved = Mathf.Clamp(saved, 0, 1000000);
+            int delta = saved - Coins.Value;
+            Coins.Value = saved;
+            _stageStartCoins += delta; // a retry of this stage restores to the restored wallet
+            CoinsRestoredRpc();
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void CoinsRestoredRpc()
+        {
+            _coinsRestored = true;
+            SaveSystem.SetCoins(Coins.Value);
+        }
+
+        /// <summary>Host to everyone: a line in the event feed (GameRoom.ServerFeed).</summary>
+        [Rpc(SendTo.Everyone)]
+        public void FeedRpc(FixedString128Bytes line, Color color) => EventFeed.Post(line.ToString(), color);
+
+        /// <summary>Host to everyone: a one-shot effect (GameRoom.ServerEffect).</summary>
+        [Rpc(SendTo.Everyone)]
+        public void EffectRpc(byte kind, Vector3 at) => GameRoom.PlayEffect(kind, at);
+
+        /// <summary>Any player to host: choose the room difficulty (no vote: the pick stands).</summary>
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        public void ChooseDifficultyRpc(byte difficulty)
+        {
+            if (Time.unscaledTime < _nextRoomRequestAt) return;
+            _nextRoomRequestAt = Time.unscaledTime + .3f;
+            GameRoom.ServerSetDifficulty(difficulty, LevelResults.NameOf(this));
+        }
+
+        /// <summary>Any player to host: start this level for everyone (Lobby level map; whoever picks decides).</summary>
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        public void ChooseLevelRpc(int buildIndex)
+        {
+            if (Time.unscaledTime < _nextLevelRequestAt) return;
+            _nextLevelRequestAt = Time.unscaledTime + 1f;
+            LevelMap.ServerStartLevel(buildIndex, LevelResults.NameOf(this));
+        }
+
+        /// <summary>Owner to host: buy gear with coins (GearShop).</summary>
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        public void BuyGearRpc(byte index)
+        {
+            if (index >= GearShop.Items.Length || Time.unscaledTime < _nextRequestAt) return;
+            _nextRequestAt = Time.unscaledTime + .2f;
+            int price = GearShop.Items[index].Price;
+            if (Coins.Value < price) return;
+            Coins.Value -= price;
+            GearBoughtRpc(index);
+        }
+
+        [Rpc(SendTo.Owner)]
+        private void GearBoughtRpc(byte index) => GearShop.OnBought(index);
 
         public override void OnNetworkDespawn()
         {
             SceneManager.sceneLoaded -= OnSceneLoaded;
+            Coins.OnValueChanged -= OnCoinsChanged;
             All.Remove(this);
             DeliveryPoint.OnDeliverySuccessGlobal -= AwardDelivery;
         }
@@ -190,7 +274,8 @@ namespace CoopGame.Network
         {
             if (!IsServer || _rewarded || !result.IsSuccess) return;
             _rewarded = true;
-            Coins.Value = Mathf.Min(1000000, Coins.Value + result.CoinsEarned);
+            // Difficulty pays more (GameRoom: easy x1 .. extreme x2).
+            Coins.Value = Mathf.Min(1000000, Coins.Value + Mathf.RoundToInt(result.CoinsEarned * GameRoom.RewardMultiplier));
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
@@ -242,7 +327,10 @@ namespace CoopGame.Network
         [Rpc(SendTo.Server)]
         public void ReportEventRpc(byte kind, RpcParams rpc = default)
         {
-            if (rpc.Receive.SenderClientId == OwnerClientId) LevelResults.ServerReport(this, kind);
+            if (rpc.Receive.SenderClientId != OwnerClientId) return;
+            LevelResults.ServerReport(this, kind);
+            if (kind == LevelResults.EventFall) GameRoom.ServerFeed(LevelResults.NameOf(this) + " ตกแมพ!", new Color(.6f, .8f, 1f));
+            else if (kind == LevelResults.EventKnockdown) GameRoom.ServerFeed(LevelResults.NameOf(this) + " ล้มกลิ้ง", new Color(1f, .85f, .5f));
         }
 
         /// <summary>Owner to host: buy a hat with coins (Cosmetics shop).</summary>
@@ -290,9 +378,11 @@ namespace CoopGame.Network
                 // Card effects on stamina (owner-simulated, like the stamina itself); PlayerStamina clamps the drain to 0.1..1.
                 float drain = CardMagnitude(CardEffect.StrongArms) * CardMagnitude(CardEffect.Endurance);
                 if (CarriedCargo != null && IsCloseSupportNear()) drain *= CardCatalog.CloseSupportDrain;
-                _stamina.CarryDrainMultiplier = drain;
-                _stamina.RestRegenMultiplier = CardMagnitude(CardEffect.QuickRecovery);
-                _stamina.ActionCostMultiplier = CardMagnitude(CardEffect.LightStep);
+                // Worn gear (GearShop) adds small bonuses on top of the card.
+                GearShop.Bonuses(out float gearDrain, out float gearAction, out float gearRegen);
+                _stamina.CarryDrainMultiplier = drain * gearDrain;
+                _stamina.RestRegenMultiplier = CardMagnitude(CardEffect.QuickRecovery) * gearRegen;
+                _stamina.ActionCostMultiplier = CardMagnitude(CardEffect.LightStep) * gearAction;
             }
         }
     }

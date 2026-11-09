@@ -108,11 +108,10 @@ namespace CoopGame.Network
                 }
             }
 
-            // Tab or F1 to toggle HUD visibility
+            // F1 toggles HUD visibility (Tab is the scoreboard now)
             if (Keyboard.current != null)
             {
-                if (Keyboard.current.tabKey.wasPressedThisFrame ||
-                    Keyboard.current.f1Key.wasPressedThisFrame)
+                if (Keyboard.current.f1Key.wasPressedThisFrame)
                 {
                     _showHUD = !_showHUD;
                 }

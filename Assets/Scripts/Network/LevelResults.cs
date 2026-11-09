@@ -12,11 +12,15 @@ namespace CoopGame.Network
     {
         public float CarrySeconds, CarryDistance, LevelSeconds;
         public int CrateHits, Falls, Knockdowns;
+        /// <summary>Scoreboard (Tab): crate damage blamed on this player, throws, catches, coins this level, ping (ms).</summary>
+        public int CrateDamage, Throws, Catches, Coins, PingMs;
 
         public bool Equals(RunStats o) => CarrySeconds.Equals(o.CarrySeconds) && CarryDistance.Equals(o.CarryDistance) &&
-            LevelSeconds.Equals(o.LevelSeconds) && CrateHits == o.CrateHits && Falls == o.Falls && Knockdowns == o.Knockdowns;
+            LevelSeconds.Equals(o.LevelSeconds) && CrateHits == o.CrateHits && Falls == o.Falls && Knockdowns == o.Knockdowns &&
+            CrateDamage == o.CrateDamage && Throws == o.Throws && Catches == o.Catches && Coins == o.Coins && PingMs == o.PingMs;
         public override bool Equals(object obj) => obj is RunStats o && Equals(o);
-        public override int GetHashCode() => HashCode.Combine(CarrySeconds, CarryDistance, LevelSeconds, CrateHits, Falls, Knockdowns);
+        public override int GetHashCode() => HashCode.Combine(HashCode.Combine(CarrySeconds, CarryDistance, LevelSeconds, CrateHits, Falls, Knockdowns),
+            HashCode.Combine(CrateDamage, Throws, Catches, Coins, PingMs));
     }
 
     public readonly struct LevelAward
@@ -47,6 +51,10 @@ namespace CoopGame.Network
         private Vector3 _lastCargoPosition;
         private bool _hasCargoPosition, _frozen;
         private float _levelStart, _nextFlush;
+        private bool _wasInFlight;
+        private ulong _thrower = ulong.MaxValue;
+        private float _nextHitFeed;
+        private int _feedDamage;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -75,6 +83,8 @@ namespace CoopGame.Network
             _live.Clear();
             _lastCarried.Clear();
             _hasCargoPosition = _frozen = false;
+            _wasInFlight = false;
+            _thrower = ulong.MaxValue;
             _levelStart = Time.time;
             if (!IsServer()) return;
             foreach (var player in PlayerExpeditionState.Everyone)
@@ -100,19 +110,62 @@ namespace CoopGame.Network
         {
             if (!IsServer() || _frozen || cargo == null) return;
             bool any = false;
+            string who = null;
             foreach (var player in PlayerExpeditionState.Everyone)
-                if (player != null && cargo.HasCarrier(player.OwnerClientId)) { Blame(player.OwnerClientId); any = true; }
-            if (any) return;
-            foreach (var pair in _lastCarried)
-                if (Time.time - pair.Value <= BlameSeconds) Blame(pair.Key);
+                if (player != null && cargo.HasCarrier(player.OwnerClientId))
+                {
+                    Blame(player.OwnerClientId, damage); any = true;
+                    who = who == null ? NameOf(player) : who + " + " + NameOf(player);
+                }
+            if (!any)
+                foreach (var pair in _lastCarried)
+                    if (Time.time - pair.Value <= BlameSeconds) { Blame(pair.Key, damage); who ??= GameRoom.NameOfClient(pair.Key); }
+            // Event feed: one line per hit, small knocks are summed (at most one line every 1.2 s).
+            _feedDamage += damage;
+            if (_feedDamage >= 5 && Time.time >= _nextHitFeed)
+            {
+                _nextHitFeed = Time.time + 1.2f;
+                GameRoom.ServerFeed((who ?? "ลัง") + (who != null ? " ทำลังกระแทก " : "กระแทก ") + "-" + _feedDamage + " HP", new Color(1f, .45f, .4f));
+                _feedDamage = 0;
+            }
         }
 
-        private void Blame(ulong id)
+        private void Blame(ulong id, int damage)
         {
             RunStats s = Live(id);
             s.CrateHits++;
+            s.CrateDamage += damage;
             _live[id] = s;
             _nextFlush = 0f;
+        }
+
+        // Host: throws and catches of the level crate (from its in-flight flag) for the scoreboard and feed.
+        private void TrackThrows(FragileCargo cargo)
+        {
+            bool inFlight = cargo.InFlight;
+            if (inFlight && !_wasInFlight)
+            {
+                // The thrower is whoever carried it last.
+                float latest = -1f;
+                _thrower = ulong.MaxValue;
+                foreach (var pair in _lastCarried) if (pair.Value > latest) { latest = pair.Value; _thrower = pair.Key; }
+                if (_thrower != ulong.MaxValue)
+                {
+                    RunStats s = Live(_thrower); s.Throws++; _live[_thrower] = s;
+                    GameRoom.ServerFeed(GameRoom.NameOfClient(_thrower) + " ปาลัง!", new Color(1f, .8f, .35f));
+                }
+            }
+            else if (!inFlight && _wasInFlight)
+            {
+                foreach (var player in PlayerExpeditionState.Everyone)
+                {
+                    if (player == null || !cargo.HasCarrier(player.OwnerClientId)) continue;
+                    RunStats s = Live(player.OwnerClientId); s.Catches++; _live[player.OwnerClientId] = s;
+                    GameRoom.ServerFeed(NameOf(player) + (player.OwnerClientId == _thrower ? " รับลังตัวเอง" : " รับลังได้!"), new Color(.5f, 1f, .6f));
+                    break;
+                }
+            }
+            _wasInFlight = inFlight;
         }
 
         private void FixedUpdate()
@@ -127,6 +180,7 @@ namespace CoopGame.Network
                 step.y = 0f;
                 _lastCargoPosition = position;
                 _hasCargoPosition = true;
+                TrackThrows(cargo);
                 float moved = step.magnitude < 2f ? step.magnitude : 0f; // a respawn teleport is not carrying
                 foreach (var player in PlayerExpeditionState.Everyone)
                 {
@@ -139,6 +193,11 @@ namespace CoopGame.Network
                 }
             }
             bool delivered = mission != null && mission.IsSpawned && mission.Phase.Value >= 2;
+            if (delivered && !_frozen)
+            {
+                bool success = mission.Phase.Value == 2;
+                GameRoom.ServerFeed(success ? "ส่งของสำเร็จ!" : "ลังพัง! ภารกิจล้มเหลว", success ? new Color(.45f, 1f, .55f) : new Color(1f, .35f, .35f));
+            }
             if (delivered) _frozen = true;
             if (!delivered && Time.time < _nextFlush) return;
             _nextFlush = Time.time + FlushInterval;
@@ -148,6 +207,8 @@ namespace CoopGame.Network
                 if (player == null || !player.IsSpawned) continue;
                 RunStats s = Live(player.OwnerClientId);
                 s.LevelSeconds = levelSeconds;
+                s.Coins = player.StageCoinsDelta;
+                s.PingMs = PingOf(player.OwnerClientId);
                 if (!player.Stats.Value.Equals(s)) player.Stats.Value = s;
             }
         }
@@ -162,6 +223,14 @@ namespace CoopGame.Network
                 if (player != null && player.IsSpawned && player.Stats.Value.LevelSeconds <= 0f) return;
             IsReady = true;
             Ready?.Invoke();
+        }
+
+        private static int PingOf(ulong clientId)
+        {
+            var manager = NetworkManager.Singleton;
+            if (manager == null || clientId == NetworkManager.ServerClientId || manager.NetworkConfig.NetworkTransport == null) return 0;
+            try { return (int)manager.NetworkConfig.NetworkTransport.GetCurrentRtt(clientId); }
+            catch { return 0; }
         }
 
         // ───────────────────────── Reading (every machine) ─────────────────────────

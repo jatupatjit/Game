@@ -32,14 +32,13 @@ namespace CoopGame.Network
         private readonly List<Button> _hatButtons = new();
         private bool _restored;
 
-        public static bool Owns(int hat) => hat == 0 || (PlayerPrefs.GetInt("hats_owned", 0) & (1 << hat)) != 0;
+        public static bool Owns(int hat) => SaveSystem.OwnsHat(hat); // local save file (was PlayerPrefs; migrated on first run)
 
         /// <summary>Owner: the host confirmed the purchase.</summary>
         public static void MarkOwned(int hat)
         {
-            PlayerPrefs.SetInt("hats_owned", PlayerPrefs.GetInt("hats_owned", 0) | (1 << hat));
-            PlayerPrefs.Save();
-            Equip(hat, PlayerPrefs.GetInt("hat_color", 0));
+            SaveSystem.MarkHatOwned(hat);
+            Equip(hat, SaveSystem.Current.hatColor);
         }
 
         /// <summary>Owner: wear a hat (0 = none) in a colour; remembered for next time.</summary>
@@ -49,9 +48,7 @@ namespace CoopGame.Network
             if (state == null || !Owns(hat)) return;
             state.Hat.Value = (byte)hat;
             state.HatColor.Value = (byte)Mathf.Clamp(color, 0, HatColors.Length - 1);
-            PlayerPrefs.SetInt("hat_equipped", hat);
-            PlayerPrefs.SetInt("hat_color", state.HatColor.Value);
-            PlayerPrefs.Save();
+            SaveSystem.SetHat(hat, state.HatColor.Value);
         }
 
         private static PlayerExpeditionState Local()
@@ -78,8 +75,8 @@ namespace CoopGame.Network
             if (local != null && local.IsSpawned && !_restored)
             {
                 _restored = true;
-                int hat = PlayerPrefs.GetInt("hat_equipped", 0);
-                if (Owns(hat)) Equip(hat, PlayerPrefs.GetInt("hat_color", 0));
+                int hat = SaveSystem.Current.hatEquipped;
+                if (Owns(hat)) Equip(hat, SaveSystem.Current.hatColor);
             }
             if (local == null) _restored = false;
             foreach (var player in PlayerExpeditionState.Everyone)
@@ -297,7 +294,7 @@ namespace CoopGame.Network
             var state = Local();
             if (state == null) return;
             if (Owns(hat)) Equip(hat, color);
-            else { PlayerPrefs.SetInt("hat_color", color); state.BuyHatRpc((byte)hat); }
+            else { SaveSystem.Current.hatColor = color; state.BuyHatRpc((byte)hat); }
         }
     }
 }

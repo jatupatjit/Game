@@ -155,6 +155,46 @@ namespace CoopGame.Player
         [SerializeField] private float _knockdownTilt = 70f;
         [SerializeField] private float _knockdownSeconds = 1.5f;
         [SerializeField] private float _standUpSeconds = .8f;
+        [Header("Fall Respawn Slump")]
+        [Tooltip("After falling off the map the body appears this high above the pad and drops onto it limp.")]
+        [SerializeField, Min(0f)] private float _respawnDropHeight = .8f;
+        [Tooltip("Seconds limp after the fall respawn (the drop included).")]
+        [SerializeField, Min(0f)] private float _respawnLieSeconds = 2f;
+        [Tooltip("Seconds to stand back up after the fall respawn (slower than a normal knockdown).")]
+        [SerializeField, Min(.1f)] private float _respawnStandUpSeconds = 1.6f;
+        private float _activeStandUpSeconds = .8f, _moveLockedUntil = -1f;
+        private bool _respawnSlumpPending;
+
+        /// <summary>Owner, after a fall respawn: drop onto the pad limp, lie a moment, then stand up slowly.</summary>
+        public void RespawnSlump()
+        {
+            if (!IsLocal || !_fullRagdoll) return;
+            _respawnSlumpPending = true;
+        }
+
+        private void ApplyRespawnSlump()
+        {
+            _respawnSlumpPending = false;
+            if (_physicsRoot == null || _climbing) return;
+            Vector3 lift = Vector3.up * _respawnDropHeight;
+            foreach (var body in _bodies)
+            {
+                body.position += lift;
+                body.transform.position += lift;
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+            transform.position += lift;
+            _lastRootSet = transform.position;
+            _knockdownUntil = Time.time + _respawnLieSeconds;
+            _activeStandUpSeconds = _respawnStandUpSeconds;
+            _standUpUntil = _knockdownUntil + _activeStandUpSeconds;
+            _moveLockedUntil = _standUpUntil;
+            // A little backward tip so the limp body sits down and falls over instead of folding straight down.
+            Vector3 back = -(Quaternion.Euler(0f, _facingYaw, 0f) * Vector3.forward);
+            _bodies[Chest].AddForce(back * 1.2f, ForceMode.VelocityChange);
+            _bodies[Head].AddForce(back * 1.2f, ForceMode.VelocityChange);
+        }
         [Tooltip("While knocked down on the ground, horizontal speed fades at this rate (1/s), so a fall does not slide far on the frictionless limbs.")]
         [SerializeField, Min(0f)] private float _knockdownGroundDrag = 4f;
         [Tooltip("Seconds after a knockdown before the ground drag starts (lets the hit or trip still throw the body a little).")]
@@ -388,7 +428,7 @@ namespace CoopGame.Player
                 if (_stamina != null && _carry != null) // placing/throwing may just have ended the carry
                 {
                     _stamina.DrainStaminaContinuous(false, _carry.TotalMass, _carry.CurrentCarrierCount, _carry.StaminaDrainMultiplier);
-                    if (_stamina.IsExhausted) RequestDrop();
+                    if (_stamina.IsExhausted) RequestDrop(true);
                 }
             }
             else if ((_carryTapReleased || (_input != null && _input.CarryPressed)) && Time.time >= _nextPickupAllowedTime && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
@@ -414,7 +454,7 @@ namespace CoopGame.Player
 
             float dt = Time.fixedDeltaTime;
             Vector2 move = _input != null ? _input.MoveInput : Vector2.zero;
-            if (Blocked) move = Vector2.zero;
+            if (Blocked || Time.time < _moveLockedUntil) move = Vector2.zero;
             float yaw = _camera != null ? _camera.Yaw : transform.eulerAngles.y;
             float pitch = _camera != null ? _camera.Pitch : 0f;
             Quaternion facing = Quaternion.Euler(0f, yaw, 0f);
@@ -424,9 +464,11 @@ namespace CoopGame.Player
             // Respawn/teleport helpers re-enable the CharacterController; outside a climb it must stay off.
             if (_controller != null && _controller.enabled) _controller.enabled = false;
             DetectTeleport();
+            if (_respawnSlumpPending) ApplyRespawnSlump();
 
             bool moving = move.sqrMagnitude > .01f;
-            bool sprint = _input != null && _input.SprintHeld && moving && !Exhausted;
+            // No sprinting while holding a crate (George 2026-11-09: sprint + carry kept stamina from draining).
+            bool sprint = _input != null && _input.SprintHeld && moving && !Exhausted && _carry == null;
             if (sprint && _stamina != null) _stamina.ConsumeActionStamina(_sprintStaminaDrain * dt);
             Vector3 desired = facing * new Vector3(move.x, 0f, move.y);
             desired = Vector3.ClampMagnitude(desired, 1f) * (sprint ? _sprintSpeed : _walkSpeed);
@@ -451,7 +493,7 @@ namespace CoopGame.Player
             DetectHardLanding(hipsVel.y);
 
             bool limp = IsKnockedDown;
-            float recover = !limp && Time.time < _standUpUntil ? 1f - (_standUpUntil - Time.time) / _standUpSeconds : 1f;
+            float recover = !limp && Time.time < _standUpUntil ? 1f - (_standUpUntil - Time.time) / _activeStandUpSeconds : 1f;
             UpdateDrives(limp ? 0f : Mathf.SmoothStep(.15f, 1f, recover));
             if (limp && IsGrounded && Time.time > _knockdownUntil - _knockdownSeconds + _knockdownSlideGrace)
             {
@@ -521,7 +563,7 @@ namespace CoopGame.Player
                 accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
 
-                if (_jumpQueued) TryJump();
+                if (_jumpQueued && Time.time >= _moveLockedUntil) TryJump();
 
                 // Stay upright and turn to the camera heading (hips and chest follow the target pose). Just after
                 // letting go of a wall the turn is softer, so the landing cannot flick the body round.
@@ -1026,14 +1068,14 @@ namespace CoopGame.Player
             else ThrowCarryRpc(velocity);
         }
 
-        private void RequestDrop()
+        private void RequestDrop(bool exhausted = false)
         {
             // Asked once per carry: running out of stamina calls this every frame until the server lets go.
             if (_carry == null || _dropRequested) return;
             _dropRequested = true;
             _throwCostPending = false;
-            if (HasAuthority) ServerDropCarry();
-            else DropCarryRpc();
+            if (HasAuthority) ServerDropCarry(exhausted);
+            else DropCarryRpc(exhausted);
         }
 
         /// <summary>Owner: the server attached this player to the crate (or refused).</summary>
@@ -1287,9 +1329,12 @@ namespace CoopGame.Player
             ServerWatchCarry();
         }
 
-        private void ServerDropCarry()
+        private void ServerDropCarry(bool exhausted = false)
         {
+            var dropped = _serverCarry;
             if (_serverCarry != null && _serverCarry.HasCarrier(CarrierId)) _serverCarry.DetachCarrier(CarrierId);
+            else dropped = null;
+            if (exhausted && dropped is FragileCargo fragile) fragile.ApplyExhaustedDropServer();
             ServerWatchCarry();
         }
 
@@ -1336,9 +1381,9 @@ namespace CoopGame.Player
         }
 
         [Rpc(SendTo.Server)]
-        private void DropCarryRpc(RpcParams rpc = default)
+        private void DropCarryRpc(bool exhausted, RpcParams rpc = default)
         {
-            if (rpc.Receive.SenderClientId == OwnerClientId) ServerDropCarry();
+            if (rpc.Receive.SenderClientId == OwnerClientId) ServerDropCarry(exhausted);
         }
 
         [Rpc(SendTo.Owner)]
@@ -1869,7 +1914,8 @@ namespace CoopGame.Player
         {
             if (!IsLocal || _physicsRoot == null || IsKnockedDown || _climbing) return;
             _knockdownUntil = Time.time + _knockdownSeconds;
-            _standUpUntil = _knockdownUntil + _standUpSeconds;
+            _activeStandUpSeconds = _standUpSeconds;
+            _standUpUntil = _knockdownUntil + _activeStandUpSeconds;
             RequestDrop();
             if (IsSpawned && _expedition != null) _expedition.ReportEventRpc(CoopGame.Network.LevelResults.EventKnockdown);
             Vector3 hit = _bodies[Chest].position;

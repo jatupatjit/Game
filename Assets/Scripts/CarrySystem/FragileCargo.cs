@@ -50,6 +50,10 @@ namespace CoopGame.CarrySystem
 
         [Tooltip("Minimum time between any two HP losses, including impacts and dragging")]
         [SerializeField, Min(0f)] private float _damageCooldownSeconds = 1.25f;
+        [Tooltip("Damage when the crate is set down (F) anywhere but a hay bale")]
+        [SerializeField, Min(0)] private int _placeDamage = 5;
+        [Tooltip("Damage when a carrier runs out of stamina and the crate falls (nobody else holding it)")]
+        [SerializeField, Min(0)] private int _exhaustedDropDamage = 10;
 
         [Tooltip("Ignore settling collisions and drag immediately after spawning or returning to the start")]
         [SerializeField, Min(0f)] private float _spawnDamageGraceSeconds = 1.25f;
@@ -272,6 +276,27 @@ namespace CoopGame.CarrySystem
                 : now;
             _scrapeStartedAtFixedTime = -1f;
             if (firstCarrier) _isThrown = false;
+        }
+
+        // George 2026-11-09: setting the crate down off a hay bale costs 5 HP; hay bales and checkpoint pads are safe spots.
+        protected override void OnPlacementCompleted()
+        {
+            base.OnPlacementCompleted();
+            if (!_isDestroyed && !IsSecured && _placeDamage > 0 && !PlacedOnCushion() && !PlacedOnCheckpoint()) ApplyDamageServer(_placeDamage, "Placed off hay");
+        }
+
+        private bool PlacedOnCheckpoint()
+        {
+            Vector3 center = ApproximateBoundsCenter;
+            foreach (var pad in FindObjectsByType<CoopGame.Network.CheckpointPad>(FindObjectsSortMode.None))
+                if (pad != null && pad.Covers(center)) return true;
+            return false;
+        }
+
+        /// <summary>Server: a carrier ran out of stamina and let go; hurts the crate if it now falls.</summary>
+        public void ApplyExhaustedDropServer()
+        {
+            if (CurrentCarrierCount == 0 && _exhaustedDropDamage > 0) ApplyDamageServer(_exhaustedDropDamage, "Dropped (out of stamina)");
         }
 
         protected override void OnCarrierDetached(int remainingCarriers)

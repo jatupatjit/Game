@@ -19,7 +19,9 @@ namespace CoopGame.Network
 
         private GameObject _root;
         private Transform _list;
-        private Text _footer;
+        private Text _footer, _difficultyText;
+        private readonly System.Collections.Generic.List<Button> _difficultyButtons = new();
+        private int _shownDifficulty = -1;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -33,7 +35,7 @@ namespace CoopGame.Network
         private void OnEnable() => LevelResults.Ready += SaveStars;
         private void OnDisable() => LevelResults.Ready -= SaveStars;
 
-        public static int BestStars(string level) => PlayerPrefs.GetInt("stars_" + level, 0);
+        public static int BestStars(string level) => SaveSystem.Stars(level); // local save file (was PlayerPrefs)
 
         /// <summary>Every machine, on delivery: keep the best stars for this level.</summary>
         private static void SaveStars()
@@ -43,9 +45,8 @@ namespace CoopGame.Network
             string level = SceneManager.GetActiveScene().name;
             int maxHp = mission.Cargo != null ? mission.Cargo.MaxHP : 100;
             int stars = LevelResults.Stars(mission.Delivery.LastDeliveryResult.RemainingHP, maxHp);
-            if (stars <= BestStars(level)) return;
-            PlayerPrefs.SetInt("stars_" + level, stars);
-            PlayerPrefs.Save();
+            SaveSystem.Current.levelsPlayed++;
+            SaveSystem.SetBestStars(level, stars);
         }
 
         // Play order (George 2026-11-06: Level02 Sky Kingdom is the first level). Scenes not listed follow in build order.
@@ -106,7 +107,7 @@ namespace CoopGame.Network
 
             var card = new GameObject("Card", typeof(RectTransform), typeof(Image));
             card.transform.SetParent(_root.transform, false);
-            ((RectTransform)card.transform).sizeDelta = new Vector2(1100f, 560f);
+            ((RectTransform)card.transform).sizeDelta = new Vector2(1180f, 720f);
             UITheme.StyleCuteCard(card.GetComponent<Image>(), true);
             UITheme.MakeCutePlank(card.transform, "แผนที่ด่าน", 420f, 96f, 6f, 40);
             UITheme.AddCuteTape(card.transform, 4, new Vector2(1f, 1f), new Vector2(-80f, -40f), -24f, 90f);
@@ -115,7 +116,7 @@ namespace CoopGame.Network
             list.transform.SetParent(card.transform, false);
             var listRect = (RectTransform)list.transform;
             listRect.sizeDelta = new Vector2(1000f, 320f);
-            listRect.anchoredPosition = new Vector2(0f, 10f);
+            listRect.anchoredPosition = new Vector2(0f, 70f);
             var layout = list.GetComponent<HorizontalLayoutGroup>();
             layout.spacing = 40f; layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childControlWidth = layout.childControlHeight = false;
@@ -125,7 +126,23 @@ namespace CoopGame.Network
             UITheme.StyleCuteText(_footer);
             var footerRect = (RectTransform)_footer.transform;
             footerRect.sizeDelta = new Vector2(1000f, 40f);
-            footerRect.anchoredPosition = new Vector2(0f, -230f);
+            footerRect.anchoredPosition = new Vector2(0f, -315f);
+
+            // Difficulty row (GameRoom): anyone can pick; the pick stands and everyone sees who chose what.
+            for (int d = 0; d < GameRoom.Difficulties.Length; d++)
+            {
+                byte id = (byte)d;
+                var def = GameRoom.Difficulties[d];
+                var button = UITheme.MakeButton(card.transform, "Difficulty" + d, def.Name, UIButtonStyle.White, new Vector2(220f, 64f), 26);
+                ((RectTransform)button.transform).anchoredPosition = new Vector2((d - (GameRoom.Difficulties.Length - 1) * .5f) * 240f, -170f);
+                button.onClick.AddListener(() => ChooseDifficulty(id));
+                _difficultyButtons.Add(button);
+            }
+            _difficultyText = UITheme.MakeText(card.transform, "DifficultyText", "", 22, UITextRole.Primary, TextAnchor.MiddleCenter);
+            UITheme.StyleCuteText(_difficultyText);
+            var difficultyRect = (RectTransform)_difficultyText.transform;
+            difficultyRect.sizeDelta = new Vector2(1100f, 40f);
+            difficultyRect.anchoredPosition = new Vector2(0f, -232f);
             _root.SetActive(false);
         }
 
@@ -164,22 +181,64 @@ namespace CoopGame.Network
                     starImage.sprite = MissionCompleteUI.StarSprite();
                     starImage.color = s < stars ? Color.white : new Color(.3f, .3f, .3f, .35f);
                 }
-                string label = !unlocked ? "ล็อก" : host ? "ไปด่านนี้" : "รอ Host เลือก";
-                var go = UITheme.MakeButton(node.transform, "Go", label, unlocked && host ? UIButtonStyle.Pink : UIButtonStyle.White, new Vector2(220f, 72f), 26);
+                // Whoever picks a level starts it for everyone (George 2026-11-09: no vote).
+                bool inSession = manager != null && manager.IsListening;
+                string label = !unlocked ? "ล็อก" : "ไปด่านนี้";
+                var go = UITheme.MakeButton(node.transform, "Go", label, unlocked && inSession ? UIButtonStyle.Pink : UIButtonStyle.White, new Vector2(220f, 72f), 26);
                 ((RectTransform)go.transform).anchoredPosition = new Vector2(0f, -95f);
-                go.interactable = unlocked && host;
+                go.interactable = unlocked && inSession;
                 int level = index;
                 go.onClick.AddListener(() => StartLevel(level));
             }
-            _footer.text = "ดาวที่ดีที่สุดบนเครื่องนี้ • ได้ดาวอย่างน้อย 1 ดวงเพื่อปลดล็อกด่านถัดไป • M ปิด";
+            _footer.text = "ใครกดเลือกด่านก็เริ่มด่านนั้นให้ทุกคนเลย • ได้ดาวอย่างน้อย 1 ดวงเพื่อปลดล็อกด่านถัดไป • M ปิด";
+            _shownDifficulty = -1;
+            RefreshDifficulty();
+        }
+
+        private void RefreshDifficulty()
+        {
+            int current = GameRoom.Difficulty;
+            if (current == _shownDifficulty) return;
+            _shownDifficulty = current;
+            for (int d = 0; d < _difficultyButtons.Count; d++)
+                UITheme.StyleButton(_difficultyButtons[d], d == current ? UIButtonStyle.Pink : UIButtonStyle.White);
+            var def = GameRoom.Current;
+            _difficultyText.text = $"ความยาก: {def.Name} — {def.Crate}: {def.Detail} • เงิน/XP x{def.Reward:0.0}";
+        }
+
+        private static void ChooseDifficulty(byte difficulty)
+        {
+            var local = LocalState();
+            if (local != null) local.ChooseDifficultyRpc(difficulty);
+        }
+
+        private static PlayerExpeditionState LocalState()
+        {
+            var manager = NetworkManager.Singleton;
+            var player = manager != null && manager.IsListening && manager.LocalClient != null ? manager.LocalClient.PlayerObject : null;
+            return player != null ? player.GetComponent<PlayerExpeditionState>() : null;
         }
 
         private static void StartLevel(int buildIndex)
         {
+            var local = LocalState();
+            if (local != null) { local.ChooseLevelRpc(buildIndex); SetOpen(false); }
+        }
+
+        /// <summary>Server: <paramref name="byName"/> picked a level; start it for everyone and say so in the feed.</summary>
+        public static void ServerStartLevel(int buildIndex, string byName)
+        {
             var manager = NetworkManager.Singleton;
             if (manager == null || !manager.IsServer || manager.SceneManager == null) return;
+            if (SceneManager.GetActiveScene().name != Lobby) return;
+            if (buildIndex < 0 || buildIndex >= SceneManager.sceneCountInBuildSettings) return;
             string name = System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(buildIndex));
-            if (manager.SceneManager.LoadScene(name, LoadSceneMode.Single) == SceneEventProgressStatus.Started) SetOpen(false);
+            if (manager.SceneManager.LoadScene(name, LoadSceneMode.Single) == SceneEventProgressStatus.Started)
+            {
+                var d = GameRoom.Current;
+                GameRoom.ServerFeed($"{byName} เลือกด่าน: {DisplayName(name).Replace("\n", " ")} ({d.Name})", d.Color);
+                SetOpen(false);
+            }
         }
 
         private void Update()
@@ -187,6 +246,7 @@ namespace CoopGame.Network
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             bool inLobby = SceneManager.GetActiveScene().name == Lobby;
             if (IsOpen && !inLobby) SetOpen(false);
+            if (IsOpen && Time.frameCount % 15 == 0) RefreshDifficulty();
             if (keyboard == null || !inLobby || PauseMenu.IsPaused || TitleScreen.IsVisible || PhotoMode.IsOn) return;
             if (keyboard.mKey.wasPressedThisFrame) SetOpen(!IsOpen);
             else if (IsOpen && keyboard.escapeKey.wasPressedThisFrame) SetOpen(false);

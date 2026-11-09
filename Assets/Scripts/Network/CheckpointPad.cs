@@ -55,6 +55,12 @@ namespace CoopGame.Network
 
         public override void OnNetworkSpawn()
         {
+            // A pad dropped in from a prefab has no crate wired yet: use the level's mission crate.
+            if (_cargo == null)
+            {
+                var mission = FindAnyObjectByType<LevelMission>();
+                if (mission != null) _cargo = mission.Cargo;
+            }
             _shown = -1;
             _restTimer = 0f;
             _firedThisRest = false;
@@ -95,13 +101,19 @@ namespace CoopGame.Network
             }
         }
 
+        /// <summary>True when a world point (crate center) is inside this pad's placing area.</summary>
+        public bool Covers(Vector3 worldPoint)
+        {
+            Vector3 local = transform.InverseTransformPoint(worldPoint);
+            if (Mathf.Abs(local.x) > _halfExtent || Mathf.Abs(local.z) > _halfExtent) return false;
+            return local.y >= -.25f && local.y <= _maxCargoHeight;
+        }
+
         private bool CargoResting()
         {
             if (_cargo.IsDestroyed || _cargo.IsSecured || _cargo.IsCarried || _cargo.IsPlacing) return false;
             if (_cargoBody == null) _cargoBody = _cargo.GetComponent<Rigidbody>();
-            Vector3 local = transform.InverseTransformPoint(_cargo.ApproximateBoundsCenter);
-            if (Mathf.Abs(local.x) > _halfExtent || Mathf.Abs(local.z) > _halfExtent) return false;
-            if (local.y < -.25f || local.y > _maxCargoHeight) return false;
+            if (!Covers(_cargo.ApproximateBoundsCenter)) return false;
             return _cargoBody == null || _cargoBody.linearVelocity.sqrMagnitude <= _restSpeed * _restSpeed;
         }
 

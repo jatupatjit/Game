@@ -362,6 +362,8 @@ namespace CoopGame.Player
                 if (IsSpawned && TryGetComponent(out CoopGame.Network.PlayerExpeditionState state))
                     state.ReportEventRpc(CoopGame.Network.LevelResults.EventFall);
                 RespawnAtStart();
+                // Full physics body: land on the pad limp and stand up slowly (George 2026-11-09).
+                if (TryGetComponent(out RagdollCharacter ragdoll)) ragdoll.RespawnSlump();
                 return;
             }
             if (!_movement.enabled) return;

@@ -232,6 +232,18 @@ namespace CoopGame.CarrySystem
             _rigidbody.useGravity = true;
             _supportProtectionEnd = completed ? Time.fixedTime + .35f : -1f;
             if (!completed) _placementFloorCount = 0;
+            if (completed) OnPlacementCompleted();
+        }
+
+        /// <summary>Server: a gentle F placement finished on its floor.</summary>
+        protected virtual void OnPlacementCompleted() { }
+
+        /// <summary>True when the floor the crate was just placed on is a hay bale.</summary>
+        protected bool PlacedOnCushion()
+        {
+            for (int i = 0; i < _placementFloorCount; i++)
+                if (_placementFloors[i] != null && HayCushion.IsCushion(_placementFloors[i])) return true;
+            return false;
         }
 
         protected bool IsGentleSupportContact(Collider other, Vector3 normal, Vector3 point)

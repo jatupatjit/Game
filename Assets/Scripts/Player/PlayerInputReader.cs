@@ -113,7 +113,7 @@ namespace CoopGame.Player
             CarryReleased = false;
             ScrollStep = 0;
             // 1. If game is paused, suppress ALL gameplay inputs completely
-            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput)
+            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || (CoopGame.Network.ExpeditionHUD.BlocksGameplayInput || CoopGame.Network.SpectateMode.BlocksInput))
             {
                 MoveInput = Vector2.zero;
                 LookInput = Vector2.zero;
@@ -310,27 +310,27 @@ namespace CoopGame.Player
 
         private void OnThrowPerformedCallback(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || (CoopGame.Network.ExpeditionHUD.BlocksGameplayInput || CoopGame.Network.SpectateMode.BlocksInput)) return;
             ThrowTriggered = true;
             OnThrowPerformed?.Invoke();
         }
 
         private void OnThrowCanceledCallback(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || (CoopGame.Network.ExpeditionHUD.BlocksGameplayInput || CoopGame.Network.SpectateMode.BlocksInput)) return;
             OnThrowReleased?.Invoke();
         }
 
         private void OnJumpTriggered(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || (CoopGame.Network.ExpeditionHUD.BlocksGameplayInput || CoopGame.Network.SpectateMode.BlocksInput)) return;
             JumpTriggered = true;
             OnJumpPerformed?.Invoke();
         }
 
         private void OnInteractTriggered(InputAction.CallbackContext context)
         {
-            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput) return;
+            if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || (CoopGame.Network.ExpeditionHUD.BlocksGameplayInput || CoopGame.Network.SpectateMode.BlocksInput)) return;
             InteractTriggered = true;
             OnInteractPerformed?.Invoke();
         }

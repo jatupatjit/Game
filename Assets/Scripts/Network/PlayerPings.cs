@@ -15,9 +15,9 @@ namespace CoopGame.Network
     /// </summary>
     public sealed class PlayerPings : MonoBehaviour
     {
-        public const byte Here = 0, Help = 1, Danger = 2;
-        private static readonly string[] Labels = { "มานี่!", "ช่วยยก!", "ระวัง!" };
-        private static readonly Color[] Colors = { new Color(.35f, .8f, 1f), new Color(.45f, 1f, .45f), new Color(1f, .4f, .3f) };
+        public const byte Here = 0, Help = 1, Danger = 2, Wait = 3, ThisWay = 4;
+        public static readonly string[] Labels = { "มานี่!", "ช่วยยก!", "ระวัง!", "รอก่อน!", "ไปทางนี้!" };
+        public static readonly Color[] Colors = { new Color(.35f, .8f, 1f), new Color(.45f, 1f, .45f), new Color(1f, .4f, .3f), new Color(1f, .85f, .3f), new Color(.8f, .55f, 1f) };
         private const float PinSeconds = 4f, MaxDistance = 80f, Cooldown = .4f;
         private float _nextPing;
 
@@ -89,7 +89,7 @@ namespace CoopGame.Network
         /// <summary>Every machine: show a pin at <paramref name="point"/> from <paramref name="from"/>.</summary>
         public static void Show(byte kind, Vector3 point, string from)
         {
-            if (kind > Danger) return;
+            if (kind >= Labels.Length) return;
             ShownCount++;
             var root = new GameObject("Ping " + Labels[kind]);
             root.transform.position = point;
