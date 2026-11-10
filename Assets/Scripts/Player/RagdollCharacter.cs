@@ -187,6 +187,7 @@ namespace CoopGame.Player
             _knockdownUntil = Time.time + _respawnLieSeconds;
             _standUpUntil = _knockdownUntil; // no physics stand-up: the get-up poses take over
             _moveLockedUntil = float.MaxValue; // until the get-up finishes
+            _tripClip = -1; _fallPoseWeight = 0f; _fallingSince = -1f;
             _getUpPending = true;
             // A little forward tip so the limp body falls on its front, where the get-up starts.
             Vector3 forward = Quaternion.Euler(0f, _facingYaw, 0f) * Vector3.forward;
@@ -493,7 +494,7 @@ namespace CoopGame.Player
 
             bool limp = IsKnockedDown;
             float recover = !limp && Time.time < _standUpUntil ? 1f - (_standUpUntil - Time.time) / _activeStandUpSeconds : 1f;
-            UpdateDrives(limp ? 0f : Mathf.SmoothStep(.15f, 1f, recover));
+            UpdateDrives(limp ? (TripDriving ? _tripDriveStrength : 0f) : Mathf.SmoothStep(.15f, 1f, recover));
             if (limp && IsGrounded && Time.time > _knockdownUntil - _knockdownSeconds + _knockdownSlideGrace)
             {
                 // Limbs have no friction (so walking never snags); while lying down, bleed off the slide instead.
@@ -532,6 +533,8 @@ namespace CoopGame.Player
             else UpdateTargetPose(flatVel.magnitude, bodyFacing, dt);
             UpdateArms(pitch, bodyFacing, physics: true);
             ApplyJumpPose(bodyFacing, hipsVel.y, limp || _carry != null || Time.time < _emoteUntil, dt);
+            ApplyFallPose(bodyFacing, hipsVel.y, limp || _carry != null, dt);
+            if (limp) ApplyTripPose(bodyFacing);
 
             if (!limp)
             {
@@ -574,7 +577,8 @@ namespace CoopGame.Player
             _jumpQueued = false;
 
             // Tipped over (pushed, hit) -> go limp.
-            if (!limp && Vector3.Angle(_bodies[Chest].transform.up, Vector3.up) > _knockdownTilt && recover >= 1f)
+            // (Not while the skydive clip lays the body flat on purpose.)
+            if (!limp && Vector3.Angle(_bodies[Chest].transform.up, Vector3.up) > _knockdownTilt && recover >= 1f && _fallPoseWeight <= 0f)
                 Knockdown(Vector3.zero);
 
             for (int i = 1; i < BoneCount; i++)
@@ -612,6 +616,12 @@ namespace CoopGame.Player
         // little bent, knees bent with the feet tucked behind, head up a little. Eased in on the way up and back out
         // while falling, so the legs are straight again before landing. Not while carrying, climbing or knocked down.
         [Header("Jump Pose")]
+        [Tooltip("Airborne part of a jump clip (George's Mixamo 'Jumping'). Set: the jump plays this clip's frames from " +
+                 "Jump Clip Start to End over the flight. Empty: the built-in arms-up pose below.")]
+        [SerializeField] private AnimationClip _jumpClip;
+        [SerializeField, Min(0f)] private float _jumpClipStart = 1.05f, _jumpClipEnd = 1.95f;
+        [Tooltip("Seconds of flight the clip section is stretched over (a physics jump is ~1.1 s).")]
+        [SerializeField, Min(.1f)] private float _jumpClipFlightSeconds = 1f;
         [Tooltip("How far the jump pose goes (0 = old clip pose only, 1 = full pose).")]
         [SerializeField, Range(0f, 1f)] private float _jumpPoseAmount = 1f;
         [Tooltip("Falling faster than this (m/s) eases the legs back down for the landing.")]
@@ -623,11 +633,18 @@ namespace CoopGame.Player
         private void ApplyJumpPose(Quaternion facing, float verticalSpeed, bool blocked, float dt)
         {
             if (IsGrounded && Time.time > _jumpPoseLeftGroundAt + .15f) _jumpPoseActive = false;
-            bool want = _jumpPoseActive && !blocked && !IsGrounded && verticalSpeed > -_jumpPoseReleaseFallSpeed;
+            // The clip has its own landing (legs reach down), so it plays until touch-down; the built-in pose lets go early.
+            float release = _jumpClip != null ? float.MaxValue : _jumpPoseReleaseFallSpeed;
+            bool want = _jumpPoseActive && !blocked && !IsGrounded && verticalSpeed > -release;
             if (_jumpPoseActive && !blocked && Time.time < _jumpPoseLeftGroundAt + .15f) want = true; // take-off frames
             _jumpPoseWeight = Mathf.MoveTowards(_jumpPoseWeight, want ? 1f : 0f, dt * (want ? 6f : 5f));
             float w = Mathf.SmoothStep(0f, 1f, _jumpPoseWeight) * _jumpPoseAmount;
             if (w <= 0f) return;
+            if (_jumpClip != null && SampleJumpClip(facing))
+            {
+                for (int i = 1; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_target[i], _jumpPose[i], w);
+                return;
+            }
             if (!_hasGetUpAxes) BuildGetUpAxes();
 
             Vector3 F = facing * Vector3.forward, S = facing * Vector3.right, U = Vector3.up;
@@ -653,6 +670,135 @@ namespace CoopGame.Player
             Aim(LegL, -U * .9f + F * .35f - S * .18f); Aim(LegL + 1, -U * .35f - F * .95f - S * .05f); Aim(LegL + 2, -U * .8f - F * .6f);
             Aim(LegR, -U * .9f + F * .35f + S * .18f); Aim(LegR + 1, -U * .35f - F * .95f + S * .05f); Aim(LegR + 2, -U * .8f - F * .6f);
             for (int i = 1; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_target[i], _jumpPose[i], w);
+        }
+
+        // ───────────────────────── Mixamo clips (George 2026-11-11) ─────────────────────────
+        // A second hidden copy of the character plays one of these clips through a manual PlayableGraph; its bone
+        // rotations become pose targets, the same way the animated clone drives walking. The physics body follows
+        // through its joint drives, so collisions and the ragdoll still work.
+        private const int ClipJump = 0, ClipFalling = 1, ClipTripForward = 2, ClipTripBackward = 3, ClipCount = 4;
+        [Header("Mixamo Clips")]
+        [Tooltip("Long fall (off the map): looping skydive clip, after falling this long and this fast.")]
+        [SerializeField] private AnimationClip _fallingClip;
+        [SerializeField, Min(0f)] private float _fallingAfterSeconds = .9f, _fallingMinSpeed = 7f;
+        [Tooltip("Knocked down moving/pushed forward / backward: these clips shape the fall, then the body goes limp.")]
+        [SerializeField] private AnimationClip _tripForwardClip, _tripBackwardClip;
+        [SerializeField, Min(0f)] private float _tripForwardStart = .3f, _tripBackwardStart = .3f;
+        [Tooltip("Seconds the trip clip drives the falling body before it goes fully limp.")]
+        [SerializeField, Min(0f)] private float _tripClipSeconds = 1.3f;
+        [Tooltip("Joint strength (0-1) while the trip clip drives the fall.")]
+        [SerializeField, Range(0f, 1f)] private float _tripDriveStrength = .45f;
+
+        private UnityEngine.Playables.PlayableGraph _jumpGraph;
+        private UnityEngine.Animations.AnimationMixerPlayable _clipMixer;
+        private readonly UnityEngine.Animations.AnimationClipPlayable[] _clipPlayables = new UnityEngine.Animations.AnimationClipPlayable[ClipCount];
+        private readonly Transform[] _jumpCloneBones = new Transform[BoneCount];
+        private bool _jumpCloneBuilt, _jumpCloneFailed;
+        private float _fallingSince = -1f, _fallPoseWeight;
+        private int _tripClip = -1;
+        private float _tripStart;
+
+        private AnimationClip ClipFor(int index) => index switch
+        {
+            ClipJump => _jumpClip,
+            ClipFalling => _fallingClip,
+            ClipTripForward => _tripForwardClip,
+            _ => _tripBackwardClip,
+        };
+
+        private bool BuildJumpClone()
+        {
+            _jumpCloneBuilt = true;
+            if (_cloneModel == null || _physicsRoot == null || _rig == null || _rig.Animator == null) { _jumpCloneFailed = true; return false; }
+            GameObject go = Instantiate(_cloneModel, _physicsRoot.transform, false);
+            go.name = "JumpClone";
+            Transform visual = _rig.Visual;
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = _clone != null ? _clone.transform.localRotation : Quaternion.Inverse(transform.rotation) * visual.rotation;
+            go.transform.localScale = visual.lossyScale;
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
+            foreach (var c in go.GetComponentsInChildren<Collider>(true)) Destroy(c);
+            var animator = go.GetComponent<Animator>();
+            if (animator == null) animator = go.AddComponent<Animator>();
+            animator.avatar = _rig.Animator.avatar;
+            animator.runtimeAnimatorController = null;
+            animator.applyRootMotion = false;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            var byName = new Dictionary<string, Transform>();
+            foreach (var t in go.GetComponentsInChildren<Transform>(true)) byName.TryAdd(t.name, t);
+            for (int i = 0; i < BoneCount; i++)
+                if (!byName.TryGetValue(_bones[i].name, out _jumpCloneBones[i])) { Destroy(go); _jumpCloneFailed = true; return false; }
+            _jumpGraph = UnityEngine.Playables.PlayableGraph.Create($"Jump_{name}");
+            _jumpGraph.SetTimeUpdateMode(UnityEngine.Playables.DirectorUpdateMode.Manual);
+            var output = UnityEngine.Animations.AnimationPlayableOutput.Create(_jumpGraph, "Clips", animator);
+            _clipMixer = UnityEngine.Animations.AnimationMixerPlayable.Create(_jumpGraph, ClipCount);
+            for (int c = 0; c < ClipCount; c++)
+            {
+                AnimationClip clip = ClipFor(c);
+                if (clip == null) continue;
+                _clipPlayables[c] = UnityEngine.Animations.AnimationClipPlayable.Create(_jumpGraph, clip);
+                _jumpGraph.Connect(_clipPlayables[c], 0, _clipMixer, c);
+            }
+            UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(output, _clipMixer);
+            return true;
+        }
+
+        /// <summary>Fills _jumpPose with clip <paramref name="index"/> at <paramref name="time"/>. False if it can't be used.</summary>
+        private bool SampleClip(int index, double time, Quaternion facing)
+        {
+            if (_jumpCloneFailed || ClipFor(index) == null) return false;
+            if (!_jumpCloneBuilt && !BuildJumpClone()) return false;
+            if (!UnityEngine.Playables.PlayableExtensions.IsValid(_clipPlayables[index])) return false;
+            for (int c = 0; c < ClipCount; c++) UnityEngine.Playables.PlayableExtensions.SetInputWeight(_clipMixer, c, c == index ? 1f : 0f);
+            UnityEngine.Playables.PlayableExtensions.SetTime(_clipPlayables[index], time);
+            _jumpGraph.Evaluate(0f);
+            for (int i = 0; i < BoneCount; i++) _jumpPose[i] = facing * _jumpCloneBones[i].rotation;
+            return true;
+        }
+
+        /// <summary>Fills _jumpPose from the jump clip at this moment of the flight.</summary>
+        private bool SampleJumpClip(Quaternion facing)
+        {
+            float flight = Mathf.Clamp01((Time.time - _jumpPoseLeftGroundAt) / _jumpClipFlightSeconds);
+            return SampleClip(ClipJump, Mathf.Lerp(_jumpClipStart, _jumpClipEnd, flight), facing);
+        }
+
+        /// <summary>A long fall (off the map): blend into the looping skydive clip, hips included.</summary>
+        private void ApplyFallPose(Quaternion facing, float verticalSpeed, bool blocked, float dt)
+        {
+            bool falling = !IsGrounded && !blocked && verticalSpeed < -2f;
+            if (!falling) _fallingSince = -1f;
+            else if (_fallingSince < 0f) _fallingSince = Time.time;
+            bool want = falling && Time.time - _fallingSince > _fallingAfterSeconds && verticalSpeed < -_fallingMinSpeed
+                        && _jumpPoseWeight < .5f;
+            _fallPoseWeight = Mathf.MoveTowards(_fallPoseWeight, want ? 1f : 0f, dt * (want ? 2.5f : 6f));
+            if (_fallPoseWeight <= 0f || _fallingClip == null) return;
+            if (!SampleClip(ClipFalling, Time.time - _fallingSince, facing)) return;
+            float w = Mathf.SmoothStep(0f, 1f, _fallPoseWeight);
+            for (int i = 0; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_target[i], _jumpPose[i], w);
+        }
+
+        /// <summary>Knocked down: the trip clip shapes the first part of the fall (weak joint drives), then limp.</summary>
+        private bool TripDriving => _tripClip >= 0 && IsKnockedDown && Time.time - _tripStart < _tripClipSeconds;
+
+        private void ApplyTripPose(Quaternion facing)
+        {
+            if (!TripDriving) return;
+            float start = _tripClip == ClipTripForward ? _tripForwardStart : _tripBackwardStart;
+            if (!SampleClip(_tripClip, start + Time.time - _tripStart, facing)) { _tripClip = -1; return; }
+            for (int i = 0; i < BoneCount; i++) _target[i] = _jumpPose[i];
+        }
+
+        private void ChooseTripClip(Vector3 impulse)
+        {
+            _tripClip = -1;
+            if (_tripForwardClip == null && _tripBackwardClip == null) return;
+            Vector3 forward = Quaternion.Euler(0f, _facingYaw, 0f) * Vector3.forward;
+            Vector3 push = Flat(impulse.sqrMagnitude > .01f ? impulse : _bodies[Hips].linearVelocity);
+            bool backward = push.sqrMagnitude > .01f && Vector3.Dot(push, forward) < 0f;
+            _tripClip = backward ? (_tripBackwardClip != null ? ClipTripBackward : ClipTripForward)
+                                 : (_tripForwardClip != null ? ClipTripForward : ClipTripBackward);
+            _tripStart = Time.time;
         }
 
         /// <summary>
@@ -2207,6 +2353,7 @@ namespace CoopGame.Player
             _knockdownUntil = Time.time + _knockdownSeconds;
             _activeStandUpSeconds = _standUpSeconds;
             _standUpUntil = _knockdownUntil + _activeStandUpSeconds;
+            ChooseTripClip(impulse);
             RequestDrop();
             if (IsSpawned && _expedition != null) _expedition.ReportEventRpc(CoopGame.Network.LevelResults.EventKnockdown);
             Vector3 hit = _bodies[Chest].position;
@@ -2231,6 +2378,8 @@ namespace CoopGame.Player
                 s_bodyColliders.Remove(c.GetEntityId());
                 s_handColliders.Remove(c.GetEntityId());
             }
+            if (_jumpGraph.IsValid()) _jumpGraph.Destroy();
+            _jumpCloneBuilt = false;
             if (_physicsRoot != null) Destroy(_physicsRoot);
             _physicsRoot = null;
             _clone = null;

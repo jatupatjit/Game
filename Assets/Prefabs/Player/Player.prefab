@@ -903,6 +903,9 @@ MonoBehaviour:
   _catchHoldTime: 0.25
   _catchRadius: 1.8
   _catchGlowColor: {r: 1, g: 0.8, b: 0.1, a: 1}
+  _crateHitRadius: 0.75
+  _crateHitMinSpeed: 4
+  _crateHitPush: {x: 3, y: 6}
   _fullRagdoll: 1
   _walkSpeed: 4
   _sprintSpeed: 6.5
@@ -957,6 +960,30 @@ MonoBehaviour:
   _knockdownTilt: 70
   _knockdownSeconds: 2.5
   _standUpSeconds: 0.8
+  _respawnDropHeight: 0.8
+  _respawnLieSeconds: 1.6
+  _knockdownGroundDrag: 4
+  _knockdownSlideGrace: 0.15
+  _jumpClip: {fileID: -203655887218126122, guid: 120b4b38f86ceb0449148b15e62ccbcd, type: 3}
+  _jumpClipStart: 0.7
+  _jumpClipEnd: 1.32
+  _jumpClipFlightSeconds: 1
+  _jumpPoseAmount: 1
+  _jumpPoseReleaseFallSpeed: 1.5
+  _fallingClip: {fileID: -203655887218126122, guid: 9cb21aa66194a6f4c9faf435a2b8e9cc, type: 3}
+  _fallingAfterSeconds: 0.9
+  _fallingMinSpeed: 7
+  _tripForwardClip: {fileID: -203655887218126122, guid: f5c72da7426857e488cbf326992cf420, type: 3}
+  _tripBackwardClip: {fileID: -203655887218126122, guid: 45a042b26b168424182626a919f39adb, type: 3}
+  _tripForwardStart: 0.3
+  _tripBackwardStart: 0.3
+  _tripClipSeconds: 1.3
+  _tripDriveStrength: 0.45
+  _getUpBlendIn: 0.4
+  _getUpStepSeconds: 0.45
+  _getUpBlendOut: 0.25
+  _clavicleLiftShare: 0.9
+  _clavicleLiftMax: 30
   _fistFingerAngle: 100
   _fistThumbAngle: 50
 --- !u!1001 &7320352570590444729
