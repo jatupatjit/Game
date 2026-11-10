@@ -158,14 +158,12 @@ namespace CoopGame.Player
         [Header("Fall Respawn Slump")]
         [Tooltip("After falling off the map the body appears this high above the pad and drops onto it limp.")]
         [SerializeField, Min(0f)] private float _respawnDropHeight = .8f;
-        [Tooltip("Seconds limp after the fall respawn (the drop included).")]
-        [SerializeField, Min(0f)] private float _respawnLieSeconds = 2f;
-        [Tooltip("Seconds to stand back up after the fall respawn (slower than a normal knockdown).")]
-        [SerializeField, Min(.1f)] private float _respawnStandUpSeconds = 1.6f;
+        [Tooltip("Seconds limp after the fall respawn (the drop included), before the get-up starts.")]
+        [SerializeField, Min(0f)] private float _respawnLieSeconds = 1.6f;
         private float _activeStandUpSeconds = .8f, _moveLockedUntil = -1f;
         private bool _respawnSlumpPending;
 
-        /// <summary>Owner, after a fall respawn: drop onto the pad limp, lie a moment, then stand up slowly.</summary>
+        /// <summary>Owner, after a fall respawn: drop onto the pad limp, lie a moment, then play the get-up.</summary>
         public void RespawnSlump()
         {
             if (!IsLocal || !_fullRagdoll) return;
@@ -187,13 +185,13 @@ namespace CoopGame.Player
             transform.position += lift;
             _lastRootSet = transform.position;
             _knockdownUntil = Time.time + _respawnLieSeconds;
-            _activeStandUpSeconds = _respawnStandUpSeconds;
-            _standUpUntil = _knockdownUntil + _activeStandUpSeconds;
-            _moveLockedUntil = _standUpUntil;
-            // A little backward tip so the limp body sits down and falls over instead of folding straight down.
-            Vector3 back = -(Quaternion.Euler(0f, _facingYaw, 0f) * Vector3.forward);
-            _bodies[Chest].AddForce(back * 1.2f, ForceMode.VelocityChange);
-            _bodies[Head].AddForce(back * 1.2f, ForceMode.VelocityChange);
+            _standUpUntil = _knockdownUntil; // no physics stand-up: the get-up poses take over
+            _moveLockedUntil = float.MaxValue; // until the get-up finishes
+            _getUpPending = true;
+            // A little forward tip so the limp body falls on its front, where the get-up starts.
+            Vector3 forward = Quaternion.Euler(0f, _facingYaw, 0f) * Vector3.forward;
+            _bodies[Chest].AddForce(forward * 1.2f, ForceMode.VelocityChange);
+            _bodies[Head].AddForce(forward * 1.2f, ForceMode.VelocityChange);
         }
         [Tooltip("While knocked down on the ground, horizontal speed fades at this rate (1/s), so a fall does not slide far on the frictionless limbs.")]
         [SerializeField, Min(0f)] private float _knockdownGroundDrag = 4f;
@@ -410,7 +408,7 @@ namespace CoopGame.Player
         {
             if (!_fullRagdoll || !IsLocal || _input == null) return;
             if (_input.JumpTriggered && !_climbing) _jumpQueued = true;
-            bool canAct = !IsKnockedDown && !Blocked && !_climbing;
+            bool canAct = !IsKnockedDown && !Blocked && !_climbing && !_gettingUp;
             AimedCargo = _carry == null && canAct && !Exhausted && (_wallclimb == null || !_wallclimb.IsClimbing) &&
                          FindAimedCargo(out CarryableObject aimed) ? aimed : null;
 
@@ -465,6 +463,7 @@ namespace CoopGame.Player
             if (_controller != null && _controller.enabled) _controller.enabled = false;
             DetectTeleport();
             if (_respawnSlumpPending) ApplyRespawnSlump();
+            if (UpdateGetUp()) return;
 
             bool moving = move.sqrMagnitude > .01f;
             // No sprinting while holding a crate (George 2026-11-09: sprint + carry kept stamina from draining).
@@ -532,6 +531,7 @@ namespace CoopGame.Player
             if (_clone != null) UpdateClonePose(flatVel, bodyFacing, IsGrounded);
             else UpdateTargetPose(flatVel.magnitude, bodyFacing, dt);
             UpdateArms(pitch, bodyFacing, physics: true);
+            ApplyJumpPose(bodyFacing, hipsVel.y, limp || _carry != null || Time.time < _emoteUntil, dt);
 
             if (!limp)
             {
@@ -603,6 +603,73 @@ namespace CoopGame.Player
                 Vector3 v = _bodies[i].linearVelocity;
                 _bodies[i].linearVelocity = new Vector3(v.x, Mathf.Max(v.y, 0f) + speed, v.z);
             }
+            _jumpPoseActive = true;
+            _jumpPoseLeftGroundAt = Time.time;
+        }
+
+        // ───────────────────────── Jump pose ─────────────────────────
+        // George 2026-11-11 (photo of a jumping child): in the air after a jump, arms up in a V with the elbows a
+        // little bent, knees bent with the feet tucked behind, head up a little. Eased in on the way up and back out
+        // while falling, so the legs are straight again before landing. Not while carrying, climbing or knocked down.
+        [Header("Jump Pose")]
+        [Tooltip("How far the jump pose goes (0 = old clip pose only, 1 = full pose).")]
+        [SerializeField, Range(0f, 1f)] private float _jumpPoseAmount = 1f;
+        [Tooltip("Falling faster than this (m/s) eases the legs back down for the landing.")]
+        [SerializeField, Min(0f)] private float _jumpPoseReleaseFallSpeed = 1.5f;
+        private bool _jumpPoseActive;
+        private float _jumpPoseWeight, _jumpPoseLeftGroundAt;
+        private readonly Quaternion[] _jumpPose = new Quaternion[BoneCount];
+
+        private void ApplyJumpPose(Quaternion facing, float verticalSpeed, bool blocked, float dt)
+        {
+            if (IsGrounded && Time.time > _jumpPoseLeftGroundAt + .15f) _jumpPoseActive = false;
+            bool want = _jumpPoseActive && !blocked && !IsGrounded && verticalSpeed > -_jumpPoseReleaseFallSpeed;
+            if (_jumpPoseActive && !blocked && Time.time < _jumpPoseLeftGroundAt + .15f) want = true; // take-off frames
+            _jumpPoseWeight = Mathf.MoveTowards(_jumpPoseWeight, want ? 1f : 0f, dt * (want ? 6f : 5f));
+            float w = Mathf.SmoothStep(0f, 1f, _jumpPoseWeight) * _jumpPoseAmount;
+            if (w <= 0f) return;
+            if (!_hasGetUpAxes) BuildGetUpAxes();
+
+            Vector3 F = facing * Vector3.forward, S = facing * Vector3.right, U = Vector3.up;
+            void Aim(int i, Vector3 dir)
+            {
+                Quaternion rest = facing * _restLocal[i];
+                _jumpPose[i] = Quaternion.FromToRotation(rest * _getUpAxis[i], dir.normalized) * rest;
+            }
+            for (int i = 0; i < BoneCount; i++) _jumpPose[i] = _target[i];
+            Vector3 torso = U - F * .06f;
+            Aim(1, torso); Aim(Chest, torso);
+            Aim(Head, U - F * .12f);
+            Vector3 upperL = U * .55f - S * .85f + F * .1f, foreL = U * .9f - S * .45f + F * .05f;
+            Vector3 upperR = U * .55f + S * .85f + F * .1f, foreR = U * .9f + S * .45f + F * .05f;
+            Aim(ArmL, upperL); Aim(ArmL + 1, foreL); Aim(HandL, foreL);   // hands straight on from the forearms
+            Aim(ArmR, upperR); Aim(ArmR + 1, foreR); Aim(HandR, foreR);
+            // Palms turned in toward the head (a little forward), like the photo; the shortest-arc aim left them
+            // facing forward, which read as a bent-back wrist. Forearm and hand roll together (no wrist twist).
+            RollPalm(ArmL + 1, foreL, S * .8f + F * .35f, facing);
+            RollPalm(HandL, foreL, S * .8f + F * .35f, facing);
+            RollPalm(ArmR + 1, foreR, -S * .8f + F * .35f, facing);
+            RollPalm(HandR, foreR, -S * .8f + F * .35f, facing);
+            Aim(LegL, -U * .9f + F * .35f - S * .18f); Aim(LegL + 1, -U * .35f - F * .95f - S * .05f); Aim(LegL + 2, -U * .8f - F * .6f);
+            Aim(LegR, -U * .9f + F * .35f + S * .18f); Aim(LegR + 1, -U * .35f - F * .95f + S * .05f); Aim(LegR + 2, -U * .8f - F * .6f);
+            for (int i = 1; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_target[i], _jumpPose[i], w);
+        }
+
+        /// <summary>
+        /// Rolls _jumpPose[i] about its aim direction so the palm faces <paramref name="palmToward"/>. The palm is taken
+        /// as the side of the hand that faced the body in the rest pose (arms hanging, palms in).
+        /// </summary>
+        private void RollPalm(int i, Vector3 aim, Vector3 palmToward, Quaternion facing)
+        {
+            bool left = i <= HandL;
+            Quaternion rest = facing * _restLocal[i];
+            Vector3 restPalmWorld = facing * (left ? Vector3.right : Vector3.left); // toward the body when hanging
+            Vector3 palmLocal = Quaternion.Inverse(rest) * restPalmWorld;
+            Vector3 axis = aim.normalized;
+            Vector3 cur = Vector3.ProjectOnPlane(_jumpPose[i] * palmLocal, axis);
+            Vector3 want = Vector3.ProjectOnPlane(palmToward, axis);
+            if (cur.sqrMagnitude < 1e-4f || want.sqrMagnitude < 1e-4f) return;
+            _jumpPose[i] = Quaternion.AngleAxis(Vector3.SignedAngle(cur, want, axis), axis) * _jumpPose[i];
         }
 
         private void Upright(int index, float strength)
@@ -654,6 +721,180 @@ namespace CoopGame.Player
             _clone.SetFloat(MoveRateParam, rate);
             _clone.SetBool(GroundedParam, grounded);
             for (int i = 0; i < BoneCount; i++) _target[i] = facing * _cloneBones[i].rotation;
+        }
+
+        // ───────────────────────── Get-up after a fall respawn ─────────────────────────
+        // George 2026-11-11: five key poses (lying face down, push up on the hands, kneel on one knee, push up with
+        // the bottom high, stand). The bodies turn kinematic and are posed like the climb: each bone aimed along a
+        // direction in the side plane of the body, the keys joined by a Catmull-Rom curve so the motion flows through
+        // them, the ragdoll's real lying pose blended into the first key, then physics takes over standing.
+        // Angles (degrees): 0 = straight down, 90 = forward, 180 = up, -90 = back.
+        // torso, head, thighL, shinL, footL, thighR, shinR, footR, upperArmL, forearmL, upperArmR, forearmR
+        private static readonly float[][] GetUpKeys =
+        {
+            new[] {  90f, 100f, -90f, -90f, -10f, -90f, -90f, -10f, -50f, 20f, -50f, 20f }, // 1 lying face down
+            new[] { 122f, 140f, -95f, -92f, -10f, -95f, -92f, -10f,  10f,  8f,  10f,  8f }, // 2 push up on the hands
+            new[] { 170f, 178f,   0f, -90f,-100f,  85f,   0f,  90f,  15f, 35f,  30f, 75f }, // 3 kneel on one knee
+            new[] { 112f, 125f,  12f,   2f,  90f,  16f,   4f,  90f,  10f, 12f,  10f, 12f }, // 4 push up, bottom high
+            new[] { 180f, 180f,   0f,   0f,  90f,   0f,   0f,  90f,   6f, 12f,   6f, 12f }, // 5 stand
+        };
+        [Header("Fall Respawn Get-up")]
+        [Tooltip("Seconds to blend from the lying ragdoll into the first key pose.")]
+        [SerializeField, Min(.05f)] private float _getUpBlendIn = .4f;
+        [Tooltip("Seconds from one key pose to the next (four steps).")]
+        [SerializeField, Min(.1f)] private float _getUpStepSeconds = .45f;
+        [Tooltip("Seconds to hand the standing pose back to the walking animation.")]
+        [SerializeField, Min(0f)] private float _getUpBlendOut = .25f;
+
+        private readonly Quaternion[] _getUpFrom = new Quaternion[BoneCount];
+        private readonly Vector3[] _getUpAxis = new Vector3[BoneCount];
+        private readonly float[] _getUpAngles = new float[12];
+        private bool _getUpPending, _gettingUp, _hasGetUpAxes;
+        private float _getUpStart;
+        private Vector3 _getUpFromHips, _getUpHipsXZ;
+        private Quaternion _getUpFacing;
+
+        public bool GettingUp => _gettingUp;
+
+        /// <summary>Each body's local direction toward the next bone in the upright rest pose (head: up, feet: forward).</summary>
+        private void BuildGetUpAxes()
+        {
+            Quaternion facing = Quaternion.identity;
+            var rest = new Quaternion[BoneCount];
+            for (int i = 0; i < BoneCount; i++) rest[i] = facing * _restLocal[i];
+            _target.CopyTo(_getUpFrom, 0);
+            for (int i = 0; i < BoneCount; i++) _target[i] = rest[i];
+            ForwardKinematics(Vector3.zero);
+            for (int i = 0; i < BoneCount; i++)
+            {
+                Vector3 dir;
+                if (i == Head) dir = Vector3.up;
+                else if (i == LegL + 2 || i == LegR + 2) dir = Vector3.forward;
+                else if (i == HandL || i == HandR) dir = _fk[i] - _fk[i - 1];
+                else
+                {
+                    int child = System.Array.IndexOf(Parents, i);
+                    dir = child > 0 ? _fk[child] - _fk[i] : Vector3.up;
+                }
+                if (dir.sqrMagnitude < 1e-6f) dir = Vector3.up;
+                _getUpAxis[i] = Quaternion.Inverse(rest[i]) * dir.normalized;
+            }
+            _getUpFrom.CopyTo(_target, 0);
+            _hasGetUpAxes = true;
+        }
+
+        private static Vector3 SideDir(Quaternion facing, float degrees, float outward = 0f)
+        {
+            float a = degrees * Mathf.Deg2Rad;
+            return facing * new Vector3(outward, -Mathf.Cos(a), Mathf.Sin(a)).normalized;
+        }
+
+        /// <summary>Pose angles at time <paramref name="t"/> (seconds after the first key), Catmull-Rom through the keys.</summary>
+        private void SampleGetUpAngles(float t)
+        {
+            int last = GetUpKeys.Length - 1;
+            float u = Mathf.Clamp(t / _getUpStepSeconds, 0f, last);
+            int k = Mathf.Min(Mathf.FloorToInt(u), last - 1);
+            float s = u - k;
+            float[] p0 = GetUpKeys[Mathf.Max(0, k - 1)], p1 = GetUpKeys[k], p2 = GetUpKeys[k + 1], p3 = GetUpKeys[Mathf.Min(last, k + 2)];
+            float s2 = s * s, s3 = s2 * s;
+            for (int j = 0; j < 12; j++)
+                _getUpAngles[j] = .5f * (2f * p1[j] + (-p0[j] + p2[j]) * s + (2f * p0[j] - 5f * p1[j] + 4f * p2[j] - p3[j]) * s2
+                                         + (-p0[j] + 3f * p1[j] - 3f * p2[j] + p3[j]) * s3);
+        }
+
+        /// <summary>Fills _target with the get-up pose for the current angles.</summary>
+        private void GetUpTargets(Quaternion facing)
+        {
+            float[] a = _getUpAngles;
+            void Aim(int i, Vector3 dir)
+            {
+                Quaternion rest = facing * _restLocal[i];
+                _target[i] = Quaternion.FromToRotation(rest * _getUpAxis[i], dir) * rest;
+            }
+            Vector3 torso = SideDir(facing, a[0]);
+            Aim(Hips, torso); Aim(1, torso); Aim(Chest, torso);
+            Aim(Head, SideDir(facing, a[1]));
+            Aim(LegL, SideDir(facing, a[2], -.08f)); Aim(LegL + 1, SideDir(facing, a[3])); Aim(LegL + 2, SideDir(facing, a[4]));
+            Aim(LegR, SideDir(facing, a[5], .08f)); Aim(LegR + 1, SideDir(facing, a[6])); Aim(LegR + 2, SideDir(facing, a[7]));
+            Aim(ArmL, SideDir(facing, a[8], -.35f)); Aim(ArmL + 1, SideDir(facing, a[9], -.15f)); Aim(HandL, SideDir(facing, a[9], -.15f));
+            Aim(ArmR, SideDir(facing, a[10], .35f)); Aim(ArmR + 1, SideDir(facing, a[11], .15f)); Aim(HandR, SideDir(facing, a[11], .15f));
+        }
+
+        private void StartGetUp()
+        {
+            _getUpPending = false;
+            if (!_hasGetUpAxes) BuildGetUpAxes();
+            // Face the way the head lies, so key 1 (face down, head forward) starts from where the body is.
+            Vector3 headDir = Flat(_bodies[Head].position - _bodies[Hips].position);
+            float yaw = headDir.sqrMagnitude > .0025f ? Quaternion.LookRotation(headDir).eulerAngles.y : _facingYaw;
+            _getUpFacing = Quaternion.Euler(0f, yaw, 0f);
+            for (int i = 0; i < BoneCount; i++) _getUpFrom[i] = _bodies[i].rotation;
+            _getUpFromHips = _bodies[Hips].position;
+            _getUpHipsXZ = Flat(_getUpFromHips);
+            _getUpStart = Time.time;
+            _gettingUp = true;
+            RequestDrop();
+            foreach (var body in _bodies)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+                body.isKinematic = true;
+            }
+        }
+
+        /// <summary>Owner: poses the kinematic body through the get-up. Returns true while it plays.</summary>
+        private bool UpdateGetUp()
+        {
+            if (_getUpPending && !IsKnockedDown && !_climbing && _physicsRoot != null) StartGetUp();
+            if (!_gettingUp) return false;
+
+            float t = Time.time - _getUpStart;
+            float keysTime = _getUpStepSeconds * (GetUpKeys.Length - 1);
+            float blendIn = Mathf.SmoothStep(0f, 1f, t / _getUpBlendIn);
+            float poseTime = Mathf.Max(0f, t - _getUpBlendIn);
+            SampleGetUpAngles(Mathf.Min(poseTime, keysTime));
+            IsGrounded = true;
+            GetUpTargets(_getUpFacing);
+            if (blendIn < 1f)
+                for (int i = 0; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_getUpFrom[i], _target[i], blendIn);
+
+            // Lowest point of the posed body on the ground under the hips.
+            ForwardKinematics(Vector3.zero);
+            float lowest = float.MaxValue;
+            for (int i = 0; i < BoneCount; i++) lowest = Mathf.Min(lowest, _fk[i].y - (i == HandL || i == HandR ? .03f : .05f));
+            float groundY = _getUpFromHips.y - .3f;
+            if (Physics.Raycast(_getUpFromHips + Vector3.up * .5f, Vector3.down, out RaycastHit hit, 3f,
+                    Physics.DefaultRaycastLayers & ~(1 << _limbLayer), QueryTriggerInteraction.Ignore))
+                groundY = hit.point.y;
+            Vector3 hips = new Vector3(_getUpHipsXZ.x, groundY - lowest, _getUpHipsXZ.z);
+            if (blendIn < 1f) hips = Vector3.Lerp(_getUpFromHips, hips, blendIn);
+            ForwardKinematics(hips);
+            for (int i = 0; i < BoneCount; i++)
+            {
+                _bodies[i].MovePosition(_fk[i]);
+                _bodies[i].MoveRotation(_target[i]);
+            }
+            _facingYaw = _getUpFacing.eulerAngles.y;
+
+            if (t >= _getUpBlendIn + keysTime + _getUpBlendOut) FinishGetUp();
+            return true;
+        }
+
+        private void FinishGetUp()
+        {
+            _gettingUp = false;
+            foreach (var body in _bodies)
+            {
+                body.isKinematic = false;
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+            _standUpUntil = Time.time; // standing already: full strength, no physics stand-up
+            _moveLockedUntil = Time.time;
+            _holding = false;
+            _airSpeed = 0f;
+            _wasGrounded = true;
         }
 
         private void SwingChain(int root, float angle, Vector3 axis)
@@ -1435,6 +1676,7 @@ namespace CoopGame.Player
                 _bones[Hips].position = _bodies[Hips].transform.position;
                 for (int i = 0; i < BoneCount; i++) _bones[i].rotation = _bodies[i].transform.rotation;
                 if (_sync != null) _sync.PublishDrawnPose(_bones, _rig.Visual);
+                LiftClavicles(); // after publishing: every screen lifts its own drawn clavicles the same way
                 SampleCargoReplica();
                 // Fists while a hand holds a wall or a crate; other players read the same state.
                 bool left = _carry != null || (_wallclimb != null && _wallclimb.LeftHandGripping);
@@ -1452,9 +1694,57 @@ namespace CoopGame.Player
                 _bones[Hips].position = visual.TransformPoint(hipsLocal);
                 _bones[Hips].rotation = visual.rotation * hipsRot;
                 for (int i = 1; i < BoneCount; i++) _bones[i].localRotation = _remoteLocal[i];
+                LiftClavicles();
                 KeepDrawnBodyOutOfCargo();
                 CueClimbGrab(_fistBits.Value);
                 DrawFists((_fistBits.Value & 1) != 0, (_fistBits.Value & 2) != 0);
+            }
+        }
+
+        // ───────────────────────── Clavicles ─────────────────────────
+        // The physics body has no clavicles, so raising an arm above the shoulder only turns the upper arm and the
+        // shoulder skin collapses (George 2026-11-11: arms twisted, shoulders shrank in the jump pose). Drawing only:
+        // the clavicle lifts with the arm's elevation along the torso and the arm keeps its drawn direction.
+        [Header("Clavicles (drawing)")]
+        [Tooltip("Clavicle lift per degree the upper arm points above shoulder level (0 = off).")]
+        [SerializeField, Range(0f, 1f)] private float _clavicleLiftShare = .9f;
+        [SerializeField, Range(0f, 60f)] private float _clavicleLiftMax = 30f;
+        private Transform _clavicleL, _clavicleR;
+        private Quaternion _clavicleRestL, _clavicleRestR;
+        private bool _claviclesReady;
+
+        private void LiftClavicles()
+        {
+            if (_clavicleLiftShare <= 0f || _rig == null || _rig.Animator == null) return;
+            if (!_claviclesReady)
+            {
+                _claviclesReady = true;
+                _clavicleL = _rig.Animator.GetBoneTransform(HumanBodyBones.LeftShoulder);
+                _clavicleR = _rig.Animator.GetBoneTransform(HumanBodyBones.RightShoulder);
+                if (_clavicleL != null) _clavicleRestL = _clavicleL.localRotation;
+                if (_clavicleR != null) _clavicleRestR = _clavicleR.localRotation;
+            }
+            Vector3 torsoUp = _bones[Head].position - _bones[Chest].position;
+            Vector3 forward = Vector3.ProjectOnPlane(_rig.Visual.forward, torsoUp);
+            if (torsoUp.sqrMagnitude < 1e-6f || forward.sqrMagnitude < 1e-4f) return;
+            torsoUp.Normalize(); forward.Normalize();
+            for (int h = 0; h < 2; h++)
+            {
+                Transform clavicle = h == 0 ? _clavicleL : _clavicleR;
+                if (clavicle == null) continue;
+                int upper = h == 0 ? ArmL : ArmR;
+                Quaternion upperWorld = _bones[upper].rotation, foreWorld = _bones[upper + 1].rotation, handWorld = _bones[upper + 2].rotation;
+                clavicle.localRotation = h == 0 ? _clavicleRestL : _clavicleRestR;
+                Vector3 arm = _bones[upper + 1].position - _bones[upper].position;
+                if (arm.sqrMagnitude < 1e-6f) continue;
+                float elevation = Mathf.Asin(Mathf.Clamp(Vector3.Dot(arm.normalized, torsoUp), -1f, 1f)) * Mathf.Rad2Deg;
+                float lift = Mathf.Clamp(elevation * _clavicleLiftShare, 0f, _clavicleLiftMax);
+                if (lift > 0f)
+                    // Left side lifts with a negative turn about forward, right side with a positive one.
+                    clavicle.rotation = Quaternion.AngleAxis(h == 0 ? -lift : lift, forward) * clavicle.rotation;
+                _bones[upper].rotation = upperWorld;
+                _bones[upper + 1].rotation = foreWorld;
+                _bones[upper + 2].rotation = handWorld;
             }
         }
 
@@ -1643,6 +1933,7 @@ namespace CoopGame.Player
             if (!_hasRootSet) return;
             Vector3 delta = transform.position - _lastRootSet;
             if (delta.sqrMagnitude < .25f) return;
+            if (_gettingUp) FinishGetUp();
             foreach (var body in _bodies)
             {
                 body.position += delta;
@@ -1912,7 +2203,7 @@ namespace CoopGame.Player
         /// <summary>Owner: go limp, then stand back up. Hazards may call this with an impulse.</summary>
         public void Knockdown(Vector3 impulse)
         {
-            if (!IsLocal || _physicsRoot == null || IsKnockedDown || _climbing) return;
+            if (!IsLocal || _physicsRoot == null || IsKnockedDown || _climbing || _gettingUp) return;
             _knockdownUntil = Time.time + _knockdownSeconds;
             _activeStandUpSeconds = _standUpSeconds;
             _standUpUntil = _knockdownUntil + _activeStandUpSeconds;
