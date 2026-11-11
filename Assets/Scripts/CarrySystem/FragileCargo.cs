@@ -352,6 +352,8 @@ namespace CoopGame.CarrySystem
             if (rotatingHazard != null && rotatingHazard.OwnsColliderContact(other)) return;
             // Hay bales cushion the crate: no impact or scrape damage on them.
             if (HayCushion.IsCushion(other)) return;
+            // George 2026-11-11: bumping into a checkpoint (e.g. the horse cart's bed, rails and wheels) never hurts the crate.
+            if (other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
 
             Vector3 relativeVelocity = collision.relativeVelocity;
             for (int i = 0; i < collision.contactCount && _physicsContactCount < _physicsContacts.Length; i++)

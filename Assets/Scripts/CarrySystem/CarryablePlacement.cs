@@ -94,12 +94,45 @@ namespace CoopGame.CarrySystem
             return bounds;
         }
 
+        // The crate's solid box in a frame that turns with the crate around the world up axis only. Sampling the
+        // world AABB instead made a crate turned at an angle test points well outside its real footprint, so it
+        // could never be set down on a narrow surface such as a cart bed placed at an angle in the level.
+        private Bounds SolidBoxYawFrame(out Quaternion yaw)
+        {
+            yaw = Quaternion.Euler(0f, _rigidbody.rotation.eulerAngles.y, 0f);
+            Quaternion inverse = Quaternion.Inverse(yaw);
+            Vector3 origin = _rigidbody.position;
+            Bounds local = new Bounds(Vector3.zero, Vector3.zero);
+            bool first = true;
+            for (int i = 0; i < _ownColliders.Length; i++)
+            {
+                Collider col = _ownColliders[i];
+                if (col == null || !col.enabled || col.isTrigger || !Own(col)) continue;
+                Vector3 c, e;
+                Transform t;
+                if (col is BoxCollider box) { c = box.center; e = box.size * .5f; t = box.transform; }
+                else { c = col.bounds.center; e = col.bounds.extents; t = null; }
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 corner = c + new Vector3((k & 1) == 0 ? -e.x : e.x, (k & 2) == 0 ? -e.y : e.y, (k & 4) == 0 ? -e.z : e.z);
+                    if (t != null) corner = t.TransformPoint(corner);
+                    Vector3 p = inverse * (corner - origin);
+                    if (first) { local = new Bounds(p, Vector3.zero); first = false; }
+                    else local.Encapsulate(p);
+                }
+            }
+            return local;
+        }
+
         private bool TryPlacementTarget(out Vector3 target)
         {
             target = _rigidbody.position;
             _placementFloorCount = 0;
             Bounds bounds = SolidBounds();
             if (bounds.size.sqrMagnitude < .001f) return false;
+            Bounds box = SolidBoxYawFrame(out Quaternion yaw);
+            Vector3 boxCenter = _rigidbody.position + yaw * box.center;
+            float boxBottom = boxCenter.y - box.extents.y;
 
             // Direct check for See-Saw plank support:
             // When standing on or placing over a tilting See-Saw plank, standard flat floor corner raycasts
@@ -114,12 +147,10 @@ namespace CoopGame.CarrySystem
             // All four inset corners and the centre must be supported. A narrow ledge is not a safe placement.
             for (int sample = 0; sample < 5; sample++)
             {
-                Vector3 origin = new(bounds.center.x, bounds.min.y + .08f, bounds.center.z);
+                Vector3 origin = new(boxCenter.x, boxBottom + .08f, boxCenter.z);
                 if (sample > 0)
-                {
-                    origin.x += ((sample & 1) == 0 ? -1 : 1) * bounds.extents.x * .85f;
-                    origin.z += ((sample & 2) == 0 ? -1 : 1) * bounds.extents.z * .85f;
-                }
+                    origin += yaw * new Vector3(((sample & 1) == 0 ? -1 : 1) * box.extents.x * .85f, 0f,
+                        ((sample & 2) == 0 ? -1 : 1) * box.extents.z * .85f);
                 int count = Physics.RaycastNonAlloc(origin, Vector3.down, _placeHits, 1.58f, PlacementMask, QueryTriggerInteraction.Ignore);
                 if (count == _placeHits.Length) return false;
                 RaycastHit nearest = default;
@@ -141,9 +172,9 @@ namespace CoopGame.CarrySystem
             }
             // Keep the existing crate orientation. Reject support that would leave a corner hanging.
             if (highest - lowest > .12f) return false;
-            target.y += highest + .025f - bounds.min.y;
+            target.y += highest + .025f - boxBottom;
             if (target.y > _rigidbody.position.y + .1f || _rigidbody.position.y - target.y > 1.5f) return false;
-            return PlacementClear(bounds, target - _rigidbody.position);
+            return PlacementClear(target - _rigidbody.position);
         }
 
         private bool TrySeeSawPlankTarget(Bounds bounds, out Vector3 target)
@@ -189,11 +220,12 @@ namespace CoopGame.CarrySystem
             return true;
         }
 
-        private bool PlacementClear(Bounds bounds, Vector3 offset)
+        private bool PlacementClear(Vector3 offset)
         {
-            int count = Physics.OverlapBoxNonAlloc(bounds.center + offset,
-                Vector3.Max(bounds.extents - Vector3.one * .015f, Vector3.one * .01f),
-                _placeOverlaps, Quaternion.identity, PlacementMask, QueryTriggerInteraction.Ignore);
+            Bounds box = SolidBoxYawFrame(out Quaternion yaw);
+            int count = Physics.OverlapBoxNonAlloc(_rigidbody.position + yaw * box.center + offset,
+                Vector3.Max(box.extents - Vector3.one * .015f, Vector3.one * .01f),
+                _placeOverlaps, yaw, PlacementMask, QueryTriggerInteraction.Ignore);
             if (count == _placeOverlaps.Length) return false;
             for (int i = 0; i < count; i++)
                 if (!Own(_placeOverlaps[i]) && !IsPlacingCarrier(_placeOverlaps[i])) return false;
@@ -215,7 +247,7 @@ namespace CoopGame.CarrySystem
             _placementSpeed = Mathf.Min(_placementSpeed + PlacementAcceleration * Time.fixedDeltaTime,
                 PlacementMaxSpeed, landingLimit);
             Vector3 next = Vector3.MoveTowards(_rigidbody.position, _placementTarget, _placementSpeed * Time.fixedDeltaTime);
-            valid &= PlacementClear(SolidBounds(), next - _rigidbody.position);
+            valid &= PlacementClear(next - _rigidbody.position);
             if (!valid) { EndPlacement(false); return false; }
             _rigidbody.useGravity = false;
             _rigidbody.linearVelocity = Vector3.zero;
