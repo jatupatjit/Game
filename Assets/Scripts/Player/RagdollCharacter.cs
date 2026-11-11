@@ -145,6 +145,20 @@ namespace CoopGame.Player
         [SerializeField] private float _kneeBend = 40f;
         [SerializeField] private float _armSwing = 25f;
 
+        [Header("Run Pose")]
+        [Tooltip("Elbow bend (degrees) added to free arms moving forward at normal speed (the jog).")]
+        [SerializeField, Range(0f, 110f)] private float _jogElbowBend = 30f;
+        [Tooltip("Elbow bend (degrees) added to free arms when sprinting forward, so the run reads as pumping arms.")]
+        [SerializeField, Range(0f, 110f)] private float _runElbowBend = 70f;
+        [Tooltip("Forward lean (degrees) of spine, chest and head moving forward at normal speed / sprinting.")]
+        [SerializeField, Range(0f, 25f)] private float _jogLean = 3f, _runLean = 9f;
+        private float _runPoseWeight;
+
+        [Header("Free Reach (grab buttons, nothing held)")]
+        [Tooltip("How far a reaching hand is turned to point along the reach (0 = straight on from the forearm).")]
+        [SerializeField, Range(0f, 1f)] private float _freeReachHandAim = .8f;
+        private readonly bool[] _freeReach = new bool[2];
+
         [Header("Relaxed Arms")]
         [Tooltip("Free arms (not holding or reaching) are turned this many degrees in toward the body. The idle/walk "
             + "clips were made for a slimmer rig and hold this chibi's arms out stiffly; the clip's forward/back swing is kept.")]
@@ -312,6 +326,7 @@ namespace CoopGame.Player
 
         // First-person hands (owner)
         private SkinnedMeshRenderer _fpHands;
+        private Mesh _fpSourceMesh;
         private Transform _fpCollapse;
         private Renderer[] _visualRenderers;
         private UnityEngine.Rendering.ShadowCastingMode[] _visualShadowModes;
@@ -622,6 +637,14 @@ namespace CoopGame.Player
         [SerializeField, Min(0f)] private float _jumpClipStart = 1.05f, _jumpClipEnd = 1.95f;
         [Tooltip("Seconds of flight the clip section is stretched over (a physics jump is ~1.1 s).")]
         [SerializeField, Min(.1f)] private float _jumpClipFlightSeconds = 1f;
+        [Tooltip("How much of the clip's whole-body forward lean is taken out (0 = as in the clip, 1 = hips kept upright). " +
+                 "The Mixamo jump folds far forward, which on this big-headed body read as a dive.")]
+        [SerializeField, Range(0f, 1f)] private float _jumpClipUpright = .85f;
+        [Tooltip("How much the clip's curled spine and dropped head are straightened (0 = as in the clip).")]
+        [SerializeField, Range(0f, 1f)] private float _jumpClipStraighten = .5f;
+        [Tooltip("How much the clip's bent wrists are straightened in line with the forearms, so the fingertips lead " +
+                 "the arms up instead of the wrists (0 = as in the clip).")]
+        [SerializeField, Range(0f, 1f)] private float _jumpClipWristStraighten = .85f;
         [Tooltip("How far the jump pose goes (0 = old clip pose only, 1 = full pose).")]
         [SerializeField, Range(0f, 1f)] private float _jumpPoseAmount = 1f;
         [Tooltip("Falling faster than this (m/s) eases the legs back down for the landing.")]
@@ -694,6 +717,8 @@ namespace CoopGame.Player
         private readonly UnityEngine.Animations.AnimationClipPlayable[] _clipPlayables = new UnityEngine.Animations.AnimationClipPlayable[ClipCount];
         private readonly Transform[] _jumpCloneBones = new Transform[BoneCount];
         private bool _jumpCloneBuilt, _jumpCloneFailed;
+        private Quaternion _jumpCloneHipsRest = Quaternion.identity;
+        private readonly Quaternion[] _jumpCloneRest = new Quaternion[BoneCount];
         private float _fallingSince = -1f, _fallPoseWeight;
         private int _tripClip = -1;
         private float _tripStart;
@@ -728,6 +753,8 @@ namespace CoopGame.Player
             foreach (var t in go.GetComponentsInChildren<Transform>(true)) byName.TryAdd(t.name, t);
             for (int i = 0; i < BoneCount; i++)
                 if (!byName.TryGetValue(_bones[i].name, out _jumpCloneBones[i])) { Destroy(go); _jumpCloneFailed = true; return false; }
+            _jumpCloneHipsRest = _jumpCloneBones[Hips].rotation; // bind pose, before any clip is evaluated
+            for (int i = 0; i < BoneCount; i++) _jumpCloneRest[i] = _jumpCloneBones[i].rotation;
             _jumpGraph = UnityEngine.Playables.PlayableGraph.Create($"Jump_{name}");
             _jumpGraph.SetTimeUpdateMode(UnityEngine.Playables.DirectorUpdateMode.Manual);
             var output = UnityEngine.Animations.AnimationPlayableOutput.Create(_jumpGraph, "Clips", animator);
@@ -760,7 +787,41 @@ namespace CoopGame.Player
         private bool SampleJumpClip(Quaternion facing)
         {
             float flight = Mathf.Clamp01((Time.time - _jumpPoseLeftGroundAt) / _jumpClipFlightSeconds);
-            return SampleClip(ClipJump, Mathf.Lerp(_jumpClipStart, _jumpClipEnd, flight), facing);
+            if (!SampleClip(ClipJump, Mathf.Lerp(_jumpClipStart, _jumpClipEnd, flight), facing)) return false;
+            if (_jumpClipUpright > 0f)
+            {
+                // Tip the whole clip pose back by (part of) the clip hips' lean, so limbs keep their shape relative to
+                // the body but the body stays upright in the air.
+                Quaternion hipsDelta = _jumpCloneBones[Hips].rotation * Quaternion.Inverse(_jumpCloneHipsRest);
+                Quaternion tilt = Quaternion.FromToRotation(hipsDelta * Vector3.up, Vector3.up);
+                Quaternion world = facing * Quaternion.Slerp(Quaternion.identity, tilt, _jumpClipUpright) * Quaternion.Inverse(facing);
+                for (int i = 0; i < BoneCount; i++) _jumpPose[i] = world * _jumpPose[i];
+            }
+            if (_jumpClipStraighten > 0f)
+            {
+                // The clip curls the spine and drops the chin onto the chest; ease spine, chest and head back toward
+                // their rest shape on top of the hips (head a bit more, so the face looks ahead).
+                Quaternion hipsBase = _jumpPose[Hips] * Quaternion.Inverse(_jumpCloneRest[Hips]);
+                for (int i = 1; i <= Head; i++)
+                {
+                    float k = i == Head ? Mathf.Min(1f, _jumpClipStraighten * 1.25f) : _jumpClipStraighten;
+                    _jumpPose[i] = Quaternion.Slerp(_jumpPose[i], hipsBase * _jumpCloneRest[i], k);
+                }
+            }
+            if (_jumpClipWristStraighten > 0f)
+            {
+                // George 2026-11-11: the clip's hands hang off bent wrists, so the wrist (not the fingertips) led the
+                // arms up. Line the hands up with the forearms so the fingers lead.
+                if (!_hasGetUpAxes) BuildGetUpAxes();
+                for (int h = 0; h < 2; h++)
+                {
+                    int lower = (h == 0 ? ArmL : ArmR) + 1, hand = lower + 1;
+                    Vector3 foreDir = _jumpPose[lower] * _getUpAxis[lower], handDir = _jumpPose[hand] * _getUpAxis[hand];
+                    Quaternion straight = Quaternion.FromToRotation(handDir, foreDir);
+                    _jumpPose[hand] = Quaternion.Slerp(Quaternion.identity, straight, _jumpClipWristStraighten) * _jumpPose[hand];
+                }
+            }
+            return true;
         }
 
         /// <summary>A long fall (off the map): blend into the looping skydive clip, hips included.</summary>
@@ -867,6 +928,25 @@ namespace CoopGame.Player
             _clone.SetFloat(MoveRateParam, rate);
             _clone.SetBool(GroundedParam, grounded);
             for (int i = 0; i < BoneCount; i++) _target[i] = facing * _cloneBones[i].rotation;
+
+            // Running forward: the run clip's arms stayed almost straight on this rig (they read as stiff flapping),
+            // so bend the elbows into a pumping run and tip the upper body into the run a little.
+            float forward = speed > .3f ? Mathf.Clamp01(local.z / speed) : 0f;
+            float w = grounded && _carry == null ? run * forward : 0f;
+            _runPoseWeight = Mathf.MoveTowards(_runPoseWeight, w, Time.fixedDeltaTime * 4f);
+            if (_runPoseWeight > 0f)
+            {
+                // Normal moving speed already plays the run clip (a jog); sprinting pumps harder and leans more.
+                float sprint = Mathf.InverseLerp(_walkSpeed, _sprintSpeed, speed);
+                float elbow = Mathf.Lerp(_jogElbowBend, _runElbowBend, sprint) * _runPoseWeight;
+                float leanDeg = Mathf.Lerp(_jogLean, _runLean, sprint) * _runPoseWeight;
+                Vector3 right = facing * Vector3.right;
+                BendJoint(ArmL + 1, -elbow, right);
+                BendJoint(ArmR + 1, -elbow, right);
+                Quaternion lean = Quaternion.AngleAxis(leanDeg, right);
+                for (int i = Hips + 1; i <= Head; i++) _target[i] = lean * _target[i];
+                for (int i = ArmL; i <= HandR; i++) _target[i] = lean * _target[i]; // arms ride on the leaning chest
+            }
         }
 
         // ───────────────────────── Get-up after a fall respawn ─────────────────────────
@@ -1088,6 +1168,19 @@ namespace CoopGame.Player
                 // crate was held low, with the arms then pointing along the hint.)
                 if (pole == Vector3.zero) pole = right * side - facing * Vector3.forward * .5f - Vector3.up * .4f;
                 SolveArm(upper, shoulder, target, pole);
+                // Free reach: point the hand along the reach (shoulder to target) instead of straight on from the
+                // forearm, so the fingers reach forward rather than in toward the other hand.
+                if (_carry == null && _freeReach[h] && _freeReachHandAim > 0f)
+                {
+                    if (!_hasGetUpAxes) BuildGetUpAxes();
+                    int handBone = upper + 2;
+                    Vector3 reach = target - shoulder;
+                    if (reach.sqrMagnitude > 1e-4f)
+                    {
+                        Quaternion aim = Quaternion.FromToRotation(_target[handBone] * _getUpAxis[handBone], reach.normalized);
+                        _target[handBone] = Quaternion.Slerp(Quaternion.identity, aim, _freeReachHandAim) * _target[handBone];
+                    }
+                }
             }
             _target[Head] = Quaternion.AngleAxis(Mathf.Clamp(pitch, -40f, 40f) * .4f, right) * _target[Head];
         }
@@ -1141,6 +1234,14 @@ namespace CoopGame.Player
             Transform hand = h == 0 ? _ikTargets.LeftHand : _ikTargets.RightHand;
             if (hand == null) return false;
             target = hand.position;
+            _freeReach[h] = !gripping;
+            if (!gripping)
+            {
+                // Reaching into the air: elbows mostly down and a little out. The climbing hint (out to the side and
+                // back) turned the forearms in across the chest, so the big hands crossed over each other.
+                pole = (facing * Vector3.right) * (h == 0 ? -.35f : .35f) - Vector3.up * .8f - facing * Vector3.forward * .2f;
+                return true;
+            }
             // Climbing elbows point out to the side and back from the wall. (Mostly-down made the elbow flip round
             // when a hand reached down, since the arm then points along the hint.) A hand on the wall never points
             // out-and-back, so this hint never lines up with the arm.
@@ -1953,7 +2054,45 @@ namespace CoopGame.Player
             // Same colour as the body (PlayerAppearance tints it through a property block).
             _fpBlock ??= new MaterialPropertyBlock();
             foreach (var smr in _rig.Visual.GetComponentsInChildren<SkinnedMeshRenderer>())
-                if (smr != _fpHands && smr.sharedMesh == _fpHands.sharedMesh) { smr.GetPropertyBlock(_fpBlock); _fpHands.SetPropertyBlock(_fpBlock); break; }
+                if (smr != _fpHands && smr.sharedMesh == _fpSourceMesh) { smr.GetPropertyBlock(_fpBlock); _fpHands.SetPropertyBlock(_fpBlock); break; }
+        }
+
+        /// <summary>
+        /// Copy of the body mesh for the first-person hands: only triangles that mostly follow the forearms/hands, and
+        /// those vertices weighted to the forearm/hand bones alone. Without this, the elbow vertices that blend with
+        /// the upper arm were pulled part of the way to the collapse point at the eye, drawing long spikes.
+        /// </summary>
+        private Mesh BuildFirstPersonHandsMesh(Mesh source, Transform[] kept)
+        {
+            BoneWeight[] weights = source.boneWeights;
+            if (weights == null || weights.Length != source.vertexCount) return source;
+            bool Keep(int bone) => bone >= 0 && bone < kept.Length && kept[bone] != _fpCollapse;
+            var keepFrac = new float[weights.Length];
+            var newWeights = new BoneWeight[weights.Length];
+            for (int v = 0; v < weights.Length; v++)
+            {
+                BoneWeight w = weights[v];
+                float w0 = Keep(w.boneIndex0) ? w.weight0 : 0f, w1 = Keep(w.boneIndex1) ? w.weight1 : 0f;
+                float w2 = Keep(w.boneIndex2) ? w.weight2 : 0f, w3 = Keep(w.boneIndex3) ? w.weight3 : 0f;
+                float sum = w0 + w1 + w2 + w3;
+                keepFrac[v] = sum;
+                if (sum <= 0f) { newWeights[v] = w; continue; } // collapsed and never drawn
+                w.weight0 = w0 / sum; w.weight1 = w1 / sum; w.weight2 = w2 / sum; w.weight3 = w3 / sum;
+                newWeights[v] = w;
+            }
+            Mesh mesh = Instantiate(source);
+            mesh.name = source.name + "_FirstPersonHands";
+            mesh.boneWeights = newWeights;
+            for (int s = 0; s < mesh.subMeshCount; s++)
+            {
+                int[] tris = mesh.GetTriangles(s);
+                var keptTris = new List<int>(tris.Length);
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                    if (keepFrac[tris[t]] >= .5f && keepFrac[tris[t + 1]] >= .5f && keepFrac[tris[t + 2]] >= .5f)
+                    { keptTris.Add(tris[t]); keptTris.Add(tris[t + 1]); keptTris.Add(tris[t + 2]); }
+                mesh.SetTriangles(keptTris, s);
+            }
+            return mesh;
         }
 
         private bool BuildFirstPersonHands()
@@ -1983,7 +2122,8 @@ namespace CoopGame.Player
             go.transform.SetLocalPositionAndRotation(body.transform.localPosition, body.transform.localRotation);
             go.transform.localScale = body.transform.localScale;
             _fpHands = go.AddComponent<SkinnedMeshRenderer>();
-            _fpHands.sharedMesh = body.sharedMesh;
+            _fpSourceMesh = body.sharedMesh;
+            _fpHands.sharedMesh = BuildFirstPersonHandsMesh(body.sharedMesh, kept);
             _fpHands.sharedMaterials = body.sharedMaterials;
             _fpHands.rootBone = body.rootBone;
             _fpHands.bones = kept;
