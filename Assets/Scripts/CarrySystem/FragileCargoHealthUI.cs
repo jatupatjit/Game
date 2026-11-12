@@ -68,17 +68,20 @@ namespace CoopGame.CarrySystem
             bool show = !CoopGame.Network.PauseMenu.IsPaused && !CoopGame.Network.ExpeditionHUD.OverlayOpen;
             if (_canvas != null && _canvas.enabled != show) _canvas.enabled = show;
 
-            float top = transform.position.y;
+            // Above the drawn crate, not its pivot (George 2026-11-12: a crate whose pivot sat 3 m above its box
+            // showed the label 3 m too high).
+            float top = float.NegativeInfinity;
             bool foundRenderer = false;
             for (int i = 0; i < _renderers.Length; i++)
             {
                 MeshRenderer renderer = _renderers[i];
-                if (renderer == null || !renderer.enabled) continue;
+                if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
                 top = Mathf.Max(top, renderer.bounds.max.y);
                 foundRenderer = true;
             }
             if (!foundRenderer && _collider != null)
                 top = Mathf.Max(top, _collider.bounds.max.y);
+            if (float.IsNegativeInfinity(top)) top = transform.position.y;
 
             Vector3 itemPosition = transform.position;
             _billboard.position = new Vector3(itemPosition.x, top + _heightAboveItem, itemPosition.z);
