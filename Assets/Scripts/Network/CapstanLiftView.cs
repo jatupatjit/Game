@@ -6,7 +6,7 @@ namespace CoopGame.Network
 {
     /// <summary>
     /// Picture-in-picture view of a capstan lift for the player turning it. While the local player stands on (or
-    /// next to) the walk ring, a small screen on the right of the HUD shows the lift from a fixed wide camera, with
+    /// next to) the walk ring, a small screen in the left of the HUD (below the player list, which grows to 4 rows) shows the lift from a fixed wide camera, with
     /// a progress bar, so the walkers can see where the platform is. Purely local: each peer checks its own player,
     /// nothing is synced. The camera renders only while the view is on screen.
     /// </summary>
@@ -24,7 +24,7 @@ namespace CoopGame.Network
         [SerializeField] private Vector2Int _resolution = new(640, 360);
         [Tooltip("Width of the view on a 1920x1080 reference screen")]
         [SerializeField, Min(160f)] private float _width = 440f;
-        [SerializeField] private Vector2 _offset = new(-24f, -150f);
+        [SerializeField] private Vector2 _offset = new(24f, -300f);
         [SerializeField] private string _title = "แท่นยก";
 
         private RenderTexture _texture;
@@ -109,7 +109,7 @@ namespace CoopGame.Network
             float viewHeight = _width * _resolution.y / _resolution.x;
             Image panel = UITheme.MakePanel(root.transform, "Panel", new Vector2(_width + pad * 2f, viewHeight + header + bar + pad * 3f), true);
             var rect = panel.rectTransform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
             rect.anchoredPosition = _offset;
 
             Text title = UITheme.MakeText(panel.transform, "Title", _title, 22, UITextRole.Primary);
