@@ -493,6 +493,16 @@ namespace CoopGame.CarrySystem
             if (damageAmount > _queuedDamage) { _queuedDamage = damageAmount; _queuedReason = reason; }
         }
 
+        /// <summary>Server: break the crate now, past the hit cooldown (the bomb crate blowing up). Runs the normal
+        /// 0 HP path: checkpoint restart, else mission fail.</summary>
+        public void BreakNowServer(string reason)
+        {
+            if (_isDestroyed || IsSecured || (IsSpawned && !IsServer)) return;
+            _nextDamageAllowedAtFixedTime = 0f;
+            _queuedDamage = 0;
+            ApplyQueuedDamage(CurrentHP.Value, reason);
+        }
+
         private void ApplyQueuedDamage(int damageAmount, string reason)
         {
             if (_isDestroyed || damageAmount <= 0) return;

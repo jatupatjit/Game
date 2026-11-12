@@ -54,6 +54,13 @@ namespace CoopGame.Player
         [SerializeField] private float _sprintSpeed = 6.5f;
         [SerializeField] private float _acceleration = 25f;
         [SerializeField] private float _airAcceleration = 6f;
+        [Header("Heavy crate alone (George 2026-11-12: one player on the iron crate slips and slides)")]
+        [Tooltip("Share of the normal grip on the ground while dragging a two-carrier crate alone.")]
+        [SerializeField, Range(.05f, 1f)] private float _heavySoloTraction = .3f;
+        [Tooltip("Sideways lurch (m/s) of each foot slip while dragging a two-carrier crate alone.")]
+        [SerializeField] private float _heavySoloSlipSpeed = 3f;
+        [Tooltip("Seconds between foot slips (random between x and y), shorter while walking.")]
+        [SerializeField] private Vector2 _heavySoloSlipInterval = new Vector2(.6f, 1.4f);
         [SerializeField] private float _jumpSpeed = 5.5f;
         [Tooltip("Stamina per second while sprinting (same as PlayerMovement)")]
         [SerializeField] private float _sprintStaminaDrain = 15f;
@@ -175,13 +182,60 @@ namespace CoopGame.Player
         [Tooltip("Seconds limp after the fall respawn (the drop included), before the get-up starts.")]
         [SerializeField, Min(0f)] private float _respawnLieSeconds = 1.6f;
         private float _activeStandUpSeconds = .8f, _moveLockedUntil = -1f;
-        private bool _respawnSlumpPending;
+        private bool _respawnSlumpPending, _sceneSpawnResetPending;
 
         /// <summary>Owner, after a fall respawn: drop onto the pad limp, lie a moment, then play the get-up.</summary>
         public void RespawnSlump()
         {
-            if (!IsLocal || !_fullRagdoll) return;
+            if (!IsLocal || !_fullRagdoll || _sceneSpawnResetPending) return;
             _respawnSlumpPending = true;
+        }
+
+        /// <summary>Owner: stand upright cleanly at a newly loaded scene's spawn point (clears any fall/knockdown from the transition).</summary>
+        public void ResetForSceneSpawn()
+        {
+            if (!IsLocal || !_fullRagdoll) return;
+            _sceneSpawnResetPending = true;
+            _respawnSlumpPending = false;
+            _getUpPending = false;
+            _knockdownUntil = -1f;
+            _standUpUntil = -1f;
+            _moveLockedUntil = -1f;
+        }
+
+        private void ApplySceneSpawnReset()
+        {
+            _sceneSpawnResetPending = false;
+            _respawnSlumpPending = false;
+            _getUpPending = false;
+            if (_gettingUp) FinishGetUp();
+            _knockdownUntil = -1f;
+            _standUpUntil = -1f;
+            _moveLockedUntil = -1f;
+            _tripClip = -1;
+            _fallPoseWeight = 0f;
+            _fallingSince = -1f;
+            _airSpeed = 0f;
+            _wasGrounded = true;
+            _holding = false;
+            if (_physicsRoot == null) return;
+            _facingYaw = transform.eulerAngles.y;
+            Quaternion facing = Quaternion.Euler(0f, _facingYaw, 0f);
+            Vector3 hips = transform.position - Vector3.up * _hipsAboveRoot;
+            for (int i = 0; i < BoneCount; i++) _target[i] = facing * _restLocal[i];
+            ForwardKinematics(hips);
+            for (int i = 0; i < BoneCount; i++)
+            {
+                _bodies[i].isKinematic = false;
+                _bodies[i].position = _fk[i];
+                _bodies[i].rotation = _target[i];
+                _bodies[i].transform.SetPositionAndRotation(_fk[i], _target[i]);
+                _bodies[i].linearVelocity = Vector3.zero;
+                _bodies[i].angularVelocity = Vector3.zero;
+            }
+            _lastRootSet = transform.position;
+            _hasRootSet = true;
+            UpdateDrives(1f);
         }
 
         private void ApplyRespawnSlump()
@@ -309,6 +363,31 @@ namespace CoopGame.Player
         // a dropped crate at 540 deg/s, 2026-11-05). The camera still turns freely.
         private const float CarryTurnRate = 200f;
         private const float CarryStopSpeed = .25f, CarryBrake = 12f;
+        private float _nextHeavySlip;
+        private Vector3 _heavySlipVelocity;
+
+        /// <summary>Dragging a two-carrier crate alone: the feet lose grip (less traction, no pinned spot) and slip
+        /// sideways or back now and then, so the body slides about instead of walking firmly. Owner physics only;
+        /// other screens see it through the streamed pose. Returns an extra acceleration for every limb.</summary>
+        private Vector3 HeavySoloSlip(bool moving, Quaternion bodyFacing, ref float gain, ref Vector3 hold)
+        {
+            if (_carry == null || !_carry.IsSoloDragging || !IsGrounded) { _heavySlipVelocity = Vector3.zero; return Vector3.zero; }
+            gain *= _heavySoloTraction;
+            // (The standing hold spot is kept: weakening it let the heavy crate drag the body off, 12 m in a test.)
+            float dt = Time.fixedDeltaTime;
+            if (Time.time >= _nextHeavySlip)
+            {
+                float wait = Random.Range(_heavySoloSlipInterval.x, _heavySoloSlipInterval.y);
+                _nextHeavySlip = Time.time + (moving ? wait : wait * 1.8f);
+                Vector3 side = bodyFacing * Vector3.right * (Random.value < .5f ? -1f : 1f);
+                Vector3 back = bodyFacing * Vector3.back * Random.Range(0f, .6f);
+                _heavySlipVelocity = (side + back).normalized * _heavySoloSlipSpeed * (moving ? 1f : .6f);
+            }
+            // The lurch builds and fades over ~0.3 s instead of a single kick (a kick tipped the body over).
+            Vector3 push = _heavySlipVelocity * 4f;
+            _heavySlipVelocity = Vector3.MoveTowards(_heavySlipVelocity, Vector3.zero, _heavySoloSlipSpeed * 3.5f * dt);
+            return push;
+        }
         private const float OldPlayerGravity = 24f; // PlayerMovement._gravity
         private float _airborneUntil, _boostSteerUntil;
 
@@ -478,6 +557,7 @@ namespace CoopGame.Player
             // Respawn/teleport helpers re-enable the CharacterController; outside a climb it must stay off.
             if (_controller != null && _controller.enabled) _controller.enabled = false;
             DetectTeleport();
+            if (_sceneSpawnResetPending) ApplySceneSpawnReset();
             if (_respawnSlumpPending) ApplyRespawnSlump();
             if (UpdateGetUp()) return;
 
@@ -578,7 +658,8 @@ namespace CoopGame.Player
                 else hold = (_holdSpot - hipsFlat) * HoldSpring;
                 // Carrying, no input: brake firmly so the body stops where the key was let go instead of coasting.
                 if (carryHold && coasting) hold = -flatVel * CarryBrake;
-                accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush;
+                Vector3 slip = HeavySoloSlip(moving, bodyFacing, ref gain, ref hold);
+                accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush + slip;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
 
                 if (_jumpQueued && Time.time >= _moveLockedUntil) TryJump();
@@ -1360,6 +1441,10 @@ namespace CoopGame.Player
 
         private void EnterClimb()
         {
+            if (_gettingUp) FinishGetUp();
+            _getUpPending = false;
+            _respawnSlumpPending = false;
+            if (_moveLockedUntil == float.MaxValue) _moveLockedUntil = -1f;
             _climbing = true;
             _seenBoostCount = _wallclimb.BoostCount;
             if (_carry != null) RequestDrop();
@@ -1651,7 +1736,10 @@ namespace CoopGame.Player
             float into = Vector3.Dot(desired - cargoVel, dir);
             if (into > 0f) desired -= dir * (into * Mathf.Clamp01(gap / CarryStanceApproach));
             float overlap = gap - CarryStanceApproach;
-            if (overlap > 0f)
+            // Dragging a two-carrier crate alone: its grips follow the body and its tipped near edge comes into the
+            // clearance zone, so pushing the body out made body and crate chase each other backwards (up to 12 m/s,
+            // 3 of 5 lifts, 2026-11-12). The crate is still kept out of the body by CarryableObject.PushOutOfCarriers.
+            if (overlap > 0f && !_carry.IsSoloDragging)
             {
                 float closing = Mathf.Max(0f, Vector3.Dot(flatVel - cargoVel, dir));
                 push = -dir * Mathf.Min(overlap * CarryPushSpring + closing * CarryPushDamper, CarryPushMax);
@@ -1723,7 +1811,8 @@ namespace CoopGame.Player
         private bool ComputeGrip(CarryableObject cargo, out Vector3 left, out Vector3 right)
         {
             left = right = Vector3.zero;
-            Collider[] colliders = cargo.GetComponentsInChildren<Collider>();
+            Collider[] colliders = System.Array.FindAll(cargo.GetComponentsInChildren<Collider>(),
+                c => c.GetComponentInParent<CarryGripIgnore>() == null); // e.g. the boxes stacked on a tall stack
             Bounds bounds = default;
             bool any = false;
             foreach (var c in colliders)
@@ -2542,6 +2631,7 @@ namespace CoopGame.Player
         {
             s_handMaxImpulse = _handMaxImpulse;
             s_nextCargoRefresh = 0f;
+            s_cargoLocalBounds.Clear();
             if (s_contactHooked) return;
             s_contactHooked = true;
             Physics.ContactModifyEvent += ModifyContacts;

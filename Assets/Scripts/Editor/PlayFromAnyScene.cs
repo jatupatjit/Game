@@ -204,9 +204,10 @@ namespace CoopGame.EditorTools
                 case Step.WaitPlayer:
                     if (manager == null || !manager.IsListening) { Fail("NetworkManager stopped before the level loaded."); return; }
                     if (manager.LocalClient?.PlayerObject == null || manager.SceneManager == null) return;
-                    SceneEventProgressStatus status = manager.SceneManager.LoadScene(_target, LoadSceneMode.Single);
-                    if (status != SceneEventProgressStatus.Started) { Fail($"NGO could not load '{_target}': {status}."); return; }
-                    Debug.Log($"[PlayFromAnyScene] Host ready, loading '{_target}' (clients join 127.0.0.1:{Port}).");
+                    string sceneName = System.IO.Path.GetFileNameWithoutExtension(_target);
+                    SceneEventProgressStatus status = manager.SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
+                    if (status != SceneEventProgressStatus.Started) { Fail($"NGO could not load '{sceneName}': {status}."); return; }
+                    Debug.Log($"[PlayFromAnyScene] Host ready, loading '{sceneName}' (clients join 127.0.0.1:{Port}).");
                     _step = Step.Done;
                     StopDriver();
                     return;

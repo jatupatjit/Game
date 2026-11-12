@@ -211,10 +211,15 @@ namespace CoopGame.Network
                     keyboard.digit2Key.wasPressedThisFrame ? 1 : keyboard.digit3Key.wasPressedThisFrame ? 2 : -1;
                 if (slot >= 0)
                 {
-                    if (selecting) _player.SelectCardRpc(CardCatalog.OfferAt(offer, slot));
+                    if (selecting) { _pendingSlot = slot; ConfirmCard(); }
                     else if (!summary) _player.UseItemRpc(slot);
                 }
-                if (summary && keyboard.enterKey.wasPressedThisFrame) Dismiss();
+                if (selecting && (keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame))
+                {
+                    if (_pendingSlot < 0) _pendingSlot = 0;
+                    ConfirmCard();
+                }
+                else if (summary && keyboard.enterKey.wasPressedThisFrame) Dismiss();
                 else if (_mission.Phase.Value == 2 && keyboard.bKey.wasPressedThisFrame)
                     _summaryDismissed = !_summaryDismissed;
             }
@@ -230,6 +235,8 @@ namespace CoopGame.Network
         {
             if (_modalShown != show) { _modalShown = show; _modal.SetActive(show); }
             bool block = _modalShown || _viewOpen;
+            if (block && !PauseMenu.IsPaused && !MissionFailUI.IsVisible && (Cursor.lockState != CursorLockMode.None || !Cursor.visible))
+                PlayerCameraController.LocalInstance?.SetCursorLock(false);
             if (block == _lastBlock) return;
             _lastBlock = block;
             BlocksGameplayInput = block;
@@ -326,12 +333,13 @@ namespace CoopGame.Network
             uint offer = _player.Offer.Value;
             if (offer != _shownOffer)
             {
-                // A new draw: show the three full card images and clear any previous preview.
+                // A new draw: show the three full card images and preselect the first slot so confirm works immediately.
                 _shownOffer = offer;
-                _pendingSlot = -1;
+                _pendingSlot = 0;
                 for (int i = 0; i < _cardArt.Length; i++) _cardArt[i].sprite = CardCatalog.Art(CardCatalog.OfferAt(offer, i));
             }
             if (!selecting) _pendingSlot = -1;
+            else if (_pendingSlot < 0) _pendingSlot = 0;
             for (int i = 0; i < _cardFrames.Length; i++)
             {
                 bool selected = selecting && _pendingSlot == i;
@@ -342,7 +350,7 @@ namespace CoopGame.Network
             if (selecting)
             {
                 _title.text = "เลือกการ์ด 1 ใบ";
-                _message.text = "สุ่มมา 3 ใบ เลือกด้วยปุ่ม 1–3 หรือคลิกแล้วกด เลือกใบนี้";
+                _message.text = "สุ่มมา 3 ใบ คลิกที่การ์ดเพื่อเลือกทันที หรือกดปุ่ม 1–3 / เลือกใบนี้";
             }
             if (summary)
             {
@@ -954,7 +962,7 @@ namespace CoopGame.Network
         private float CardSpacing => _cardSpacing;
 
         /// <summary>One offered card slot: the full card image (name and effect are baked into the art) with a neon
-        /// selection frame and a small lift when selected. Click previews; confirm (or keys 1-3) applies it.</summary>
+        /// selection frame and a small lift when selected. Clicking a card (or confirm / keys 1-3) applies it immediately.</summary>
         private void CardButton(Transform parent, int slot, Vector2 position)
         {
             var root = Box($"Card{slot + 1}", parent, new Vector2(.5f, .5f), position, new Vector2(CardWidth, CardHeight), Color.clear);
@@ -962,7 +970,7 @@ namespace CoopGame.Network
             button.targetGraphic = root.GetComponent<Image>();
             button.transition = Selectable.Transition.None;
             _cardHover[slot] = root.AddComponent<UIButtonHover>();
-            button.onClick.AddListener(() => { _pendingSlot = slot; _refreshAt = 0f; });
+            button.onClick.AddListener(() => { _pendingSlot = slot; ConfirmCard(); _refreshAt = 0f; });
 
             var art = Box("Illustration", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(CardWidth, CardHeight), Color.white);
             _cardArt[slot] = art.GetComponent<Image>();
@@ -974,12 +982,15 @@ namespace CoopGame.Network
             _cardFrames[slot] = frame.GetComponent<Image>();
             UITheme.StyleIcon(_cardFrames[slot], UITheme.CardFrameSprite);
             _cardFrames[slot].preserveAspect = false;
+            _cardFrames[slot].raycastTarget = false;
             _cardFrames[slot].enabled = false;
         }
 
         private void ConfirmCard()
         {
-            if (_pendingSlot >= 0) _player?.SelectCardRpc(CardCatalog.OfferAt(_player.Offer.Value, _pendingSlot));
+            if (_pendingSlot < 0 || _player == null) return;
+            _player.SelectCardRpc(CardCatalog.OfferAt(_player.Offer.Value, _pendingSlot));
+            ShowModal(false);
         }
     }
 }

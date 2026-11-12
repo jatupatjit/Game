@@ -13,7 +13,8 @@ namespace CoopGame.Network
     /// </summary>
     public static class GameRoom
     {
-        public const byte EffectBlast = 1, EffectCluck = 2;
+        public const byte EffectBlast = 1, EffectCluck = 2, EffectBombWarn = 3, EffectTopple = 4, EffectRestack = 5,
+            EffectChickenEscape = 6, EffectChickenReset = 7;
 
         public readonly struct DifficultyDef
         {
@@ -36,8 +37,8 @@ namespace CoopGame.Network
         public static readonly string[] CrateNames = { "ลังไม้", "ลังไก่", "ลังซ้อนสูง", "ลังแก้ว", "ลังเหล็ก", "ลังระเบิด" };
         public static readonly string[] CrateDetails =
         {
-            "ลังธรรมดา", "ไก่ดิ้นตอนยก ลังกระตุกไปมา", "ออกตัว/หยุดแรงๆ ของข้างบนโยก เสีย HP",
-            "กระแทกแล้วเสีย HP มากขึ้น 60%", "ต้องยก 2 คน (คนเดียวได้แค่ลาก)", "กระแทกแรงแล้วระเบิด คนใกล้ๆ กระเด็น"
+            "ลังธรรมดา", "เลี้ยงไก่บนลัง: เอียง/กระชากแรงไก่โมโห โมโหเต็มไก่หนี ส่งถึงพร้อมไก่ได้โบนัส x1.5", "ออกตัว/หยุดแรงๆ หรือทำตก ลังข้างบนร่วง เสีย HP",
+            "กระแทกแล้วเสีย HP มากขึ้น 60%", "ต้องยก 2 คน (คนเดียวลากได้แต่ลื่นไถล)", "ทำตก 2 ครั้งระเบิดทันที คนใกล้ๆ กระเด็น"
         };
         private static readonly byte[][] CratePool = { new byte[] { 0 }, new byte[] { 1, 2, 4 }, new byte[] { 3, 5 } };
 
@@ -125,6 +126,9 @@ namespace CoopGame.Network
             p.FeedRpc(line, color);
         }
 
+        /// <summary>True when a spawned player can carry room messages (feed, effects) to every machine.</summary>
+        public static bool HasMessenger => AnySpawned() != null;
+
         /// <summary>Server: play a one-shot effect on every machine.</summary>
         public static void ServerEffect(byte kind, Vector3 at)
         {
@@ -137,6 +141,8 @@ namespace CoopGame.Network
         public static void PlayEffect(byte kind, Vector3 at)
         {
             if (kind == EffectCluck) { GameplayFeedback.Play(GameplayFeedback.Cue.Click, at, .8f); return; }
+            if (kind == EffectBombWarn || kind == EffectTopple || kind == EffectRestack) { CargoDifficulty.PlayRoomEffect(kind, at); return; }
+            if (kind == EffectChickenEscape || kind == EffectChickenReset) { CoopGame.CarrySystem.ChickenOnCrate.PlayRoomEffect(kind, at); return; }
             if (kind != EffectBlast) return;
             GameplayFeedback.Burst(at, new Color(1f, .55f, .15f), 50, 6f, .3f);
             GameplayFeedback.Burst(at, new Color(.35f, .3f, .28f), 30, 2.5f, .45f);

@@ -69,6 +69,14 @@ namespace CoopGame.Network
         public int RequiredWalkers => _required.Value;
         public bool AtTop => _progress.Value >= 1f;
 
+        /// <summary>True when a point (a player's feet) is on the walk ring; padding widens it by metres.</summary>
+        public bool IsNearRing(Vector3 feet, float padding = 0f)
+        {
+            Vector3 offset = feet - (_pole != null ? _pole.position : transform.position);
+            float flat = new Vector2(offset.x, offset.z).magnitude;
+            return flat <= _outerRadius + padding && Mathf.Abs(offset.y) <= _ringHeight + padding;
+        }
+
         private void Awake()
         {
             if (_hub != null) _hubRest = _hub.localRotation;

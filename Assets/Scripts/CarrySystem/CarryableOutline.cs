@@ -413,24 +413,35 @@ namespace CoopGame.CarrySystem
         {
             if (_isHighlighted)
             {
-                RemoveOutlineMaterialFromRenderers();
+                if (gameObject.scene.isLoaded) RemoveOutlineMaterialFromRenderers();
                 _isHighlighted = false;
             }
         }
 
         private void OnDestroy()
         {
-            RemoveOutlineMaterialFromRenderers();
+            if (_isHighlighted && gameObject.scene.isLoaded) RemoveOutlineMaterialFromRenderers();
+            foreach (var mask in _masks.Values)
+            {
+                if (mask == null) continue;
+                var maskFilter = mask.GetComponent<MeshFilter>();
+                if (maskFilter != null) maskFilter.sharedMesh = null;
+                Destroy(mask.gameObject);
+            }
+            _masks.Clear();
             foreach (var shell in _shells.Values)
             {
                 if (shell == null) continue;
                 var filter = shell.GetComponent<MeshFilter>();
-                if (filter != null && filter.sharedMesh != null) Destroy(filter.sharedMesh);
+                if (filter != null && filter.sharedMesh != null)
+                {
+                    Mesh mesh = filter.sharedMesh;
+                    filter.sharedMesh = null;
+                    Destroy(mesh);
+                }
                 Destroy(shell.gameObject);
             }
             _shells.Clear();
-            foreach (var mask in _masks.Values) if (mask != null) Destroy(mask.gameObject);
-            _masks.Clear();
             if (_maskMaterial != null) Destroy(_maskMaterial);
 
             if (_outlineMaterial != null)

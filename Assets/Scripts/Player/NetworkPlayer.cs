@@ -354,10 +354,11 @@ namespace CoopGame.Player
             {
                 _sceneSpawnPending = false;
                 RespawnAtStart();
+                if (TryGetComponent(out RagdollCharacter sceneRagdoll)) sceneRagdoll.ResetForSceneSpawn();
                 return;
             }
 
-            if (transform.position.y < _fallLimitY)
+            if (transform.position.y < _fallLimitY && SceneManager.GetActiveScene().isLoaded)
             {
                 if (IsSpawned && TryGetComponent(out CoopGame.Network.PlayerExpeditionState state))
                     state.ReportEventRpc(CoopGame.Network.LevelResults.EventFall);
@@ -388,7 +389,11 @@ namespace CoopGame.Player
         private void OnGameplaySceneLoaded(Scene scene, LoadSceneMode mode)
         {
             if (IsOwner && mode == LoadSceneMode.Single)
-                _sceneSpawnPending = SetRespawnPointForScene(scene);
+            {
+                SetRespawnPointForScene(scene);
+                _sceneSpawnPending = true;
+                if (TryGetComponent(out RagdollCharacter ragdoll)) ragdoll.ResetForSceneSpawn();
+            }
         }
 
         private void OnSpawnSlotChanged(int previous, int current)

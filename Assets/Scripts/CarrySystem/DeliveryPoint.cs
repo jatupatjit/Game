@@ -210,6 +210,13 @@ namespace CoopGame.CarrySystem
             int multiplier = CurrentMultiplier;
             // Crate variants (CargoVariant) can pay more, e.g. fragile glass.
             float variantBonus = cargo.TryGetComponent(out CargoVariant variant) ? variant.ScoreMultiplier : 1f;
+            // The chicken crate pays extra when its hen is still aboard (George 2026-11-12).
+            float henBonus = ChickenOnCrate.BonusFor(cargo);
+            if (henBonus > 1f)
+            {
+                variantBonus *= henBonus;
+                CoopGame.Network.GameRoom.ServerFeed("ไก่อยู่บนลังจนถึงปลายทาง! โบนัส x" + henBonus.ToString("0.0"), new Color(1f, .85f, .3f));
+            }
             int finalScore = Mathf.RoundToInt(remainingHP * multiplier * variantBonus);
             int coinsEarned = finalScore; // 1:1 score to currency conversion for the Shop
 
