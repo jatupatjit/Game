@@ -211,7 +211,7 @@ namespace CoopGame.Network
                     keyboard.digit2Key.wasPressedThisFrame ? 1 : keyboard.digit3Key.wasPressedThisFrame ? 2 : -1;
                 if (slot >= 0)
                 {
-                    if (selecting) { _pendingSlot = slot; ConfirmCard(); }
+                    if (selecting) { _pendingSlot = slot; _refreshAt = 0f; }
                     else if (!summary) _player.UseItemRpc(slot);
                 }
                 if (selecting && (keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame))
@@ -350,7 +350,7 @@ namespace CoopGame.Network
             if (selecting)
             {
                 _title.text = "เลือกการ์ด 1 ใบ";
-                _message.text = "สุ่มมา 3 ใบ คลิกที่การ์ดเพื่อเลือกทันที หรือกดปุ่ม 1–3 / เลือกใบนี้";
+                _message.text = "สุ่มมา 3 ใบ คลิกการ์ดหรือกด 1–3 เพื่อเลือก แล้วกด เลือกใบนี้ (Enter) เพื่อยืนยัน";
             }
             if (summary)
             {
@@ -962,7 +962,7 @@ namespace CoopGame.Network
         private float CardSpacing => _cardSpacing;
 
         /// <summary>One offered card slot: the full card image (name and effect are baked into the art) with a neon
-        /// selection frame and a small lift when selected. Clicking a card (or confirm / keys 1-3) applies it immediately.</summary>
+        /// selection frame and a small lift when selected. Clicking a card or keys 1-3 only select it; the confirm button, Enter or Space applies it.</summary>
         private void CardButton(Transform parent, int slot, Vector2 position)
         {
             var root = Box($"Card{slot + 1}", parent, new Vector2(.5f, .5f), position, new Vector2(CardWidth, CardHeight), Color.clear);
@@ -970,7 +970,7 @@ namespace CoopGame.Network
             button.targetGraphic = root.GetComponent<Image>();
             button.transition = Selectable.Transition.None;
             _cardHover[slot] = root.AddComponent<UIButtonHover>();
-            button.onClick.AddListener(() => { _pendingSlot = slot; ConfirmCard(); _refreshAt = 0f; });
+            button.onClick.AddListener(() => { _pendingSlot = slot; _refreshAt = 0f; });
 
             var art = Box("Illustration", root.transform, new Vector2(.5f, .5f), Vector2.zero, new Vector2(CardWidth, CardHeight), Color.white);
             _cardArt[slot] = art.GetComponent<Image>();

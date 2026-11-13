@@ -661,6 +661,7 @@ namespace CoopGame.Player
                 Vector3 slip = HeavySoloSlip(moving, bodyFacing, ref gain, ref hold);
                 accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush + slip;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
+                KeepUpperBodyOutOfCargo();
 
                 if (_jumpQueued && Time.time >= _moveLockedUntil) TryJump();
 
@@ -1521,6 +1522,46 @@ namespace CoopGame.Player
             Vector3 hips = _bones[Hips].position;
             Vector3 shift = HoldBandShift(cargo, hips, DrawnBodyClearance, DrawnBodyHoldMax);
             if (shift != Vector3.zero) _bones[Hips].position = hips + Vector3.ClampMagnitude(shift, DrawnBodyMaxShift);
+        }
+
+        // George 2026-11-12 "the player goes through the crate": the hips keep their clearance, but strafing or a
+        // partner tugging leans the chest/head forward into the crate (limbs ignore collisions with carried cargo).
+        // Measured on Level02's crate: head 0.2-0.28 m inside while strafing with A/D.
+        private const float UpperBodyClearance = .03f, UpperBodySpring = 400f, UpperBodyDamper = 20f, UpperBodyMaxAccel = 150f;
+
+        /// <summary>Owner physics while carrying: a soft push that keeps the chest and head out of the crate's box
+        /// (flat), like a collision would, without moving the hips (so the carry leash and stance are unchanged).</summary>
+        private void KeepUpperBodyOutOfCargo()
+        {
+            if (_carry == null) return;
+            PushBoneOutOfCargo(Chest);
+            PushBoneOutOfCargo(Head);
+        }
+
+        private void PushBoneOutOfCargo(int bone)
+        {
+            Rigidbody body = _bodies[bone];
+            if (body == null) return;
+            // Measured from the bone's own collider (the head ball's centre sits ~0.27 m above the neck pivot) with
+            // its flat radius added, so the visible head/chest stays out, not just the joint.
+            Vector3 point = body.position;
+            float clearance = UpperBodyClearance;
+            if (body.TryGetComponent(out Collider shape) && shape.enabled)
+            {
+                Bounds b = shape.bounds;
+                point = b.center;
+                clearance += Mathf.Min(b.extents.x, b.extents.z);
+            }
+            Vector3 shift = HoldBandShift(_carry, point, clearance, float.MaxValue);
+            if (shift == Vector3.zero || !s_cargoLocalBounds.TryGetValue(_carry, out Bounds box)) return;
+            // Only beside the crate's sides, not above its lid (a head over the lid is not inside it).
+            float y = _carry.transform.InverseTransformPoint(point).y;
+            float margin = clearance / Mathf.Max(1e-3f, Mathf.Abs(_carry.transform.lossyScale.y));
+            if (y > box.max.y + margin || y < box.min.y - margin) return;
+            float depth = shift.magnitude;
+            Vector3 dir = shift / depth;
+            float closing = Mathf.Max(0f, -Vector3.Dot(Flat(body.linearVelocity - CarriedCargoVelocity()), dir));
+            body.AddForce(dir * Mathf.Min(depth * UpperBodySpring + closing * UpperBodyDamper, UpperBodyMaxAccel), ForceMode.Acceleration);
         }
 
         private static readonly Dictionary<CarryableObject, Bounds> s_cargoLocalBounds = new();
