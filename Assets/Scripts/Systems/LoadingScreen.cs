@@ -6,7 +6,7 @@ namespace CoopGame.Network
 {
     /// <summary>
     /// Loading screen while a networked scene loads (level start, back to Lobby, joining a room mid-level).
-    /// The UIKit carrier icon walks around a circle in the middle, "กำลังโหลด x/y ผู้เล่น" counts players that
+    /// The UIKit carrier icon walks along a straight dotted path in the middle, "กำลังโหลด x/y ผู้เล่น" counts players that
     /// finished loading, and a small tip sits below. Stays up until everyone has loaded (or a timeout), min 1.5 s.
     /// </summary>
     public sealed class LoadingScreen : MonoBehaviour
@@ -34,14 +34,16 @@ namespace CoopGame.Network
             "กด V เพื่อสลับมุมกล้องบุคคลที่ 1 / 3",
         };
 
-        private const float WalkRadius = 52f, WalkDegreesPerSecond = 110f;
+        private const float PathLength = 560f, WalkPixelsPerSecond = 190f, EdgeFade = 60f;
 
         private GameObject _root;
         private Text _tip, _title, _count;
-        private const int DotCount = 12;
+        private const int DotCount = 15;
         private RectTransform _orbit, _walker;
         private RectTransform[] _dots;
-        private float _shownAt = -1f, _hideAt = -1f, _walkAngle;
+        private Image[] _dotImages;
+        private Image _walkerIcon;
+        private float _shownAt = -1f, _hideAt = -1f, _walkX;
         private bool _counting;
         private readonly System.Collections.Generic.HashSet<ulong> _loaded = new();
         private NetworkSceneManager _hooked;
@@ -73,35 +75,35 @@ namespace CoopGame.Network
             ((RectTransform)_title.transform).anchoredPosition = new Vector2(0f, 230f);
             ((RectTransform)_title.transform).sizeDelta = new Vector2(1200f, 90f);
 
-            // A small dotted circle; the carrier walks along the dots (feet on the dots, head out), and the dots
-            // behind it run from big to small like a trail.
-            var orbitCenter = new GameObject("DotCircle", typeof(RectTransform)).GetComponent<RectTransform>();
-            orbitCenter.SetParent(rect, false);
-            orbitCenter.anchoredPosition = new Vector2(0f, 40f);
-            orbitCenter.sizeDelta = Vector2.zero;
+            // A straight dotted path; the carrier walks along it left to right (feet on the dots), the dots behind it
+            // run from big to small like a trail, and it fades out at the end and walks in again from the start.
+            var track = new GameObject("DotPath", typeof(RectTransform)).GetComponent<RectTransform>();
+            track.SetParent(rect, false);
+            track.anchoredPosition = new Vector2(0f, 10f);
+            track.sizeDelta = Vector2.zero;
             var dotSprite = MakeDotSprite();
             _dots = new RectTransform[DotCount];
+            _dotImages = new Image[DotCount];
             for (int i = 0; i < DotCount; i++)
             {
                 var dot = new GameObject("Dot" + i, typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
-                dot.SetParent(orbitCenter, false);
-                float a = i * Mathf.PI * 2f / DotCount;
-                dot.anchoredPosition = new Vector2(Mathf.Sin(a), Mathf.Cos(a)) * WalkRadius;
+                dot.SetParent(track, false);
+                dot.anchoredPosition = new Vector2(DotX(i), 0f);
                 var img = dot.GetComponent<Image>();
                 img.sprite = dotSprite;
                 img.color = UITheme.Primary;
                 img.raycastTarget = false;
                 _dots[i] = dot;
+                _dotImages[i] = img;
             }
-            _orbit = new GameObject("Orbit", typeof(RectTransform)).GetComponent<RectTransform>();
-            _orbit.SetParent(orbitCenter, false);
-            _orbit.sizeDelta = Vector2.zero;
+            _orbit = track;
             var walker = new GameObject("Carrier", typeof(RectTransform), typeof(Image));
             _walker = (RectTransform)walker.transform;
             _walker.SetParent(_orbit, false);
-            _walker.pivot = new Vector2(.34f, .05f); // the feet (left part of the icon) stand on the planet
+            _walker.pivot = new Vector2(.34f, .05f); // the feet (left part of the icon) stand on the path
             _walker.sizeDelta = new Vector2(70f, 67f); // IconCarrier 174x166
             var icon = walker.GetComponent<Image>();
+            _walkerIcon = icon;
             icon.sprite = Resources.Load<Sprite>("UIKit/IconCarrier");
             icon.preserveAspect = true;
             icon.raycastTarget = false;
@@ -131,23 +133,30 @@ namespace CoopGame.Network
             _root.SetActive(true);
         }
 
-        /// <summary>The carrier walks clockwise around the planet (always the same way, head out) with a little waddle.</summary>
+        private static float DotX(int i) => -PathLength * .5f + PathLength * i / (DotCount - 1);
+
+        /// <summary>The carrier walks left to right along the path with a little waddle, fades out at the end and
+        /// walks in again from the start.</summary>
         private void AnimateWalker()
         {
             float step = Time.unscaledTime * 11f;
-            _walkAngle = Mathf.Repeat(_walkAngle + WalkDegreesPerSecond * Time.unscaledDeltaTime, 360f);
-            _orbit.localRotation = Quaternion.Euler(0f, 0f, -_walkAngle);
-            _walker.anchoredPosition = new Vector2(0f, WalkRadius + 2f + Mathf.Abs(Mathf.Sin(step)) * 4f);
+            _walkX = Mathf.Repeat(_walkX + WalkPixelsPerSecond * Time.unscaledDeltaTime, PathLength);
+            float x = -PathLength * .5f + _walkX;
+            float fade = Mathf.Clamp01(Mathf.Min(_walkX, PathLength - _walkX) / EdgeFade);
+            _walker.anchoredPosition = new Vector2(x, 6f + Mathf.Abs(Mathf.Sin(step)) * 4f);
             _walker.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(step) * 5f);
-            // Dots: biggest just behind the carrier, getting smaller one by one further back.
+            if (_walkerIcon != null) { var c = _walkerIcon.color; c.a = fade; _walkerIcon.color = c; }
+            // Dots: biggest just behind the carrier, getting smaller further back; the path ahead is small and faint.
             for (int i = 0; i < DotCount; i++)
             {
-                float behind = Mathf.Repeat(_walkAngle - i * 360f / DotCount, 360f) / 360f; // 0 = right under the carrier
-                float size = Mathf.Lerp(16f, 4f, behind);
+                float behind = x - DotX(i);
+                float size = behind >= 0f ? Mathf.Lerp(16f, 6f, behind / (PathLength * .6f)) : 6f;
                 _dots[i].sizeDelta = new Vector2(size, size);
+                var col = _dotImages[i].color;
+                col.a = behind >= 0f ? 1f : .45f;
+                _dotImages[i].color = col;
             }
         }
-
         /// <summary>Soft round dot, drawn once at runtime.</summary>
         private static Sprite MakeDotSprite()
         {

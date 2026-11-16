@@ -40,7 +40,7 @@ namespace CoopGame.Player
         private readonly List<(Renderer renderer, bool wasEnabled)> _hiddenCargo = new();
         private readonly List<(MeshFilter mesh, Transform at)> _ghostParts = new();
         private int _count;
-        private bool _visible, _landed;
+        private bool _visible, _landed, _markerOnly;
         private Vector3 _landPoint, _landNormal;
 
         public bool Visible => _visible;
@@ -117,9 +117,25 @@ namespace CoopGame.Player
             _distanceText.enabled = false;
         }
 
+        /// <summary>Only the landing ring, beam and a "จุดตก" label at <paramref name="point"/> (no path, no ghost): what
+        /// team-mates see while someone aims, and everyone sees while the thrown crate is in the air.</summary>
+        public void ShowLandingOnly(Vector3 point)
+        {
+            ShowCargo();
+            _markerOnly = true;
+            _visible = true;
+            _landed = true;
+            _landPoint = point;
+            _landNormal = Vector3.up;
+            _count = 0;
+            _line.enabled = false;
+            _ringMaterial.SetColor("_Color", Ground);
+        }
+
         public void Hide()
         {
             _visible = false;
+            _markerOnly = false;
             if (_line != null) _line.enabled = false;
             if (_distanceText != null) _distanceText.enabled = false;
             ShowCargo();
@@ -156,6 +172,7 @@ namespace CoopGame.Player
         public void Show(CarryableObject cargo, Vector3 velocity, float charge, int ignoreLayer)
         {
             if (cargo == null) { Hide(); return; }
+            _markerOnly = false;
             var body = cargo.GetComponent<Rigidbody>();
             Vector3 start = body != null ? body.worldCenterOfMass : cargo.transform.position;
             float damping = body != null ? body.linearDamping : 0f;
@@ -249,13 +266,13 @@ namespace CoopGame.Player
 
         private void LateUpdate()
         {
-            if (!_visible || _count < 2) return;
+            if (!_visible || (!_markerOnly && _count < 2)) return;
             Camera view = Camera.main;
-            Vector3 eye = view != null ? view.transform.position : _points[0] + Vector3.up;
+            Vector3 eye = view != null ? view.transform.position : (_markerOnly ? _landPoint : _points[0]) + Vector3.up;
             int layer = gameObject.layer;
 
             // Arrows sliding forward along the path (skip the first bit, it sits inside the crate).
-            float total = _length[_count - 1];
+            float total = _markerOnly ? 0f : _length[_count - 1];
             float offset = Mathf.Repeat(Time.time * ArrowSpeed, ArrowSpacing);
             int seg = 1;
             Color arrowTint = _arrowMaterial.GetColor("_Color");
@@ -310,8 +327,12 @@ namespace CoopGame.Player
                 _distanceText.enabled = showText;
                 if (showText)
                 {
-                    float metres = Vector3.Distance(new Vector3(_points[0].x, 0f, _points[0].z), new Vector3(_landPoint.x, 0f, _landPoint.z));
-                    _distanceText.text = metres.ToString("0.0") + " ม.";
+                    if (_markerOnly) _distanceText.text = "จุดตก";
+                    else
+                    {
+                        float metres = Vector3.Distance(new Vector3(_points[0].x, 0f, _points[0].z), new Vector3(_landPoint.x, 0f, _landPoint.z));
+                        _distanceText.text = metres.ToString("0.0") + " ม.";
+                    }
                     _distanceText.fontSize = Mathf.RoundToInt(42f * Screen.height / 1080f);
                     _distanceText.color = Color.Lerp(Color.white, new Color(beam.r, beam.g, beam.b, 1f), .35f);
                     _distanceText.transform.position = screen;

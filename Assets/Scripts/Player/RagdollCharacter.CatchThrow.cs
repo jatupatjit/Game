@@ -42,6 +42,14 @@ namespace CoopGame.Player
 
         private bool CatchReady => IsLocal ? _catchReadyLocal : _catchReadyNet.Value;
 
+        // Where this player's throw will land / is landing, for every screen (xyz = point, w: 0 none, 1 aiming,
+        // 2 thrown and still in the air). Owner-written; team-mates draw the ring so they can run there and catch.
+        private readonly NetworkVariable<Vector4> _throwMarkNet = new NetworkVariable<Vector4>(Vector4.zero,
+            NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+        private const float ThrowMarkMaxFlight = 4f;
+        private Vector3 _throwMarkPoint;
+        private ThrowPreview _teamMark;
+
         [Header("Hit by a thrown crate (not holding F)")]
         [Tooltip("A flying crate this close to the chest (m) knocks the player back")]
         [SerializeField] private float _crateHitRadius = .75f;
@@ -198,6 +206,37 @@ namespace CoopGame.Player
             if (_carry == null) return;
             if (_throwPreview == null) _throwPreview = ThrowPreview.Create(transform);
             _throwPreview.Show(_carry, ThrowVelocity(charge), charge, _limbLayer);
+            if (_throwPreview.Landed) _throwMarkPoint = _throwPreview.LandingPoint;
+        }
+
+        /// <summary>Owner, Update: publishes the landing spot while aiming and while the thrown crate flies.</summary>
+        private void PublishThrowMark()
+        {
+            if (!IsSpawned) return;
+            Vector4 want = Vector4.zero;
+            if (_aimingThrow && _throwPreview != null && _throwPreview.Visible && _throwPreview.Landed)
+                want = new Vector4(_throwMarkPoint.x, _throwMarkPoint.y, _throwMarkPoint.z, 1f);
+            else if (_lastThrown != null && Time.time - _lastThrownAt < ThrowMarkMaxFlight &&
+                     (Time.time - _lastThrownAt < .3f || _lastThrown.InFlight) && _throwMarkNet.Value.w > 0f)
+                want = new Vector4(_throwMarkPoint.x, _throwMarkPoint.y, _throwMarkPoint.z, 2f);
+            Vector4 now = _throwMarkNet.Value;
+            if (now.w != want.w || (want.w > 0f && ((Vector3)want - (Vector3)now).sqrMagnitude > .05f * .05f))
+                _throwMarkNet.Value = want;
+        }
+
+        /// <summary>Every screen, LateUpdate: the landing ring others see (and the thrower too once the crate is in the
+        /// air; while aiming the thrower already has the full preview).</summary>
+        private void UpdateTeamThrowMark()
+        {
+            Vector4 mark = _throwMarkNet.Value;
+            bool show = IsSpawned && (mark.w > 1.5f || (mark.w > .5f && !IsLocal));
+            if (!show)
+            {
+                if (_teamMark != null && _teamMark.Visible) _teamMark.Hide();
+                return;
+            }
+            if (_teamMark == null) _teamMark = ThrowPreview.Create(transform);
+            _teamMark.ShowLandingOnly(mark);
         }
 
         /// <summary>Every screen, LateUpdate: the catch glow follows the (owner-written) ready state.</summary>
@@ -217,6 +256,8 @@ namespace CoopGame.Player
         {
             if (_throwPreview != null) Destroy(_throwPreview.gameObject);
             if (_catchGlow != null) Destroy(_catchGlow);
+            if (_teamMark != null) Destroy(_teamMark.gameObject);
+            _teamMark = null;
             _throwPreview = null;
             _catchGlow = null;
         }

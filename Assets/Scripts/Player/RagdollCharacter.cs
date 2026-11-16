@@ -509,6 +509,7 @@ namespace CoopGame.Player
 
             UpdateCatchInput(canAct);
             UpdateThrownCrateHit();
+            PublishThrowMark(); // last frame's aim/throw state, for team-mates' landing ring
             if (_carry != null)
             {
                 if (UpdateThrowAim(canAct)) { }
@@ -2042,6 +2043,7 @@ namespace CoopGame.Player
         {
             if (!_fullRagdoll || !EnsureBones()) return;
             UpdateCatchGlow();
+            UpdateTeamThrowMark();
             if (IsLocal)
             {
                 if (_physicsRoot == null) return;

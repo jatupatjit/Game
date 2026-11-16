@@ -500,6 +500,11 @@ MonoBehaviour:
   _firstPersonThreshold: 0.35
   _zoomSpeed: 8
   _scrollSensitivity: 0.6
+  _startZoomedOut: 1
+  _aimRaise: 2.2
+  _aimPullBack: 0.5
+  _aimSideShift: 1
+  _aimBlendSpeed: 6
   _pivotHeightOffset: 0.5
   _collisionRadius: 0.25
   _obstacleLayers:
@@ -911,6 +916,9 @@ MonoBehaviour:
   _sprintSpeed: 6.5
   _acceleration: 25
   _airAcceleration: 6
+  _heavySoloTraction: 0.3
+  _heavySoloSlipSpeed: 3
+  _heavySoloSlipInterval: {x: 0.6, y: 1.4}
   _jumpSpeed: 5.5
   _sprintStaminaDrain: 15
   _standSpring: 120
@@ -955,6 +963,11 @@ MonoBehaviour:
   _thighSwing: 30
   _kneeBend: 40
   _armSwing: 25
+  _jogElbowBend: 30
+  _runElbowBend: 70
+  _jogLean: 3
+  _runLean: 9
+  _freeReachHandAim: 0.8
   _relaxedArmTuck: 18
   _knockdownFallSpeed: 12
   _knockdownTilt: 70
@@ -968,6 +981,9 @@ MonoBehaviour:
   _jumpClipStart: 0.7
   _jumpClipEnd: 1.32
   _jumpClipFlightSeconds: 1
+  _jumpClipUpright: 0.85
+  _jumpClipStraighten: 0.5
+  _jumpClipWristStraighten: 0.85
   _jumpPoseAmount: 1
   _jumpPoseReleaseFallSpeed: 1.5
   _fallingClip: {fileID: -203655887218126122, guid: 9cb21aa66194a6f4c9faf435a2b8e9cc, type: 3}

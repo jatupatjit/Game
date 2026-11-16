@@ -66,6 +66,19 @@ namespace CoopGame.Player
         [Tooltip("Scroll sensitivity for mouse wheel zoom")]
         [SerializeField] private float _scrollSensitivity = 0.6f;
 
+        [Tooltip("Start each game at the max zoom-out distance instead of the default 3rd-person distance")]
+        [SerializeField] private bool _startZoomedOut = true;
+
+        [Header("Throw Aim View")]
+        [Tooltip("While holding Q to aim a throw, the camera rises this much (m) so the crate sits lower in view")]
+        [SerializeField] private float _aimRaise = 2.2f;
+        [Tooltip("...moves back this much (m) so more of the arc fits on screen")]
+        [SerializeField] private float _aimPullBack = .5f;
+        [Tooltip("...and slides right this much (m), over the shoulder, so the crate is not in the middle")]
+        [SerializeField] private float _aimSideShift = 1f;
+        [Tooltip("How fast the aim view eases in/out (per second)")]
+        [SerializeField] private float _aimBlendSpeed = 6f;
+
         [Header("Height & Collision Avoidance")]
         [Tooltip("Height offset above the pivot transform (eye level)")]
         [SerializeField] private float _pivotHeightOffset = 0.50f;
@@ -82,6 +95,8 @@ namespace CoopGame.Player
         private float _desiredDistance;
         private float _currentDistance;
         private float _resolvedDistance; // _currentDistance after wall occlusion
+        private float _lastThirdPersonDistance;
+        private float _aimBlend; // 0 = normal view, 1 = full throw-aim view
 
         // Cached colliders on this player to ignore during occlusion check
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
@@ -154,8 +169,11 @@ namespace CoopGame.Player
                 _playerBodyRenderer = GetComponent<Renderer>();
             }
 
-            _desiredDistance = _defaultThirdPersonDistance;
-            _currentDistance = _defaultThirdPersonDistance;
+            // The game starts zoomed all the way out (presentation feedback); the wheel zooms in from there.
+            float startDistance = _startZoomedOut ? _maxZoomDistance : _defaultThirdPersonDistance;
+            _desiredDistance = startDistance;
+            _currentDistance = startDistance;
+            _lastThirdPersonDistance = startDistance;
             _yaw = transform.eulerAngles.y;
 
             Collider[] colliders = GetComponentsInChildren<Collider>(true);
@@ -374,16 +392,17 @@ namespace CoopGame.Player
             // 2. Quick Toggle Key ('V' key)
             if (Keyboard.current != null && Keyboard.current.vKey.wasPressedThisFrame)
             {
-                // Toggle between 1st Person (0m) and 3rd Person (3.5m)
+                // Toggle between 1st Person and the 3rd-person distance the player last used.
                 if (_desiredDistance < 1.0f)
                 {
-                    _desiredDistance = _defaultThirdPersonDistance;
+                    _desiredDistance = _lastThirdPersonDistance;
                 }
                 else
                 {
                     _desiredDistance = _firstPersonDistance;
                 }
             }
+            if (_desiredDistance >= 1.0f) _lastThirdPersonDistance = _desiredDistance;
         }
 
         private void LateUpdate()
@@ -415,6 +434,8 @@ namespace CoopGame.Player
 
             // 4. Handle First-Person vs Third-Person View
             bool inFirstPerson = _currentDistance < _firstPersonThreshold;
+            bool aiming = !inFirstPerson && physicsBody && _fullRagdoll.AimingThrow;
+            _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, Time.deltaTime * _aimBlendSpeed);
             bool hideBody = inFirstPerson;
 
             Vector3 finalPosition;
@@ -429,9 +450,32 @@ namespace CoopGame.Player
                 // In 3rd Person: check for obstacle occlusion and position behind player
                 Vector3 desiredCameraDirection = targetRotation * -Vector3.forward;
 
-                float targetDistance = _currentDistance;
+                // Throw aim (hold Q): lift the camera, pull it back and slide it over the right shoulder so the
+                // carried crate drops out of the middle of the view and the arc/landing ring are clear. Only the
+                // position moves; the look direction (which sets the throw direction) stays the same.
+                float aimDistance = 0f;
+                if (_aimBlend > 1e-3f)
+                {
+                    Vector3 shift = Vector3.up * (_aimRaise * _aimBlend) + HorizontalRight * (_aimSideShift * _aimBlend);
+                    // Stop under a ceiling / beside a wall instead of passing through it.
+                    float shiftLength = shift.magnitude;
+                    if (shiftLength > 1e-3f)
+                    {
+                        float allowed = shiftLength;
+                        foreach (RaycastHit hit in Physics.SphereCastAll(pivotPosition, _collisionRadius, shift / shiftLength, shiftLength,
+                                     _obstacleLayers, QueryTriggerInteraction.Ignore))
+                            if (!IsIgnoredObstacle(hit.collider) && hit.distance < allowed) allowed = hit.distance;
+                        shift *= allowed / shiftLength;
+                    }
+                    pivotPosition += shift;
+                    if (physicsBody) pivotPosition = PushOutOfWalls(pivotPosition, _collisionRadius);
+                    aimDistance = _aimPullBack * _aimBlend;
+                }
+                float castDistance = _currentDistance + aimDistance;
+
+                float targetDistance = castDistance;
                 Ray ray = new Ray(pivotPosition, desiredCameraDirection);
-                RaycastHit[] hits = Physics.SphereCastAll(ray, _collisionRadius, _currentDistance, _obstacleLayers, QueryTriggerInteraction.Ignore);
+                RaycastHit[] hits = Physics.SphereCastAll(ray, _collisionRadius, castDistance, _obstacleLayers, QueryTriggerInteraction.Ignore);
 
                 float closestValidHitDistance = float.MaxValue;
                 foreach (RaycastHit hit in hits)
@@ -446,7 +490,7 @@ namespace CoopGame.Player
 
                 if (closestValidHitDistance < float.MaxValue)
                 {
-                    targetDistance = Mathf.Clamp(closestValidHitDistance - _collisionRadius, _firstPersonDistance, _currentDistance);
+                    targetDistance = Mathf.Clamp(closestValidHitDistance - _collisionRadius, _firstPersonDistance, castDistance);
                 }
 
                 // Pull in instantly so the camera never clips a wall, but ease back out so it
