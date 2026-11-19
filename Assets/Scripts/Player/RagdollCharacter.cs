@@ -507,6 +507,7 @@ namespace CoopGame.Player
             bool canAct = !IsKnockedDown && !Blocked && !_climbing && !_gettingUp;
             AimedCargo = _carry == null && canAct && !Exhausted && (_wallclimb == null || !_wallclimb.IsClimbing) &&
                          FindAimedCargo(out CarryableObject aimed) ? aimed : null;
+            bool helpedTeammate = UpdateHelpUp(canAct); // F next to a downed team-mate helps them up (Assist.cs)
 
             UpdateCatchInput(canAct);
             UpdateThrownCrateHit();
@@ -526,7 +527,7 @@ namespace CoopGame.Player
                     if (_stamina.IsExhausted) RequestDrop(true);
                 }
             }
-            else if ((_carryTapReleased || (_input != null && _input.CarryPressed)) && Time.time >= _nextPickupAllowedTime && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
+            else if (!helpedTeammate && (_carryTapReleased || (_input != null && _input.CarryPressed)) && Time.time >= _nextPickupAllowedTime && AimedCargo != null && (!_carryRequestPending || Time.time > _carryRequestTimeout))
             {
                 RequestCarry(AimedCargo);
             }
