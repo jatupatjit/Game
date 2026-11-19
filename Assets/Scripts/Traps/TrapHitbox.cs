@@ -196,6 +196,7 @@ namespace CoopGame.Traps
 
         private void HitPlayer(Component player, RagdollCharacter ragdoll, ActiveRagdoll activeRagdoll, Vector3 velocity, Collider touched)
         {
+            if (ragdoll != null && ragdoll.TrapImmune) return; // lying/getting up after a fall respawn (GetUpExtras)
             if (ragdoll != null && ragdoll.isActiveAndEnabled && ragdoll.FullRagdoll)
             {
                 if (ragdoll.HoldingCargo)

@@ -56,6 +56,7 @@ namespace CoopGame.Traps
             var ragdoll = player.GetComponent<RagdollCharacter>();
             if (ragdoll != null && ragdoll.isActiveAndEnabled && ragdoll.FullRagdoll)
             {
+                if (ragdoll.TrapImmune) return; // just got up after a fall respawn (GetUpExtras)
                 ragdoll.Knockdown(fling * _ragdollMass);
                 return;
             }

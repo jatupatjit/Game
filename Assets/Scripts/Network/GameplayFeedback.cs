@@ -9,8 +9,8 @@ namespace CoopGame.Network
     /// </summary>
     public static class GameplayFeedback
     {
-        public enum Cue { Lift, Impact, Delivered, Portal, Broken, Throw, Step, Click, Place, ClimbGrab, Knockdown, Checkpoint }
-        private const int CueCount = 12;
+        public enum Cue { Lift, Impact, Delivered, Portal, Broken, Throw, Step, Click, Place, ClimbGrab, Knockdown, Checkpoint, BodyThud }
+        private const int CueCount = 13;
         private static readonly string[,] Paths = {
             { "Audio/SFX/Grab", "Audio/SFX/Grab2" },
             { "Audio/SFX/HeavyDrop", null },
@@ -24,14 +24,15 @@ namespace CoopGame.Network
             { "Audio/SFX/Place", null },
             { "Audio/SFX/ClimbGrab", null },
             { "Audio/SFX/Knockdown", null },
-            { "Audio/SFX/Checkpoint", null }
+            { "Audio/SFX/Checkpoint", null },
+            { "Audio/SFX/BodyThud", null } // body lands on the pad after a fall respawn
         };
         // Stand-in cue for a missing clip (-1 = none; Checkpoint falls back to the generated chime).
-        private static readonly int[] StandIn = { -1, -1, -1, -1, -1, -1, -1, -1, (int)Cue.Impact, (int)Cue.Lift, (int)Cue.Impact, -1 };
+        private static readonly int[] StandIn = { -1, -1, -1, -1, -1, -1, -1, -1, (int)Cue.Impact, (int)Cue.Lift, (int)Cue.Impact, -1, (int)Cue.Impact };
         // Per cue: volume, pitch, spatial (0 = heard the same everywhere), min/max distance.
-        private static readonly float[] Volume = { .65f, .4f, .65f, .65f, .65f, .65f, .25f, .45f, .4f, .5f, .7f, .6f };
-        private static readonly float[] Pitch = { 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1f, .85f, 1.25f, .75f, 1f };
-        private static readonly bool[] Global = { false, false, true, true, false, false, false, true, false, false, false, true };
+        private static readonly float[] Volume = { .65f, .4f, .65f, .65f, .65f, .65f, .25f, .45f, .4f, .5f, .7f, .6f, .8f };
+        private static readonly float[] Pitch = { 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1f, .85f, 1.25f, .75f, 1f, .7f };
+        private static readonly bool[] Global = { false, false, true, true, false, false, false, true, false, false, false, true, false };
         private static readonly AudioClip[,] Clips = new AudioClip[CueCount, 2];
         private static readonly bool[] Loaded = new bool[CueCount];
         private static readonly int[] Variants = new int[CueCount];

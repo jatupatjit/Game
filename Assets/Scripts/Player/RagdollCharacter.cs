@@ -257,6 +257,7 @@ namespace CoopGame.Player
             _moveLockedUntil = float.MaxValue; // until the get-up finishes
             _tripClip = -1; _fallPoseWeight = 0f; _fallingSince = -1f;
             _getUpPending = true;
+            OnRespawnSlumpStarted(); // thud + dust when the body lands (GetUpExtras)
             // A little forward tip so the limp body falls on its front, where the get-up starts.
             Vector3 forward = Quaternion.Euler(0f, _facingYaw, 0f) * Vector3.forward;
             _bodies[Chest].AddForce(forward * 1.2f, ForceMode.VelocityChange);
@@ -1155,6 +1156,7 @@ namespace CoopGame.Player
         /// <summary>Owner: poses the kinematic body through the get-up. Returns true while it plays.</summary>
         private bool UpdateGetUp()
         {
+            GetUpExtrasTick();
             if (_getUpPending && !IsKnockedDown && !_climbing && _physicsRoot != null) StartGetUp();
             if (!_gettingUp) return false;
 
@@ -1165,6 +1167,7 @@ namespace CoopGame.Player
             SampleGetUpAngles(Mathf.Min(poseTime, keysTime));
             IsGrounded = true;
             GetUpTargets(_getUpFacing);
+            if (GetUpExtrasPose(poseTime, keysTime)) return false; // skipped by moving; dizzy head shake once standing
             if (blendIn < 1f)
                 for (int i = 0; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_getUpFrom[i], _target[i], blendIn);
 
@@ -1186,13 +1189,14 @@ namespace CoopGame.Player
             }
             _facingYaw = _getUpFacing.eulerAngles.y;
 
-            if (t >= _getUpBlendIn + keysTime + _getUpBlendOut) FinishGetUp();
+            if (t >= _getUpBlendIn + keysTime + DizzySeconds + _getUpBlendOut) FinishGetUp();
             return true;
         }
 
         private void FinishGetUp()
         {
             _gettingUp = false;
+            OnGetUpFinished();
             foreach (var body in _bodies)
             {
                 body.isKinematic = false;
