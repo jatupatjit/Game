@@ -217,6 +217,13 @@ namespace CoopGame.CarrySystem
                 variantBonus *= henBonus;
                 CoopGame.Network.GameRoom.ServerFeed("ไก่อยู่บนลังจนถึงปลายทาง! โบนัส x" + henBonus.ToString("0.0"), new Color(1f, .85f, .3f));
             }
+            // The liquid crate pays for the water still in it (George 2026-11-19).
+            if (cargo.TryGetComponent(out LiquidCargo _))
+            {
+                float water = LiquidCargo.BonusFor(cargo);
+                variantBonus *= water;
+                CoopGame.Network.GameRoom.ServerFeed("น้ำเหลือ " + Mathf.RoundToInt(water * 100f) + "% — คะแนน x" + water.ToString("0.00"), new Color(.45f, .75f, 1f));
+            }
             int finalScore = Mathf.RoundToInt(remainingHP * multiplier * variantBonus);
             int coinsEarned = finalScore; // 1:1 score to currency conversion for the Shop
 
