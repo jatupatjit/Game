@@ -104,6 +104,9 @@ namespace CoopGame.Player
         private float _lastThirdPersonDistance;
         private float _aimBlend; // 0 = normal view, 1 = full throw-aim view (eased)
         private float _aimProgress; // linear 0..1 behind _aimBlend
+        [Tooltip("Throw aim: degrees kept between the landing ring and the bottom of the screen.")]
+        [SerializeField] private float _aimLandingMargin = 14f;
+        private float _landingPitchFloor = -90f; // smoothed lowest view pitch that still shows the landing ring
 
         // Cached colliders on this player to ignore during occlusion check
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
@@ -449,6 +452,21 @@ namespace CoopGame.Player
             float easeTime = holdView ? _aimEaseInTime : _aimEaseOutTime;
             _aimProgress = Mathf.MoveTowards(_aimProgress, holdView ? 1f : 0f, easeTime > 1e-3f ? Time.deltaTime / easeTime : 1f);
             _aimBlend = Mathf.SmoothStep(0f, 1f, _aimProgress);
+            // George 2026-11-20: looking up to throw far used to push the landing ring below the screen. While aiming,
+            // the view (not the aim: ThrowVelocity reads Pitch) stops tilting up once the ring would leave the bottom.
+            float floor = -90f;
+            if (aiming && _fullRagdoll.TryGetThrowLanding(out Vector3 landing))
+            {
+                Vector3 eye = pivotPosition + Vector3.up * _aimRaise;
+                Vector3 toLanding = landing - eye;
+                float flat = Mathf.Max(new Vector2(toLanding.x, toLanding.z).magnitude, .01f);
+                float below = Mathf.Atan2(-toLanding.y, flat) * Mathf.Rad2Deg;
+                floor = below - (_playerCamera.fieldOfView * .5f - _aimLandingMargin);
+                if (_landingPitchFloor < -89f) _landingPitchFloor = Mathf.Min(floor, _pitch);
+            }
+            _landingPitchFloor = Mathf.Lerp(_landingPitchFloor, floor, 1f - Mathf.Exp(-8f * Time.deltaTime));
+            if (_aimBlend > 1e-3f && _landingPitchFloor > _pitch)
+                targetRotation = Quaternion.Euler(Mathf.Lerp(_pitch, Mathf.Min(_landingPitchFloor, _maxPitch), _aimBlend), _yaw, 0f);
             bool hideBody = inFirstPerson;
 
             Vector3 finalPosition;

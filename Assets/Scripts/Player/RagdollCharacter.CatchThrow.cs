@@ -108,6 +108,13 @@ namespace CoopGame.Player
 
         /// <summary>Owner: holding Q to aim a throw (the charge bar shows while true).</summary>
         public bool AimingThrow => _aimingThrow;
+        /// <summary>Owner: where the aimed throw would land (the camera keeps it on screen while aiming up).</summary>
+        public bool TryGetThrowLanding(out Vector3 point)
+        {
+            point = _throwMarkPoint;
+            return _aimingThrow && _throwPreview != null && _throwPreview.Visible && _throwPreview.Landed;
+        }
+
         /// <summary>Owner: 0..1 throw charge while aiming.</summary>
         public float ThrowChargeNow => _aimingThrow ? ThrowCharge : 0f;
 
