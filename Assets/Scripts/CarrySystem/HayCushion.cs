@@ -30,6 +30,14 @@ namespace CoopGame.CarrySystem
         private float _sink, _sinkSpeed;
         private bool _hadCrate;
 
+        public static readonly System.Collections.Generic.List<HayCushion> Active = new();
+
+        /// <summary>The squashing top bale (centre/yaw source for cargo snap placement).</summary>
+        public Rigidbody TopBale => _topBale;
+
+        private void OnEnable() { if (!Active.Contains(this)) Active.Add(this); }
+        private void OnDisable() => Active.Remove(this);
+
         public static bool IsCushion(Collider collider) =>
             collider != null && collider.GetComponentInParent<HayCushion>() != null;
 

@@ -46,6 +46,10 @@ namespace CoopGame.Network
 
         public bool IsActive => IsSpawned && _active.Value;
 
+        public static readonly System.Collections.Generic.List<CheckpointPad> Active = new();
+        private void OnEnable() { if (!Active.Contains(this)) Active.Add(this); }
+        private void OnDisable() => Active.Remove(this);
+
         /// <summary>Server, dev cheat: turn the pad on without placing the crate.</summary>
         public void DevActivate() { if (IsServer && IsSpawned) _active.Value = true; }
         public int Number => _number;

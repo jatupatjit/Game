@@ -36,6 +36,12 @@ namespace CoopGame.Network
 
         public bool IsUsed => IsSpawned && _used.Value;
 
+        public static readonly System.Collections.Generic.List<RepairStation> Active = new();
+        public Transform PadTransform => _pad != null ? _pad : transform;
+        public bool IsActiveInBranch => _branchRoot == null || _branchRoot.activeInHierarchy;
+        private void OnEnable() { if (!Active.Contains(this)) Active.Add(this); }
+        private void OnDisable() => Active.Remove(this);
+
         public override void OnNetworkSpawn() { _shown = -1; _restTimer = 0f; }
 
         private Transform Pad => _pad != null ? _pad : transform;

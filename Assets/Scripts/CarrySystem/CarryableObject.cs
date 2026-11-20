@@ -240,6 +240,7 @@ namespace CoopGame.CarrySystem
         public void SecureForDelivery()
         {
             if (IsSpawned && !IsServer) return;
+            ClearSnapLock();
             DetachAllCarriers();
             _secured.Value = true;
             _throwPending = false;
@@ -366,6 +367,7 @@ namespace CoopGame.CarrySystem
             }
 
             if (TickGentlePlacement()) return;
+            if (TickSnapLock()) return;
 
             // When no one is carrying: allow full PhysX gravity and free tumbling
             if (_activeCarriers.Count == 0)
@@ -882,7 +884,7 @@ namespace CoopGame.CarrySystem
         }
 
         /// <summary>Attachment lifecycle hook; called before the next support physics step.</summary>
-        protected virtual void OnCarrierAttached(bool firstCarrier) { _supportProtectionEnd = -1f; _placementFloorCount = 0; }
+        protected virtual void OnCarrierAttached(bool firstCarrier) { _supportProtectionEnd = -1f; _placementFloorCount = 0; ClearSnapLock(); }
 
         /// <summary>Detachment lifecycle hook; called when a carrier releases the object.</summary>
         protected virtual void OnCarrierDetached(int remainingCarriers) { }
@@ -983,6 +985,7 @@ namespace CoopGame.CarrySystem
         /// </summary>
         public virtual void DetachAllCarriers()
         {
+            ClearSnapLock();
             var carrierIds = new List<ulong>(_activeCarriers.Keys);
             foreach (var id in carrierIds)
             {
@@ -1008,6 +1011,7 @@ namespace CoopGame.CarrySystem
             if (_activeCarriers.TryGetValue(clientId, out CarrierInfo thrower) && thrower.State != null &&
                 thrower.State.HasCard(CoopGame.Network.CardEffect.LongThrow)) limit = LongThrowLimit;
             DetachCarrier(clientId);
+            ClearSnapLock();
 
             if (IsSecured) return;
             _throwPending = true;

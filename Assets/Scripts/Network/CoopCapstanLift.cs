@@ -69,6 +69,22 @@ namespace CoopGame.Network
         public int RequiredWalkers => _required.Value;
         public bool AtTop => _progress.Value >= 1f;
 
+        public static readonly List<CoopCapstanLift> Active = new();
+        /// <summary>The moving wooden deck (cargo snap placement centre, yaw and follow body).</summary>
+        public Rigidbody Platform => _platform;
+
+        private void OnEnable() { if (!Active.Contains(this)) Active.Add(this); }
+        private void OnDisable() => Active.Remove(this);
+
+        /// <summary>True when the body is the platform of any capstan lift.</summary>
+        public static bool IsPlatformBody(Rigidbody body)
+        {
+            if (body == null) return false;
+            for (int i = 0; i < Active.Count; i++)
+                if (Active[i] != null && Active[i]._platform == body) return true;
+            return false;
+        }
+
         /// <summary>True when a point (a player's feet) is on the walk ring; padding widens it by metres.</summary>
         public bool IsNearRing(Vector3 feet, float padding = 0f)
         {
