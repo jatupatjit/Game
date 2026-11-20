@@ -23,7 +23,7 @@ namespace CoopGame.EditorTools
 
         // Island layout (world): spawn south facing +Z (the camera starts facing +Z), portal north, stalls either side of the plaza.
         private static readonly Vector3 Plaza = new Vector3(8f, Top, -47f);
-        private static readonly Vector3 Spawn = new Vector3(8f, Top + .05f, -64f);
+        private static readonly Vector3 Spawn = new Vector3(8f, Top + 1.1f, -64f); // pivot at the capsule centre (NetworkPlayer default spawn y 1.05 over y 0)
         private static readonly Vector3 Portal = new Vector3(8f, Top, -29f);
         private static readonly Vector3 GearStall = new Vector3(18.5f, Top, -47f);
         private static readonly Vector3 OutfitStall = new Vector3(-2.5f, Top, -47f);
