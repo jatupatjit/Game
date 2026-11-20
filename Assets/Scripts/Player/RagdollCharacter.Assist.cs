@@ -214,7 +214,7 @@ namespace CoopGame.Player
         }
 
         private static bool Hidden() => PauseMenu.IsPaused || PhotoMode.IsOn || TitleScreen.IsVisible || MissionFailUI.IsVisible ||
-            LevelMap.IsOpen || Cosmetics.IsOpen || SpectateMode.IsOn || ExpeditionHUD.BlocksGameplayInput;
+            LevelMap.IsOpen || UIPanels.ShopOpen || SpectateMode.IsOn || ExpeditionHUD.BlocksGameplayInput;
 
         private void LateUpdate()
         {

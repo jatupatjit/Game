@@ -10,7 +10,12 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>Rebindable keyboard/mouse controls (the gameplay actions in <see cref="Player.PlayerInputReader"/>).</summary>
-    public enum BindRole { Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, GrabLeft, GrabRight, Carry }
+    public enum BindRole
+    {
+        Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, GrabLeft, GrabRight, Carry,
+        // 2026-11-17 (George): the keys that used to be fixed in code, read through GameSettings.Pressed/Held.
+        PingHere, PingHelp, PingWarn, Wave, CameraView, Cards, Map, Scoreboard, Shop, Wardrobe, PhotoMode, PhotoShot, Spectate,
+    }
 
     /// <summary>
     /// This PC's settings (PlayerPrefs, never sent over the network), applied when the game starts.
@@ -31,7 +36,31 @@ namespace CoopGame.Network
         {
             "<Keyboard>/w", "<Keyboard>/s", "<Keyboard>/a", "<Keyboard>/d", "<Keyboard>/space",
             "<Keyboard>/leftShift", "<Keyboard>/e", "<Keyboard>/q", "<Mouse>/leftButton", "<Mouse>/rightButton", "<Keyboard>/f",
+            "<Keyboard>/z", "<Keyboard>/x", "<Keyboard>/t", "<Keyboard>/g", "<Keyboard>/v", "<Keyboard>/h", "<Keyboard>/m",
+            "<Keyboard>/tab", "<Keyboard>/k", "<Keyboard>/c", "<Keyboard>/p", "<Keyboard>/f12", "<Keyboard>/o",
         };
+
+        /// <summary>First role that is not an Input Action (read straight from the device by its own script).</summary>
+        public const BindRole FirstDirectRole = BindRole.PingHere;
+        private static readonly Dictionary<string, UnityEngine.InputSystem.Controls.ButtonControl> s_controls = new();
+
+        private static UnityEngine.InputSystem.Controls.ButtonControl Control(BindRole role)
+        {
+            string path = Binding(role);
+            if (!s_controls.TryGetValue(path, out var control) || control == null || !control.device.added)
+            {
+                control = InputSystem.FindControl(path) as UnityEngine.InputSystem.Controls.ButtonControl;
+                s_controls[path] = control;
+            }
+            return control;
+        }
+
+        /// <summary>The key bound to <paramref name="role"/> went down this frame.</summary>
+        public static bool Pressed(BindRole role) { var c = Control(role); return c != null && c.wasPressedThisFrame; }
+        /// <summary>The key bound to <paramref name="role"/> is held.</summary>
+        public static bool Held(BindRole role) { var c = Control(role); return c != null && c.isPressed; }
+        /// <summary>Short label of the key bound to <paramref name="role"/> (for hints).</summary>
+        public static string KeyName(BindRole role) => KeyLabel(Binding(role));
 
         /// <summary>Raised after any setting changes (input readers re-apply their bindings).</summary>
         public static event Action Changed;
@@ -84,7 +113,7 @@ namespace CoopGame.Network
             {
                 string path = action.bindings[i].path;
                 int role = Array.IndexOf(DefaultBindings, path);
-                if (role < 0) continue;
+                if (role < 0 || role >= (int)FirstDirectRole) continue;
                 string bound = Binding((BindRole)role);
                 if (bound == path) action.RemoveBindingOverride(i);
                 else action.ApplyBindingOverride(i, bound);
@@ -208,7 +237,21 @@ namespace CoopGame.Network
         private int _rebindEndedFrame = -1;
 
         private static readonly string[] TabNames = { "เมาส์และกล้อง", "กราฟิก", "เสียง", "ปุ่มกด" };
-        private static readonly string[] RoleNames = { "เดินหน้า", "ถอยหลัง", "เดินซ้าย", "เดินขวา", "กระโดด", "วิ่ง", "ใช้ / กด", "ชาร์จโยน (ค้าง)", "ปีน มือซ้าย", "ปีน มือขวา", "ยก / วาง / ค้างรับ" };
+        private static readonly string[] RoleNames =
+        {
+            "เดินหน้า", "ถอยหลัง", "เดินซ้าย", "เดินขวา", "กระโดด", "วิ่ง", "ใช้ / กด", "ชาร์จโยน (ค้าง)", "ปีน มือซ้าย", "ปีน มือขวา", "ยก / วาง / ค้างรับ",
+            "ปิง มานี่", "ปิง ช่วยยก", "ปิง ระวัง", "โบกมือ", "สลับมุมกล้อง", "ดูการ์ด", "แผนที่ด่าน", "ตารางคะแนน (ค้าง)", "ร้านหมวก",
+            "แต่งตัว", "โหมดถ่ายรูป", "ถ่ายภาพ", "ดูเพื่อน",
+        };
+
+        private static readonly (string title, BindRole[] roles)[] KeyGroups =
+        {
+            ("เดิน", new[] { BindRole.Forward, BindRole.Back, BindRole.Left, BindRole.Right, BindRole.Jump, BindRole.Sprint }),
+            ("แบกลัง / ปีน", new[] { BindRole.Carry, BindRole.Throw, BindRole.GrabLeft, BindRole.GrabRight, BindRole.Interact }),
+            ("คุยกับเพื่อน", new[] { BindRole.PingHere, BindRole.PingHelp, BindRole.PingWarn, BindRole.Wave }),
+            ("หน้าจอ / เมนู", new[] { BindRole.CameraView, BindRole.Cards, BindRole.Map, BindRole.Scoreboard,
+                BindRole.Wardrobe, BindRole.PhotoMode, BindRole.PhotoShot, BindRole.Spectate }),
+        };
 
         public static void Open(Action onClosed = null)
         {
@@ -299,7 +342,7 @@ namespace CoopGame.Network
             bottomRect.anchoredPosition = new Vector2(0f, 78f);
             Button reset = UITheme.MakeButton(bottom, "Reset", "คืนค่าเริ่มต้น", UIButtonStyle.White, new Vector2(300f, 76f), 26);
             reset.onClick.AddListener(ResetTab);
-            Button done = UITheme.MakeButton(bottom, "Done", "เสร็จ", UIButtonStyle.Pink, new Vector2(300f, 80f), 30);
+            Button done = UITheme.MakeButton(bottom, "Done", "เสร็จ", UIButtonStyle.White, new Vector2(300f, 80f), 30);
             done.onClick.AddListener(Close);
             _root.SetActive(false);
         }
@@ -381,13 +424,55 @@ namespace CoopGame.Network
                 i => GameSettings.FrameCap = GameSettings.FrameCaps[i]);
         }
 
+        // Three columns of groups (George 2026-11-17: every key rebindable, laid out tidily).
         private void BuildKeys()
         {
-            var roles = (BindRole[])Enum.GetValues(typeof(BindRole));
-            Transform left = Column(_content, -262f, 510f), right = Column(_content, 262f, 510f);
-            for (int i = 0; i < roles.Length; i++)
-                KeyRow(i < 6 ? left : right, roles[i]);
-            Note(_content, "กดช่องปุ่มแล้วกดปุ่มใหม่ (Esc = ยกเลิก)", -420f);
+            const float width = 330f;
+            Transform[] columns = { Column(_content, -350f, width), Column(_content, 0f, width), Column(_content, 350f, width) };
+            int[] columnOf = { 0, 1, 1, 2 };
+            foreach (Transform column in columns) column.GetComponent<VerticalLayoutGroup>().spacing = 4f;
+            for (int g = 0; g < KeyGroups.Length; g++)
+            {
+                Transform column = columns[columnOf[g]];
+                if (column.childCount > 0) Spacer(column, 14f);
+                GroupHeader(column, KeyGroups[g].title);
+                foreach (BindRole role in KeyGroups[g].roles) CompactKeyRow(column, role);
+            }
+            Spacer(columns[0], 14f);
+            Note(columns[0], "กดช่องปุ่ม แล้วกดปุ่มใหม่\nEsc = ยกเลิก  ปุ่มซ้ำจะสลับกันให้");
+        }
+
+        private static void Spacer(Transform list, float height)
+        {
+            var go = new GameObject("Spacer", typeof(RectTransform), typeof(LayoutElement));
+            go.transform.SetParent(list, false);
+            go.GetComponent<LayoutElement>().preferredHeight = height;
+        }
+
+        private static void GroupHeader(Transform list, string title)
+        {
+            Text text = UITheme.MakeText(list, "Group", title, 26, UITextRole.OnLight, TextAnchor.MiddleLeft);
+            UITheme.StyleCuteText(text);
+            UITheme.SetWeight(text, UITheme.FontBold);
+            text.gameObject.AddComponent<LayoutElement>().preferredHeight = 38f;
+        }
+
+        private void CompactKeyRow(Transform list, BindRole role)
+        {
+            var go = new GameObject(role.ToString(), typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            go.transform.SetParent(list, false);
+            go.GetComponent<LayoutElement>().preferredHeight = 42f;
+            var layout = go.GetComponent<HorizontalLayoutGroup>();
+            layout.spacing = 8f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = layout.childControlHeight = false;
+            layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+            Text text = UITheme.MakeText(go.transform, "Label", RoleNames[(int)role], 22, UITextRole.OnLight);
+            UITheme.StyleCuteText(text);
+            text.rectTransform.sizeDelta = new Vector2(180f, 40f);
+            Button key = UITheme.MakeButton(go.transform, "Key", GameSettings.KeyLabel(GameSettings.Binding(role)), UIButtonStyle.White, new Vector2(140f, 40f), 20);
+            Text label = key.GetComponentInChildren<Text>();
+            key.onClick.AddListener(() => StartRebind(role, label));
         }
 
         // ───────────────────────── Rows ─────────────────────────

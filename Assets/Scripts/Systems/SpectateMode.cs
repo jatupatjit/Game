@@ -66,7 +66,7 @@ namespace CoopGame.Network
         }
 
         private static bool Blocked() => PauseMenu.IsPaused || TitleScreen.IsVisible || PhotoMode.IsOn || DevCheatMenu.IsOpen ||
-            ExpeditionHUD.BlocksGameplayInput || MissionFailUI.IsVisible || LevelMap.IsOpen || Cosmetics.IsOpen ||
+            ExpeditionHUD.BlocksGameplayInput || MissionFailUI.IsVisible || LevelMap.IsOpen || UIPanels.ShopOpen ||
             LobbyCharacterCustomizationUI.IsVisible || PingWheel.IsOpen;
 
         private void Update()
@@ -77,7 +77,7 @@ namespace CoopGame.Network
             if (IsOn && (!inSession || PhotoMode.IsOn || MissionFailUI.IsVisible)) SetOn(false);
             if (keyboard == null || !inSession) return;
             if (!IsOn && Blocked()) return;
-            if (keyboard.oKey.wasPressedThisFrame && !PauseMenu.IsPaused) SetOn(!IsOn);
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Spectate) && !PauseMenu.IsPaused) SetOn(!IsOn);
             if (!IsOn) return;
             var others = Others();
             if (others.Count == 0) { _label.text = "ยังไม่มีเพื่อนให้ดู • O ออก"; return; }

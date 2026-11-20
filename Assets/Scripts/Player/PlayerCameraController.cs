@@ -76,8 +76,14 @@ namespace CoopGame.Player
         [SerializeField] private float _aimPullBack = .5f;
         [Tooltip("...and slides right this much (m), over the shoulder, so the crate is not in the middle")]
         [SerializeField] private float _aimSideShift = 1f;
-        [Tooltip("How fast the aim view eases in/out (per second)")]
-        [SerializeField] private float _aimBlendSpeed = 6f;
+        [Tooltip("Seconds to glide into the aim view after Q is pressed (eased, George 2026-11-17: 0.17 s was too fast)")]
+        [SerializeField] private float _aimEaseInTime = .5f;
+        [Tooltip("Seconds to glide back to the normal view")]
+        [SerializeField] private float _aimEaseOutTime = .7f;
+        [Tooltip("After Q is let go, keep the aim view this long so the flying crate stays in shot")]
+        [SerializeField] private float _aimHoldAfterRelease = .6f;
+        private float _aimReleasedAt = -10f;
+        private bool _wasAiming;
 
         [Header("Height & Collision Avoidance")]
         [Tooltip("Height offset above the pivot transform (eye level)")]
@@ -96,7 +102,8 @@ namespace CoopGame.Player
         private float _currentDistance;
         private float _resolvedDistance; // _currentDistance after wall occlusion
         private float _lastThirdPersonDistance;
-        private float _aimBlend; // 0 = normal view, 1 = full throw-aim view
+        private float _aimBlend; // 0 = normal view, 1 = full throw-aim view (eased)
+        private float _aimProgress; // linear 0..1 behind _aimBlend
 
         // Cached colliders on this player to ignore during occlusion check
         private readonly HashSet<Collider> _selfColliders = new HashSet<Collider>();
@@ -332,7 +339,7 @@ namespace CoopGame.Player
                 CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible ||
                 CoopGame.Network.PauseMenu.IsPaused || CoopGame.Network.DevCheatMenu.IsOpen ||
                 CoopGame.Network.PhotoMode.IsOn || CoopGame.Network.TitleScreen.IsVisible || CoopGame.Network.LevelMap.IsOpen ||
-                CoopGame.Network.Cosmetics.IsOpen) return;
+                CoopGame.Network.UIPanels.ShopOpen) return;
 
             if (_isCursorLocked && (Cursor.lockState != CursorLockMode.Locked || Cursor.visible))
             {
@@ -390,7 +397,7 @@ namespace CoopGame.Player
             }
 
             // 2. Quick Toggle Key ('V' key)
-            if (Keyboard.current != null && Keyboard.current.vKey.wasPressedThisFrame)
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.CameraView))
             {
                 // Toggle between 1st Person and the 3rd-person distance the player last used.
                 if (_desiredDistance < 1.0f)
@@ -435,7 +442,13 @@ namespace CoopGame.Player
             // 4. Handle First-Person vs Third-Person View
             bool inFirstPerson = _currentDistance < _firstPersonThreshold;
             bool aiming = !inFirstPerson && physicsBody && _fullRagdoll.AimingThrow;
-            _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, Time.deltaTime * _aimBlendSpeed);
+            if (_wasAiming && !aiming) _aimReleasedAt = Time.time;
+            _wasAiming = aiming;
+            bool holdView = aiming || (!inFirstPerson && Time.time - _aimReleasedAt < _aimHoldAfterRelease);
+            // Linear progress, drawn through a smoothstep below, so the camera starts and stops gently.
+            float easeTime = holdView ? _aimEaseInTime : _aimEaseOutTime;
+            _aimProgress = Mathf.MoveTowards(_aimProgress, holdView ? 1f : 0f, easeTime > 1e-3f ? Time.deltaTime / easeTime : 1f);
+            _aimBlend = Mathf.SmoothStep(0f, 1f, _aimProgress);
             bool hideBody = inFirstPerson;
 
             Vector3 finalPosition;

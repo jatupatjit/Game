@@ -514,7 +514,7 @@ namespace CoopGame.CarrySystem
         {
             if (_isDestroyed || damageAmount <= 0) return;
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer) return;
-            if (Time.fixedTime < _nextDamageAllowedAtFixedTime || CoopGame.Network.DevCheats.GodMode) return;
+            if (Time.fixedTime < _nextDamageAllowedAtFixedTime || CoopGame.Network.DevCheats.GodMode || CoopGame.Weather.WeatherState.CrateProtectedAt(transform.position)) return;
 
             if (HasPadding) { damageAmount = Mathf.CeilToInt(damageAmount * .5f); _padding.Value = false; }
             damageAmount = Mathf.Min(damageAmount, CurrentHP.Value);

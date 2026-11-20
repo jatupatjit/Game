@@ -128,7 +128,7 @@ namespace CoopGame.Network
 
         private void Update()
         {
-            if (Keyboard.current != null && Keyboard.current.tabKey.wasPressedThisFrame)
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Scoreboard))
                 _hudVisible = !_hudVisible;
 
             NetworkManager manager = NetworkManager.Singleton;

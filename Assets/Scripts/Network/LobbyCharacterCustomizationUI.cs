@@ -332,13 +332,22 @@ namespace CoopGame.Network
             // Do not steal typing from room-code input fields.
             var selected = UnityEngine.EventSystems.EventSystem.current?.currentSelectedGameObject;
             if (selected != null && selected.GetComponent<InputField>() != null) return;
-            if (keyboard.cKey.wasPressedThisFrame) { if (IsVisible) Cancel(); else Open(); }
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Wardrobe)) { if (IsVisible) Cancel(); else Open(); }
             else if (IsVisible && keyboard.escapeKey.wasPressedThisFrame) Cancel();
+        }
+
+        /// <summary>Closes the open look panel without saving (another lobby panel is opening).</summary>
+        public static void CancelOpen()
+        {
+            if (!IsVisible) return;
+            var ui = FindAnyObjectByType<LobbyCharacterCustomizationUI>();
+            if (ui != null) ui.Cancel(); else IsVisible = false;
         }
 
         public void Open()
         {
             if (!CanCustomize || PauseMenu.IsPaused || IsVisible) return;
+            UIPanels.CloseOthers(UIPanels.Panel.Wardrobe);
             _draft = PlayerAppearance.LocalInstance != null ? PlayerAppearance.LocalInstance.CurrentFace : PlayerAppearance.SavedFace;
             _draftColor = PlayerAppearance.LocalInstance != null ? PlayerAppearance.LocalInstance.CurrentColor : PlayerAppearance.SavedColor;
             if (_nicknameInput != null) _nicknameInput.SetTextWithoutNotify(PlayerExpeditionState.SavedNickname);
@@ -582,7 +591,7 @@ namespace CoopGame.Network
             }
 
             // 4) Hat: hats bought in the shop (K) can be worn here; ones not bought yet show their price.
-            var hatTitle = Label(content.transform, "หมวก (ซื้อเพิ่มที่ร้าน K)", 22, new Vector2(580, 34), new Vector2(column, -146));
+            var hatTitle = Label(content.transform, "หมวก (ซื้อเพิ่มที่ร้านแต่งตัว)", 22, new Vector2(580, 34), new Vector2(column, -146));
             hatTitle.alignment = TextAnchor.MiddleLeft;
             UITheme.StyleCuteText(hatTitle);
             UITheme.SetWeight(hatTitle, UITheme.FontMedium);
@@ -612,7 +621,7 @@ namespace CoopGame.Network
             _status = Label(content.transform, "", 15, new Vector2(610, 32), new Vector2(column, -240));
             _status.gameObject.SetActive(false);
             UITheme.StyleButton(Button(content.transform, "ยกเลิก", new Vector2(270, 70), new Vector2(column - 145, -312), Cancel), UIButtonStyle.White);
-            UITheme.StyleButton(Button(content.transform, "บันทึก", new Vector2(270, 70), new Vector2(column + 145, -312), Save), UIButtonStyle.Pink);
+            UITheme.StyleButton(Button(content.transform, "บันทึก", new Vector2(270, 70), new Vector2(column + 145, -312), Save), UIButtonStyle.White);
             _panel.SetActive(false);
         }
 
@@ -655,7 +664,7 @@ namespace CoopGame.Network
             iconImg.color = Color.white;
             iconImg.raycastTarget = false;
 
-            var label = Label(go.transform, "เปลี่ยนลุค [C]", 26, new Vector2(196, 48), new Vector2(26, 5));
+            var label = Label(go.transform, "เปลี่ยนลุค [" + GameSettings.KeyName(BindRole.Wardrobe) + "]", 26, new Vector2(196, 48), new Vector2(26, 5));
             label.font = UITheme.FontMedium;
             label.color = Color.white;
             ThaiTextMeshProBridge.Attach(label);

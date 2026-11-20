@@ -7,7 +7,7 @@ namespace CoopGame.Network
 {
     /// <summary>
     /// Gear with small stat bonuses (stats only for now, George 2026-11-09): one pair of gloves and one pair of
-    /// glasses can be worn. Bought with coins in the Lobby shop (K, shown on the left beside the hat shop); owned
+    /// glasses can be worn. Bought with coins at the Lobby gear stall (E at <see cref="ShopStall"/>); owned
     /// and worn gear is saved in <see cref="SaveSystem"/>. Bonuses act on the owner's stamina, which the owner
     /// simulates (<see cref="PlayerExpeditionState"/> FixedUpdate multiplies them in).
     /// </summary>
@@ -104,8 +104,8 @@ namespace CoopGame.Network
             _root = new GameObject("Gear", typeof(RectTransform));
             _root.transform.SetParent(transform, false);
             var rootRect = (RectTransform)_root.transform;
-            rootRect.anchorMin = rootRect.anchorMax = new Vector2(0f, .5f);
-            rootRect.anchoredPosition = new Vector2(330f, 0f);
+            rootRect.anchorMin = rootRect.anchorMax = new Vector2(.5f, .5f);
+            rootRect.anchoredPosition = Vector2.zero;
             var card = new GameObject("Card", typeof(RectTransform), typeof(Image));
             card.transform.SetParent(_root.transform, false);
             ((RectTransform)card.transform).sizeDelta = new Vector2(560f, 760f);
@@ -125,7 +125,7 @@ namespace CoopGame.Network
                 button.onClick.AddListener(() => OnClick(index));
                 _buttons.Add(button);
             }
-            var hint = UITheme.MakeText(card.transform, "Hint", "ใส่ได้ถุงมือ 1 คู่ + แว่น 1 อัน • กดอันที่ใส่อยู่เพื่อถอด", 19, UITextRole.Secondary, TextAnchor.MiddleCenter);
+            var hint = UITheme.MakeText(card.transform, "Hint", "ใส่ได้ถุงมือ 1 คู่ + แว่น 1 อัน • กดอันที่ใส่อยู่เพื่อถอด • Esc ปิด", 19, UITextRole.Secondary, TextAnchor.MiddleCenter);
             UITheme.StyleCuteText(hint);
             ((RectTransform)hint.transform).sizeDelta = new Vector2(520f, 34f);
             ((RectTransform)hint.transform).anchoredPosition = new Vector2(0f, -310f);
@@ -140,11 +140,30 @@ namespace CoopGame.Network
             else state.BuyGearRpc((byte)index);
         }
 
+        /// <summary>Opened by the gear stall in the Lobby (George 2026-11-20); its own window, no longer beside the hat shop.</summary>
+        public static void SetOpen(bool open)
+        {
+            if (_root == null) return;
+            if (open) UIPanels.CloseOthers(UIPanels.Panel.Gear);
+            open = open && UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == CoopGame.Player.PlayerAppearance.LobbySceneName && Local() != null;
+            if (_root.activeSelf == open) return;
+            if (!open) UIPanels.MarkClosed();
+            _root.SetActive(open);
+            Cursor.lockState = open ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = open;
+            if (open) _nextRefresh = 0;
+        }
+
+        private static int _nextRefresh;
+
         private void Update()
         {
-            bool open = Cosmetics.IsOpen;
-            if (_root.activeSelf != open) _root.SetActive(open);
-            if (!open || Time.frameCount % 10 != 0) return;
+            bool open = _root.activeSelf;
+            if (open && (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != CoopGame.Player.PlayerAppearance.LobbySceneName || Local() == null)) { SetOpen(false); return; }
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            if (open && keyboard != null && keyboard.escapeKey.wasPressedThisFrame) { SetOpen(false); return; }
+            if (!open || Time.frameCount < _nextRefresh) return;
+            _nextRefresh = Time.frameCount + 10;
             var state = Local();
             int coins = state != null ? state.Coins.Value : 0;
             _wallet.text = "เงิน " + coins + "   •   Lv." + PlayerProgress.Level;

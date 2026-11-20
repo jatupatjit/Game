@@ -25,7 +25,7 @@ namespace CoopGame.Network
             "กด O เพื่อดูมุมกล้องของเพื่อน",
             "กด M ใน Lobby เพื่อเลือกด่านและความยาก",
             "ความยากสูงขึ้น ได้เงินและ XP มากขึ้น (สูงสุด x2)",
-            "ถุงมือหนังช่วยให้ยกลังเหนื่อยช้าลง ซื้อได้ที่ร้าน (K)",
+            "ถุงมือหนังช่วยให้ยกลังเหนื่อยช้าลง ซื้อได้ที่ร้านอุปกรณ์ในล็อบบี้",
             "ลังไก่จะดิ้น จับให้แน่นแล้วเดินช้าๆ",
             "ลังซ้อนสูงไม่ชอบการออกตัวแรงๆ",
             "ลังระเบิด... อย่าทำหล่นใกล้เพื่อน",
@@ -100,11 +100,22 @@ namespace CoopGame.Network
             var walker = new GameObject("Carrier", typeof(RectTransform), typeof(Image));
             _walker = (RectTransform)walker.transform;
             _walker.SetParent(_orbit, false);
-            _walker.pivot = new Vector2(.34f, .05f); // the feet (left part of the icon) stand on the path
-            _walker.sizeDelta = new Vector2(70f, 67f); // IconCarrier 174x166
             var icon = walker.GetComponent<Image>();
             _walkerIcon = icon;
-            icon.sprite = Resources.Load<Sprite>("UIKit/IconCarrier");
+            // George's hand-drawn carrier (faces left, so mirrored to walk right); old UIKit icon as fallback.
+            icon.sprite = Resources.Load<Sprite>("UI/HandDrawn/PoseCarry");
+            if (icon.sprite != null)
+            {
+                _walker.pivot = new Vector2(.5f, .04f); // feet at the bottom middle of PoseCarry 472x512
+                _walker.sizeDelta = new Vector2(110f, 120f);
+                _walker.localScale = new Vector3(-1f, 1f, 1f);
+            }
+            else
+            {
+                _walker.pivot = new Vector2(.34f, .05f); // the feet (left part of the icon) stand on the path
+                _walker.sizeDelta = new Vector2(70f, 67f); // IconCarrier 174x166
+                icon.sprite = Resources.Load<Sprite>("UIKit/IconCarrier");
+            }
             icon.preserveAspect = true;
             icon.raycastTarget = false;
             if (icon.sprite == null) icon.color = UITheme.Primary;

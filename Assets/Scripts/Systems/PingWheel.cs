@@ -67,13 +67,27 @@ namespace CoopGame.Network
                 var label = UITheme.MakeText(rect, "Label", Slices[i], 26, UITextRole.Primary, TextAnchor.MiddleCenter);
                 UITheme.AddOutline(label);
                 ((RectTransform)label.transform).sizeDelta = rect.sizeDelta;
+                var icon = PlayerPings.Icon(i);
+                if (icon != null)
+                {
+                    // Hand-drawn icon above the slice label.
+                    var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+                    iconGo.transform.SetParent(rect, false);
+                    var iconRect = (RectTransform)iconGo.transform;
+                    iconRect.sizeDelta = new Vector2(84f, 84f);
+                    iconRect.anchoredPosition = new Vector2(0f, 68f);
+                    var iconImage = iconGo.GetComponent<Image>();
+                    iconImage.sprite = icon;
+                    iconImage.preserveAspect = true;
+                    iconImage.raycastTarget = false;
+                }
                 if (i < PlayerPings.Labels.Length) label.color = PlayerPings.Colors[i];
             }
             _wheel.SetActive(false);
         }
 
         private static bool Blocked() => PauseMenu.IsPaused || DevCheatMenu.IsOpen || PhotoMode.IsOn || TitleScreen.IsVisible ||
-            ExpeditionHUD.BlocksGameplayInput || MissionFailUI.IsVisible || LevelMap.IsOpen || Cosmetics.IsOpen ||
+            ExpeditionHUD.BlocksGameplayInput || MissionFailUI.IsVisible || LevelMap.IsOpen || UIPanels.ShopOpen ||
             LobbyCharacterCustomizationUI.IsVisible || SpectateMode.IsOn;
 
         private void Update()

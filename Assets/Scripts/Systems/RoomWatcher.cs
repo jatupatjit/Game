@@ -56,7 +56,7 @@ namespace CoopGame.Network
             UITheme.StyleCuteText(_message);
             ((RectTransform)_message.transform).sizeDelta = new Vector2(740f, 140f);
             ((RectTransform)_message.transform).anchoredPosition = new Vector2(0f, 30f);
-            _rejoin = UITheme.MakeButton(card.transform, "Rejoin", "กลับเข้าห้อง", UIButtonStyle.Pink, new Vector2(300f, 80f), 28);
+            _rejoin = UITheme.MakeButton(card.transform, "Rejoin", "กลับเข้าห้อง", UIButtonStyle.White, new Vector2(300f, 80f), 28);
             ((RectTransform)_rejoin.transform).anchoredPosition = new Vector2(-170f, -120f);
             _rejoin.onClick.AddListener(Rejoin);
             var leave = UITheme.MakeButton(card.transform, "Leave", "กลับ Lobby", UIButtonStyle.White, new Vector2(300f, 80f), 28);

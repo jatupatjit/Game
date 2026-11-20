@@ -81,6 +81,8 @@ namespace CoopGame.Network
         {
             var map = FindAnyObjectByType<LevelMap>();
             if (map == null) return;
+            if (open) UIPanels.CloseOthers(UIPanels.Panel.Map);
+            else if (IsOpen) UIPanels.MarkClosed();
             IsOpen = open && SceneManager.GetActiveScene().name == Lobby;
             map._root.SetActive(IsOpen);
             if (IsOpen) map.Refresh();
@@ -248,7 +250,7 @@ namespace CoopGame.Network
             if (IsOpen && !inLobby) SetOpen(false);
             if (IsOpen && Time.frameCount % 15 == 0) RefreshDifficulty();
             if (keyboard == null || !inLobby || PauseMenu.IsPaused || TitleScreen.IsVisible || PhotoMode.IsOn) return;
-            if (keyboard.mKey.wasPressedThisFrame) SetOpen(!IsOpen);
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Map)) SetOpen(!IsOpen);
             else if (IsOpen && keyboard.escapeKey.wasPressedThisFrame) SetOpen(false);
         }
     }

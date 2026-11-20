@@ -170,13 +170,13 @@ namespace CoopGame.Network
                 UITheme.SetPreferredHeight(text.gameObject, 0f);
             }
 
-            CuteButton(_hostRoomMenuButton, UIButtonStyle.Pink);
+            CuteButton(_hostRoomMenuButton, UIButtonStyle.White);
             CuteButton(_settingsMenuButton, UIButtonStyle.White);
             CuteButton(_quitGameButton, UIButtonStyle.White);
-            CuteButton(_hostButton, UIButtonStyle.Pink);
+            CuteButton(_hostButton, UIButtonStyle.White);
             CuteButton(_joinButton, UIButtonStyle.Blue);
             CuteButton(_backFromHostRoomButton, UIButtonStyle.White, CuteSmallButtonHeight);
-            CuteButton(_confirmJoinButton, UIButtonStyle.Pink);
+            CuteButton(_confirmJoinButton, UIButtonStyle.White);
             CuteButton(_backFromJoinButton, UIButtonStyle.White, CuteSmallButtonHeight);
             CuteButton(_backFromSettingsButton, UIButtonStyle.White, CuteSmallButtonHeight);
             CuteButton(_cancelConnectingButton, UIButtonStyle.White, CuteSmallButtonHeight);

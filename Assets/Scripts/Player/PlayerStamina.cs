@@ -172,7 +172,7 @@ namespace CoopGame.Player
 
         private void ApplyDrain(float amount)
         {
-            if (_currentStamina <= 0f || CoopGame.Network.DevCheats.InfiniteStamina) return;
+            if (_currentStamina <= 0f || CoopGame.Network.DevCheats.InfiniteStamina || CoopGame.Weather.WeatherState.FreeStaminaAt(transform.position)) return;
 
             float prev = _currentStamina;
             _currentStamina = Mathf.Max(0f, _currentStamina - amount);

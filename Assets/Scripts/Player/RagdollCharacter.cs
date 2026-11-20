@@ -493,7 +493,7 @@ namespace CoopGame.Player
         private bool Blocked =>
             CoopGame.Network.PauseMenu.IsPaused || MissionFailUI.IsVisible || CoopGame.Network.ExpeditionHUD.BlocksGameplayInput ||
             CoopGame.Network.PhotoMode.IsOn || CoopGame.Network.TitleScreen.IsVisible ||
-            CoopGame.Network.LevelMap.IsOpen || CoopGame.Network.Cosmetics.IsOpen;
+            CoopGame.Network.LevelMap.IsOpen || CoopGame.Network.UIPanels.ShopOpen;
 
         private bool Exhausted => _stamina != null && _stamina.IsExhausted;
         private float Card(CoopGame.Network.CardEffect effect) => _expedition != null ? _expedition.CardMagnitude(effect) : 1f;
@@ -662,6 +662,7 @@ namespace CoopGame.Player
                 // Carrying, no input: brake firmly so the body stops where the key was let go instead of coasting.
                 if (carryHold && coasting) hold = -flatVel * CarryBrake;
                 Vector3 slip = HeavySoloSlip(moving, bodyFacing, ref gain, ref hold);
+                if (IsGrounded) gain *= CoopGame.Weather.WeatherState.Traction; // rain event: slippery feet
                 accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush + slip;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
                 KeepUpperBodyOutOfCargo();

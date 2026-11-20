@@ -101,14 +101,14 @@ namespace CoopGame.Network
         }
 
         private static bool Blocked() => PauseMenu.IsPaused || TitleScreen.IsVisible || PhotoMode.IsOn || DevCheatMenu.IsOpen ||
-                                         LevelMap.IsOpen || Cosmetics.IsOpen || LobbyCharacterCustomizationUI.IsVisible;
+                                         LevelMap.IsOpen || UIPanels.ShopOpen || LobbyCharacterCustomizationUI.IsVisible;
 
         private void Update()
         {
             var keyboard = Keyboard.current;
             var manager = NetworkManager.Singleton;
             bool inSession = manager != null && manager.IsListening;
-            bool want = keyboard != null && keyboard.tabKey.isPressed && inSession && !Blocked();
+            bool want = CoopGame.Network.GameSettings.Held(CoopGame.Network.BindRole.Scoreboard) && inSession && !Blocked();
             if (want != IsOpen)
             {
                 IsOpen = want;

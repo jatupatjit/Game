@@ -138,6 +138,7 @@ namespace CoopGame.Network
             BuildStars(card.transform);
             UITheme.AddCuteTape(card.transform, 4, new Vector2(0f, 0f), new Vector2(24f, 40f), 35f, 104f);
             UITheme.AddCuteTape(card.transform, 6, new Vector2(1f, 1f), new Vector2(-30f, -46f), -30f, 100f);
+            UITheme.AddHandDrawnSticker(card.transform, "PoseCheer", new Vector2(0f, .5f), new Vector2(-70f, 30f), 8f, 240f);
 
             _hpValue = StatRow(card.transform, "พัสดุ HP");
             _timeValue = StatRow(card.transform, "เวลา");
@@ -162,7 +163,7 @@ namespace CoopGame.Network
             var buttonsRect = (RectTransform)buttons.transform;
             buttonsRect.anchorMin = buttonsRect.anchorMax = new Vector2(.5f, 0f);
             buttonsRect.sizeDelta = Vector2.zero;
-            _continue = UITheme.MakeButton(buttons.transform, "Continue", "เดินต่อ / ENTER", UIButtonStyle.Pink, new Vector2(350f, 92f), 32);
+            _continue = UITheme.MakeButton(buttons.transform, "Continue", "เดินต่อ / ENTER", UIButtonStyle.White, new Vector2(350f, 92f), 32);
             _toLobby = UITheme.MakeButton(buttons.transform, "ToLobby", "กลับ Lobby พร้อมกัน", UIButtonStyle.White, new Vector2(350f, 92f), 30);
             _toLobbyLabel = _toLobby.GetComponentInChildren<Text>(true);
             ((RectTransform)_continue.transform).anchoredPosition = new Vector2(0f, ButtonY);

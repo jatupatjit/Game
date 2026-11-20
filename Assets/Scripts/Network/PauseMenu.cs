@@ -308,6 +308,7 @@ namespace CoopGame.Network
             }
             ApplyKitLabels();
             ApplyCuteLook();
+            ApplyCuteConfirmDialog();
         }
 
         /// <summary>Cute kit pause card (Canva page 69): beige card, "PAUSE" on a wooden plank, glossy buttons, tapes.</summary>
@@ -333,14 +334,73 @@ namespace CoopGame.Network
                 UITheme.SetWeight(plank, UITheme.FontBold);
                 UITheme.AddCuteTape(_pausePanel.transform, 4, Vector2.zero, new Vector2(22f, 38f), 35f, 104f);
                 UITheme.AddCuteTape(_pausePanel.transform, 6, new Vector2(1f, 0f), new Vector2(-22f, 38f), -35f, 104f);
+                UITheme.AddHandDrawnSticker(_pausePanel.transform, "PoseRest", new Vector2(1f, 0f), new Vector2(40f, 60f), 0f, 250f);
             }
-            CuteButton(_continueButton, UIButtonStyle.Pink, 88f);
+            CuteButton(_continueButton, UIButtonStyle.White, 88f);
             CuteButton(_settingsButton, UIButtonStyle.White, 80f);
             CuteButton(_quitToMenuButton, UIButtonStyle.White, 80f);
             SetButtonLabel(_quitToMenuButton, "ออกจากเกม");
         }
 
         private const float CuteCardWidth = 560f;
+
+        // George 2026-11-17: the quit confirm was the old small English box. Same cute card as the pause menu,
+        // Thai text, only two choices (George: to close the game, go back to the main menu first): keep playing or
+        // back to the main menu. White buttons that turn pink under the mouse, like the Settings tabs.
+        private Text _confirmSubtext;
+
+        private void ApplyCuteConfirmDialog()
+        {
+            if (_confirmDialog == null) return;
+            var card = (RectTransform)_confirmDialog.transform;
+            UITheme.StyleCuteCard(_confirmDialog.GetComponent<Image>());
+            card.sizeDelta = new Vector2(CuteCardWidth, 430f);
+            if (_confirmDialog.TryGetComponent(out VerticalLayoutGroup layout))
+            {
+                layout.padding = new RectOffset(60, 60, 96, 48);
+                layout.spacing = 16f;
+                layout.childControlHeight = true;
+                layout.childForceExpandHeight = false;
+            }
+            if (_confirmDialog.transform.Find("CutePlank") == null)
+            {
+                Text plank = UITheme.MakeCutePlank(_confirmDialog.transform, "ออกจากด่าน?", 360f, 100f, 0f, 40);
+                UITheme.SetWeight(plank, UITheme.FontBold);
+            }
+            Transform title = _confirmDialog.transform.Find("ConfirmTitle");
+            if (title != null) title.gameObject.SetActive(false);
+            Transform sub = _confirmDialog.transform.Find("ConfirmSubtext");
+            if (sub != null && sub.TryGetComponent(out _confirmSubtext))
+            {
+                _confirmSubtext.fontStyle = FontStyle.Normal;
+                _confirmSubtext.fontSize = 24;
+                _confirmSubtext.color = UITheme.CuteInk;
+                _confirmSubtext.horizontalOverflow = HorizontalWrapMode.Wrap;
+                if (sub.TryGetComponent(out LayoutElement subElement)) { subElement.preferredHeight = 64f; subElement.minHeight = 64f; }
+            }
+
+            // Buttons stacked like the pause card (Thai labels are too long for one row): keep playing first.
+            Transform row = _confirmDialog.transform.Find("DialogBtnRow");
+            foreach (Button button in new[] { _cancelQuitButton, _confirmQuitButton })
+                if (button != null) { button.transform.SetParent(_confirmDialog.transform, false); button.transform.SetAsLastSibling(); }
+            if (row != null) row.gameObject.SetActive(false);
+            CuteButton(_cancelQuitButton, UIButtonStyle.White, 76f);
+            CuteButton(_confirmQuitButton, UIButtonStyle.White, 76f);
+            foreach (Button button in new[] { _cancelQuitButton, _confirmQuitButton })
+                if (button != null && !button.TryGetComponent(out LayoutElement _)) button.gameObject.AddComponent<LayoutElement>().preferredHeight = 76f;
+            SetButtonLabel(_cancelQuitButton, "เล่นต่อ");
+            SetButtonLabel(_confirmQuitButton, "กลับหน้าหลัก");
+        }
+
+        private void RefreshConfirmText()
+        {
+            if (_confirmSubtext == null) return;
+            var nm = NetworkManager.Singleton;
+            bool hostWithFriends = nm != null && nm.IsServer && nm.ConnectedClientsIds.Count > 1;
+            _confirmSubtext.text = hostWithFriends
+                ? "ความคืบหน้าในด่านนี้จะหายไป\nคุณเป็น Host เพื่อนทุกคนจะหลุดออกด้วย"
+                : "ความคืบหน้าในด่านนี้จะหายไป";
+        }
 
         private static void CuteButton(Button button, UIButtonStyle style, float height)
         {
@@ -450,7 +510,7 @@ namespace CoopGame.Network
         private void Update()
         {
             if (_isPaused) RefreshRoomCodeSection();
-            if (LobbyCharacterCustomizationUI.BlocksPause || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
+            if (LobbyCharacterCustomizationUI.BlocksPause || UIPanels.BlocksPause || CoopGame.CarrySystem.MissionFailUI.IsVisible) return;
             if (SettingsMenu.IsOpen || SettingsMenu.ClosedFrame == Time.frameCount) return; // its own Esc closes it
             bool escPressed = UnityEngine.InputSystem.Keyboard.current != null &&
                               UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame;
@@ -606,6 +666,7 @@ namespace CoopGame.Network
         private void ShowConfirmDialog()
         {
             if (_pausePanel != null) _pausePanel.SetActive(false);
+            RefreshConfirmText();
             if (_confirmDialog != null) _confirmDialog.SetActive(true);
         }
 

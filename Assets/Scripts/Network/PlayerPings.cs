@@ -19,6 +19,16 @@ namespace CoopGame.Network
         public static readonly string[] Labels = { "มานี่!", "ช่วยยก!", "ระวัง!", "รอก่อน!", "ไปทางนี้!" };
         public static readonly Color[] Colors = { new Color(.35f, .8f, 1f), new Color(.45f, 1f, .45f), new Color(1f, .4f, .3f), new Color(1f, .85f, .3f), new Color(.8f, .55f, 1f) };
         private const float PinSeconds = 4f, MaxDistance = 80f, Cooldown = .4f;
+        private static readonly string[] IconNames = { "PingHere", "PingHelp", "PingDanger" };
+        private static readonly Sprite[] IconCache = new Sprite[3];
+
+        /// <summary>George's hand-drawn icon for Here / Help / Danger (Resources/UI/HandDrawn), else null.</summary>
+        public static Sprite Icon(int kind)
+        {
+            if (kind < 0 || kind >= IconNames.Length) return null;
+            if (IconCache[kind] == null) IconCache[kind] = Resources.Load<Sprite>("UI/HandDrawn/" + IconNames[kind]);
+            return IconCache[kind];
+        }
         private float _nextPing;
 
         /// <summary>For tests: pins shown on this machine so far.</summary>
@@ -56,8 +66,8 @@ namespace CoopGame.Network
         {
             var keyboard = Keyboard.current;
             if (keyboard == null || PauseMenu.IsPaused || DevCheatMenu.IsOpen || PhotoMode.IsOn || TitleScreen.IsVisible || ExpeditionHUD.BlocksGameplayInput || MissionFailUI.IsVisible) return;
-            int kind = keyboard.zKey.wasPressedThisFrame ? Here : keyboard.xKey.wasPressedThisFrame ? Help : keyboard.tKey.wasPressedThisFrame ? Danger : -1;
-            bool wave = keyboard.gKey.wasPressedThisFrame;
+            int kind = CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.PingHere) ? Here : CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.PingHelp) ? Help : CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.PingWarn) ? Danger : -1;
+            bool wave = CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Wave);
             if (kind < 0 && !wave) return;
             var ragdoll = LocalRagdoll(out var state);
             if (wave && ragdoll != null) ragdoll.PlayEmote(RagdollCharacter.EmoteWave, 2f);
@@ -102,17 +112,30 @@ namespace CoopGame.Network
             var marker = new GameObject("Marker", typeof(RectTransform), typeof(Image));
             marker.transform.SetParent(root.transform, false);
             var markerRect = (RectTransform)marker.transform;
-            markerRect.sizeDelta = new Vector2(46f, 46f);
-            markerRect.anchoredPosition = new Vector2(0f, -55f);
-            markerRect.localRotation = Quaternion.Euler(0f, 0f, 45f);
-            marker.GetComponent<Image>().color = Colors[kind];
+            var markerImage = marker.GetComponent<Image>();
+            var icon = Icon(kind);
+            if (icon != null)
+            {
+                // Hand-drawn icon instead of the diamond; the label sits above it.
+                markerImage.sprite = icon;
+                markerImage.preserveAspect = true;
+                markerRect.sizeDelta = new Vector2(120f, 120f);
+                markerRect.anchoredPosition = new Vector2(0f, -40f);
+            }
+            else
+            {
+                markerRect.sizeDelta = new Vector2(46f, 46f);
+                markerRect.anchoredPosition = new Vector2(0f, -55f);
+                markerRect.localRotation = Quaternion.Euler(0f, 0f, 45f);
+                markerImage.color = Colors[kind];
+            }
             var label = UITheme.MakeText(root.transform, "Label", Labels[kind] + "\n<size=26>" + from + "</size>", 44, UITextRole.Primary, TextAnchor.MiddleCenter);
             label.supportRichText = true;
             label.color = Colors[kind];
             UITheme.AddOutline(label);
             var labelRect = (RectTransform)label.transform;
             labelRect.sizeDelta = new Vector2(320f, 110f);
-            labelRect.anchoredPosition = new Vector2(0f, 20f);
+            labelRect.anchoredPosition = new Vector2(0f, icon != null ? 70f : 20f);
             root.AddComponent<PingPin>().Init(PinSeconds);
             GameplayFeedback.Play(GameplayFeedback.Cue.Click, point);
         }

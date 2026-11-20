@@ -156,6 +156,7 @@ namespace CoopGame.CarrySystem
             title.transform.parent.GetComponent<Image>().color = new Color(1f, 0.62f, 0.62f); // wood tinted red
             UITheme.AddCuteTape(panel.transform, 3, new Vector2(0f, 1f), new Vector2(26f, -44f), 30f, 100f);
             UITheme.AddCuteTape(panel.transform, 7, new Vector2(1f, 0f), new Vector2(-28f, 42f), -30f, 100f);
+            UITheme.AddHandDrawnSticker(panel.transform, "PoseDizzy", new Vector2(0f, .5f), new Vector2(-90f, -70f), 0f, 270f);
 
             _hpValue = CoopGame.Network.MissionCompleteUI.StatRow(panel.transform, "พัสดุ HP");
             _hpValue.color = UITheme.Danger;
@@ -171,7 +172,7 @@ namespace CoopGame.CarrySystem
             RectTransform buttonsRect = buttons.GetComponent<RectTransform>();
             buttonsRect.anchorMin = buttonsRect.anchorMax = new Vector2(.5f, 0f);
             buttonsRect.sizeDelta = Vector2.zero;
-            _restartButton = UITheme.MakeButton(buttons.transform, "Restart Level", "ลองใหม่", UIButtonStyle.Pink, new Vector2(320f, 92f), 32);
+            _restartButton = UITheme.MakeButton(buttons.transform, "Restart Level", "ลองใหม่", UIButtonStyle.White, new Vector2(320f, 92f), 32);
             _restartButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-175f, -34f);
             _restartButton.onClick.AddListener(OnRestartClicked);
             _lobbyButton = UITheme.MakeButton(buttons.transform, "Back To Lobby", "กลับ Lobby", UIButtonStyle.White, new Vector2(320f, 92f), 32);

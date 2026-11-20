@@ -188,6 +188,9 @@ namespace CoopGame.Network
                 bool you = joined && i == selfIndex;
                 _rowBg[i].sprite = UITheme.CutePlayerRowSprite(you);
                 _rowIcon[i].sprite = UITheme.CutePlayerIcon(joined);
+                _rowIcon[i].color = Color.white;
+                _rowFace[i].sprite = UITheme.FaceForClient((ulong)i);
+                _rowFace[i].color = Color.white;
                 _rowFace[i].enabled = joined;
                 _rowName[i].text = !joined ? "Waiting..." : you ? "You" : StripHost(names[i]);
                 _rowName[i].color = joined ? UITheme.CuteInk : UITheme.CuteInkSoft;
@@ -212,13 +215,28 @@ namespace CoopGame.Network
                 string name = joined ? p.DisplayName.Value.ToString() : "";
                 if (joined && string.IsNullOrEmpty(name)) name = $"Player {p.OwnerClientId + 1}";
                 _rowBg[i].sprite = UITheme.CutePlayerRowSprite(you);
+                // Joined rows show the face filled with the character colour picked in Customize (replicated via
+                // PlayerAppearance). The colour stays inside the face's own outline: the pink ring is hidden.
+                var look = joined ? p.GetComponent<CoopGame.Player.PlayerAppearance>() : null;
                 _rowIcon[i].sprite = UITheme.CutePlayerIcon(joined);
+                _rowIcon[i].color = look != null ? Color.clear : Color.white;
+                _rowFace[i].sprite = look != null ? UITheme.Kit("FaceGrey") : UITheme.FaceForClient((ulong)i);
+                _rowFace[i].color = look != null ? Color.Lerp(look.CurrentBodyColor, Color.white, 0.15f) : Color.white;
+                SetFaceSize(_rowFace[i], look != null ? 34f : 26f);
                 _rowFace[i].enabled = joined;
                 _rowName[i].text = !joined ? "Waiting..." : you ? name + " (You)" : name;
                 _rowName[i].color = joined ? UITheme.CuteInk : UITheme.CuteInkSoft;
                 _rowHost[i].enabled = joined && p.OwnerClientId == NetworkManager.ServerClientId;
             }
             return true;
+        }
+
+        /// <summary>Keeps the face centred in its 36 px icon slot at the given size.</summary>
+        private static void SetFaceSize(Image face, float size)
+        {
+            var rect = face.rectTransform;
+            rect.sizeDelta = new Vector2(size, size);
+            rect.anchoredPosition = new Vector2((36f - size) * 0.5f, -(36f - size) * 0.5f);
         }
 
         private static string StripHost(string name) =>

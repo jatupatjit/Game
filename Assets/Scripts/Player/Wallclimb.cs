@@ -213,6 +213,15 @@ public class Wallclimb : NetworkBehaviour
     private float _hangShift = OneHandSideOffset;
     private const float OneHandSideOffset = 0.20f;  // a one-hand hang sits this far toward the free hand
 
+    /// <summary>Owner: where this hand holds the wall now (false while it holds nothing).</summary>
+    public bool TryGetGripPoint(bool left, out Vector3 point, out Vector3 normal)
+    {
+        bool gripping = left ? _leftHandGripping : _rightHandGripping;
+        point = left ? _leftGripPoint : _rightGripPoint;
+        normal = left ? _leftGripNormal : _rightGripNormal;
+        return IsOwner && gripping;
+    }
+
     public Vector3 LeftGripNormal => _leftGripNormal;
     public Vector3 RightGripNormal => _rightGripNormal;
 

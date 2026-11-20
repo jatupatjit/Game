@@ -169,7 +169,7 @@ namespace CoopGame.Network
             bool canView = !modal && !summary && !selecting && _player.Card.Value != 0 && !PauseMenu.IsPaused && !MissionFailUI.IsVisible;
             if (Keyboard.current != null)
             {
-                if (canView && Keyboard.current.hKey.wasPressedThisFrame) _viewOpen = !_viewOpen;
+                if (canView && CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Cards)) _viewOpen = !_viewOpen;
                 else if (_viewOpen && Keyboard.current.escapeKey.wasPressedThisFrame) { _viewOpen = false; EscConsumedFrame = Time.frameCount; }
             }
             if (_viewOpen && !canView) _viewOpen = false;
@@ -298,12 +298,12 @@ namespace CoopGame.Network
             if (localCarry != null && localCarry.PlacementFeedback != null)
                 detail = localCarry.PlacementFeedback;
             if (_lever != null && _lever.IsLocalNear && _mission.Phase.Value < 2)
-                detail = $"กด E ค้าง ประตูจะเปิด {_lever.OpenDurationSeconds:0.#} วินาที\nให้เพื่อนขนลังผ่าน แล้วค่อยตามไป";
+                detail = $"กด {GameSettings.KeyName(BindRole.Interact)} ค้าง ประตูจะเปิด {_lever.OpenDurationSeconds:0.#} วินาที\nให้เพื่อนขนลังผ่าน แล้วค่อยตามไป";
             if (_mission.Phase.Value < 2)
                 for (int i = 0; i < _climbGates.Length; i++)
                     if (_climbGates[i] != null && !_climbGates[i].IsOpen && _climbGates[i].IsLocalNear)
                     {
-                        detail = "กด E เปิดประตูให้เพื่อน\nเปิดแล้ว ลงไปช่วยขนลังได้เลย";
+                        detail = "กด " + GameSettings.KeyName(BindRole.Interact) + " เปิดประตูให้เพื่อน\nเปิดแล้ว ลงไปช่วยขนลังได้เลย";
                         break;
                     }
             if (string.IsNullOrEmpty(detail) && _mission.Cargo != null && _mission.Cargo.SoloAssistActive && _mission.Phase.Value < 2)
@@ -773,14 +773,14 @@ namespace CoopGame.Network
             var viewFit = viewHint.AddComponent<ContentSizeFitter>();
             viewFit.horizontalFit = viewFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             // "V มุมมอง" sits here too (George 2026-11-05: on the left it ran into the stamina bar).
-            KeyCap(viewHint.transform, "V", 32f, 35f);
+            KeyCap(viewHint.transform, GameSettings.KeyName(BindRole.CameraView), 32f, 35f);
             var cameraLabel = UITheme.MakeText(viewHint.transform, "Hint V", "มุมมอง", 20, UITextRole.Primary);
             cameraLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             UITheme.AddOutline(cameraLabel);
             var cameraElement = cameraLabel.gameObject.AddComponent<LayoutElement>();
             cameraElement.preferredHeight = 35f;
             cameraElement.minWidth = cameraLabel.preferredWidth + 18f;
-            KeyCap(viewHint.transform, "H", 32f, 35f);
+            KeyCap(viewHint.transform, GameSettings.KeyName(BindRole.Cards), 32f, 35f);
             var viewLabel = UITheme.MakeText(viewHint.transform, "Hint H", "ดูการ์ด", 20, UITextRole.Primary);
             viewLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             UITheme.AddOutline(viewLabel);
@@ -819,7 +819,7 @@ namespace CoopGame.Network
             _cards = new GameObject("Cards", typeof(RectTransform)); _cards.transform.SetParent(panel.transform, false);
             for (int slot = 0; slot < 3; slot++)
                 CardButton(_cards.transform, slot, new Vector2((slot - 1) * CardSpacing, _cardsY));
-            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -420), new Vector2(380, 96), ConfirmCard, UIButtonStyle.Pink);
+            _confirmCard = Button(_cards.transform, "เลือกใบนี้", new Vector2(0, -420), new Vector2(380, 96), ConfirmCard, UIButtonStyle.White);
             foreach (Text label in _confirmCard.GetComponentsInChildren<Text>(true)) label.fontSize = 32;
             // Disabled until a card is picked, but stay fully opaque (the default 60% fade read as broken).
             var confirmColors = _confirmCard.colors;
@@ -837,7 +837,7 @@ namespace CoopGame.Network
             _buy[0] = Button(_shop.transform, "Stamina Elixir — 40 เหรียญ\nฟื้น Stamina เต็ม 1 ครั้ง", new Vector2(-250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(1));
             _buy[1] = Button(_shop.transform, "Cargo Padding — 60 เหรียญ\nลดความเสียหายครั้งถัดไป 50%\nใช้ขณะจับลัง", new Vector2(250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(2));
             bool lastLevel = _mission != null && _mission.Portal == null;
-            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(lastLevel ? -200 : 0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.Pink);
+            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(lastLevel ? -200 : 0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.White);
             if (lastLevel)
             {
                 _toLobby = Button(_shop.transform, "กลับ Lobby พร้อมกัน", new Vector2(200, -170), new Vector2(360, 80), ReturnToLobbyTogether);

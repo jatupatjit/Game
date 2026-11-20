@@ -60,8 +60,8 @@ namespace CoopGame.Network
         {
             var keyboard = Keyboard.current;
             if (keyboard == null) return;
-            if (keyboard.pKey.wasPressedThisFrame && !PauseMenu.IsPaused && !TitleScreen.IsVisible) Toggle(!IsOn);
-            if (IsOn && keyboard.f12Key.wasPressedThisFrame) Capture();
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.PhotoMode) && !PauseMenu.IsPaused && !TitleScreen.IsVisible) Toggle(!IsOn);
+            if (IsOn && CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.PhotoShot)) Capture();
         }
 
         /// <summary>Saves the current frame (no UI) as Photos/photo_yyyyMMdd_HHmmss.png.</summary>

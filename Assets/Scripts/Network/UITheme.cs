@@ -327,6 +327,11 @@ public static class UITheme
     public static void StyleButton(Button button, UIButtonStyle style)
     {
         if (button == null) return;
+        // White buttons turn pink under the mouse (UIHoverPink); switched off first for other styles so it cannot
+        // put its white sprite back over the one set below.
+        bool whiteStyle = style == UIButtonStyle.White || style == UIButtonStyle.WhiteShort;
+        var hoverPink = button.GetComponent<UIHoverPink>();
+        if (hoverPink != null && !whiteStyle) hoverPink.enabled = false;
         Color baseColor = ButtonColor(style);
         Sprite sprite = ButtonSprite(style);
         if (button.targetGraphic is Image image) StyleShape(image, sprite, Color.white);
@@ -353,6 +358,11 @@ public static class UITheme
             RectTransform rect = text.rectTransform;
             if (rect.parent == button.transform && rect.anchorMin == Vector2.zero && rect.anchorMax == Vector2.one)
                 rect.offsetMin = new Vector2(rect.offsetMin.x, IsCute(style) ? 6f : 0f);
+        }
+        if (whiteStyle)
+        {
+            if (hoverPink == null) hoverPink = button.gameObject.AddComponent<UIHoverPink>();
+            hoverPink.Setup(sprite, Kit("CuteButtonPink"), label, TextPrimary);
         }
     }
 
@@ -399,6 +409,30 @@ public static class UITheme
     }
 
     /// <summary>Decorative tape strip (ignored by layouts), anchored on <paramref name="anchor"/> of the parent.</summary>
+    /// <summary>
+    /// George's hand-drawn sticker (Resources/UI/HandDrawn/<paramref name="sprite"/>) hung off a card edge like the tapes:
+    /// ignores the parent's layout, keeps its aspect, never blocks clicks. Returns null if the sprite is missing.
+    /// </summary>
+    public static Image AddHandDrawnSticker(Transform parent, string sprite, Vector2 anchor, Vector2 position, float angle, float size, bool flip = false)
+    {
+        Sprite art = Resources.Load<Sprite>("UI/HandDrawn/" + sprite);
+        if (art == null) return null;
+        var go = new GameObject("Sticker " + sprite, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+        go.transform.SetParent(parent, false);
+        go.GetComponent<LayoutElement>().ignoreLayout = true;
+        var rect = (RectTransform)go.transform;
+        rect.anchorMin = rect.anchorMax = anchor;
+        rect.anchoredPosition = position;
+        rect.sizeDelta = new Vector2(size, size);
+        rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+        if (flip) rect.localScale = new Vector3(-1f, 1f, 1f);
+        Image image = go.GetComponent<Image>();
+        image.sprite = art;
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+        return image;
+    }
+
     public static Image AddCuteTape(Transform parent, int tape, Vector2 anchor, Vector2 position, float angle, float size = 72f)
     {
         var go = new GameObject("Tape" + tape, typeof(RectTransform), typeof(Image), typeof(LayoutElement));

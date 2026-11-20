@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Hats bought with coins in the Lobby shop (K). The host checks and takes the coins
+    /// Hats bought with coins at the Lobby outfit stall (E at <see cref="ShopStall"/>). The host checks and takes the coins
     /// (<see cref="PlayerExpeditionState.BuyHatRpc"/>); owned hats are remembered on the buyer's machine
     /// (PlayerPrefs). The equipped hat and colour are owner-written network values on the player, and every screen
     /// builds the hat from simple shapes on that player's head.
@@ -191,12 +191,14 @@ namespace CoopGame.Network
             return _cone;
         }
 
-        // ───────────────────────── Shop panel (Lobby, K) ─────────────────────────
+        // ───────────────────────── Shop panel (Lobby outfit stall, E) ─────────────────────────
 
         public static void SetOpen(bool open)
         {
             var shop = FindAnyObjectByType<Cosmetics>();
             if (shop == null) return;
+            if (open) UIPanels.CloseOthers(UIPanels.Panel.Outfit);
+            else if (IsOpen) UIPanels.MarkClosed();
             IsOpen = open && SceneManager.GetActiveScene().name == Lobby && Local() != null;
             shop._root.SetActive(IsOpen);
             if (IsOpen) shop.RefreshShop();
@@ -209,10 +211,10 @@ namespace CoopGame.Network
             bool inLobby = SceneManager.GetActiveScene().name == Lobby;
             if (IsOpen && (!inLobby || Local() == null)) SetOpen(false);
             if (IsOpen && Time.frameCount % 15 == 0) RefreshShop();
+            // George 2026-11-20: no K key any more; the outfit stall in the Lobby opens this (ShopStall).
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
-            if (keyboard == null || !inLobby || PauseMenu.IsPaused || TitleScreen.IsVisible || PhotoMode.IsOn || LevelMap.IsOpen) return;
-            if (keyboard.kKey.wasPressedThisFrame) SetOpen(!IsOpen);
-            else if (IsOpen && keyboard.escapeKey.wasPressedThisFrame) SetOpen(false);
+            if (keyboard == null || !inLobby) return;
+            if (IsOpen && keyboard.escapeKey.wasPressedThisFrame) SetOpen(false);
         }
 
         private void BuildShop()
@@ -228,8 +230,8 @@ namespace CoopGame.Network
             _root = new GameObject("Shop", typeof(RectTransform));
             _root.transform.SetParent(transform, false);
             var rootRect = (RectTransform)_root.transform;
-            rootRect.anchorMin = new Vector2(1f, .5f); rootRect.anchorMax = new Vector2(1f, .5f);
-            rootRect.anchoredPosition = new Vector2(-330f, 0f);
+            rootRect.anchorMin = rootRect.anchorMax = new Vector2(.5f, .5f);
+            rootRect.anchoredPosition = Vector2.zero;
             var card = new GameObject("Card", typeof(RectTransform), typeof(Image));
             card.transform.SetParent(_root.transform, false);
             ((RectTransform)card.transform).sizeDelta = new Vector2(560f, 760f);
@@ -258,7 +260,7 @@ namespace CoopGame.Network
                 swatch.GetComponent<Image>().color = HatColors[c];
                 swatch.GetComponent<Button>().onClick.AddListener(() => { var s = Local(); if (s != null) Equip(s.Hat.Value, color); });
             }
-            var hint = UITheme.MakeText(card.transform, "Hint", "แตะสีเพื่อเปลี่ยนสีหมวก • K ปิด", 20, UITextRole.Secondary, TextAnchor.MiddleCenter);
+            var hint = UITheme.MakeText(card.transform, "Hint", "แตะสีเพื่อเปลี่ยนสีหมวก • Esc ปิด", 20, UITextRole.Secondary, TextAnchor.MiddleCenter);
             UITheme.StyleCuteText(hint);
             ((RectTransform)hint.transform).sizeDelta = new Vector2(500f, 34f);
             ((RectTransform)hint.transform).anchoredPosition = new Vector2(0f, -310f);

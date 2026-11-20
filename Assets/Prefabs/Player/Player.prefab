@@ -504,7 +504,9 @@ MonoBehaviour:
   _aimRaise: 2.2
   _aimPullBack: 0.5
   _aimSideShift: 1
-  _aimBlendSpeed: 6
+  _aimEaseInTime: 0.5
+  _aimEaseOutTime: 0.7
+  _aimHoldAfterRelease: 0.6
   _pivotHeightOffset: 0.5
   _collisionRadius: 0.25
   _obstacleLayers:

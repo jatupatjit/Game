@@ -78,7 +78,7 @@ namespace CoopGame.Network
             _crate.anchoredPosition = new Vector2(0f, -20f);
             UITheme.StyleIcon(crate.GetComponent<Image>(), UITheme.IconCargoHud);
 
-            var start = UITheme.MakeButton(card.transform, "Start", "เริ่มเล่น", UIButtonStyle.Pink, new Vector2(380f, 96f), 36);
+            var start = UITheme.MakeButton(card.transform, "Start", "เริ่มเล่น", UIButtonStyle.White, new Vector2(380f, 96f), 36);
             ((RectTransform)start.transform).anchoredPosition = new Vector2(-200f, -190f);
             start.onClick.AddListener(Hide);
             var quit = UITheme.MakeButton(card.transform, "Quit", "ออกจากเกม", UIButtonStyle.White, new Vector2(320f, 96f), 32);

@@ -65,7 +65,7 @@ namespace CoopGame.Network
         {
             if (!IsSpawned || !IsClient || _open.Value || !IsLocalNear ||
                 PauseMenu.IsPaused || MissionFailUI.IsVisible || ExpeditionHUD.BlocksGameplayInput) return;
-            if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
+            if (CoopGame.Network.GameSettings.Pressed(CoopGame.Network.BindRole.Interact))
                 PressSwitchRpc(NetworkManager.LocalClient.PlayerObject.transform.position);
         }
 
@@ -106,7 +106,7 @@ namespace CoopGame.Network
             if (display == _lastDisplay) return;
             _lastDisplay = display;
             if (_label != null) _label.text = open ? "เปิดแล้ว ลงไปช่วยเพื่อนขนลังได้เลย" :
-                display == 1 ? "กด E เปิดประตูให้เพื่อน" : "ปีนขึ้นมา แล้วกด E ที่ปุ่ม";
+                display == 1 ? "กด " + GameSettings.KeyName(BindRole.Interact) + " เปิดประตูให้เพื่อน" : "ปีนขึ้นมา แล้วกด " + GameSettings.KeyName(BindRole.Interact) + " ที่ปุ่ม";
             if (_indicator != null)
             {
                 _indicator.GetPropertyBlock(_properties);

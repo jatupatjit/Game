@@ -22,7 +22,7 @@ public static class TutorialStationBuilder
         ("Station_Throw", "โยนลัง", "กด Q = โยนลังไปข้างหน้า\nโยนแรงลังเสียหายได้นะ!", "target"),
         ("Station_Climb", "ปีนกำแพง", "คลิกซ้าย/ขวา = จับด้วยมือซ้าย/ขวา\nW = ดึงตัวขึ้น  Space = ดีดตัวขึ้น", "wall"),
         ("Station_Coop", "ยกด้วยกัน", "สองคนยกเร็วขึ้นและไม่เสียแรง\nเดินพร้อมกัน ลังจะไม่โยก", "crateSpot"),
-        ("Station_Ping", "คุยกับเพื่อน", "Z = มานี่!  X = ช่วยยก!  T = ระวัง!\nG = โบกมือ  M = แผนที่  K = ร้านหมวก", "none"),
+        ("Station_Ping", "คุยกับเพื่อน", "Z = มานี่!  X = ช่วยยก!  T = ระวัง!\nG = โบกมือ  M = แผนที่  C = แต่งตัว", "none"),
     };
 
     [MenuItem("Tools/Expedition/Build Tutorial Stations")]

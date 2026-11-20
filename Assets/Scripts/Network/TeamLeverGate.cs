@@ -36,7 +36,7 @@ namespace CoopGame.Network
         private void Update()
         {
             if (!IsSpawned || !IsClient || _lever == null) return;
-            bool held = IsLocalNear && Keyboard.current != null && Keyboard.current.eKey.isPressed &&
+            bool held = IsLocalNear && CoopGame.Network.GameSettings.Held(CoopGame.Network.BindRole.Interact) &&
                 !PauseMenu.IsPaused && !MissionFailUI.IsVisible && !ExpeditionHUD.BlocksGameplayInput;
             if (held && (!_wasHeld || Time.unscaledTime >= _nextSend))
             {
