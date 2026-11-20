@@ -354,6 +354,8 @@ namespace CoopGame.CarrySystem
             if (HayCushion.IsCushion(other)) return;
             // George 2026-11-11: bumping into a checkpoint (e.g. the horse cart's bed, rails and wheels) never hurts the crate.
             if (other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
+            // Crates riding a cart never take impact or scrape damage from the cart itself.
+            if (other.attachedRigidbody != null && other.attachedRigidbody.TryGetComponent<CargoCart>(out _)) return;
 
             Vector3 relativeVelocity = collision.relativeVelocity;
             for (int i = 0; i < collision.contactCount && _physicsContactCount < _physicsContacts.Length; i++)

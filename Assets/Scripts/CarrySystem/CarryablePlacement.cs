@@ -160,7 +160,8 @@ namespace CoopGame.CarrySystem
                     { nearest = _placeHits[i]; distance = nearest.distance; }
                 Collider floor = nearest.collider;
                 if (floor == null || nearest.normal.y < .8660254f ||
-                    (floor.attachedRigidbody != null && !floor.attachedRigidbody.isKinematic) ||
+                    (floor.attachedRigidbody != null && !floor.attachedRigidbody.isKinematic &&
+                        !floor.attachedRigidbody.TryGetComponent<CargoCart>(out _)) || // a cart bed is a valid (moving) floor
                     floor.GetComponentInParent<CoopGame.Network.NetworkRouteHazard>() != null ||
                     floor.GetComponentInParent<CoopGame.Network.RotatingLogHazard>() != null ||
                     floor.GetComponentInParent<CoopGame.Player.NetworkPlayer>() != null) return false;
@@ -228,9 +229,14 @@ namespace CoopGame.CarrySystem
                 _placeOverlaps, yaw, PlacementMask, QueryTriggerInteraction.Ignore);
             if (count == _placeOverlaps.Length) return false;
             for (int i = 0; i < count; i++)
-                if (!Own(_placeOverlaps[i]) && !IsPlacingCarrier(_placeOverlaps[i])) return false;
+                if (!Own(_placeOverlaps[i]) && !IsPlacingCarrier(_placeOverlaps[i]) && !IsCartRail(_placeOverlaps[i])) return false;
             return true;
         }
+
+        // A cart's low rails keep crates on the bed; they must not stop a crate being set down beside them.
+        private static bool IsCartRail(Collider collider) =>
+            collider != null && collider.attachedRigidbody != null &&
+            collider.attachedRigidbody.TryGetComponent(out CargoCart cart) && cart.IsRail(collider);
 
         private bool IsPlacingCarrier(Collider collider) =>
             (_placingCarrierColliders != null && System.Array.IndexOf(_placingCarrierColliders, collider) >= 0) ||
@@ -270,11 +276,16 @@ namespace CoopGame.CarrySystem
         /// <summary>Server: a gentle F placement finished on its floor.</summary>
         protected virtual void OnPlacementCompleted() { }
 
-        /// <summary>True when the floor the crate was just placed on is a hay bale.</summary>
+        /// <summary>True when the floor the crate was just placed on is a hay bale or a cargo cart bed.</summary>
         protected bool PlacedOnCushion()
         {
             for (int i = 0; i < _placementFloorCount; i++)
-                if (_placementFloors[i] != null && HayCushion.IsCushion(_placementFloors[i])) return true;
+            {
+                Collider floor = _placementFloors[i];
+                if (floor == null) continue;
+                if (HayCushion.IsCushion(floor)) return true;
+                if (floor.attachedRigidbody != null && floor.attachedRigidbody.TryGetComponent<CargoCart>(out _)) return true;
+            }
             return false;
         }
 

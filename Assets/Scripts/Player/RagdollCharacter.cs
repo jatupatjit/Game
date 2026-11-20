@@ -1877,6 +1877,13 @@ namespace CoopGame.Player
             if (axisB.sqrMagnitude < .5f) axisB = Vector3.forward;
             float dotA = Vector3.Dot(axisA, toPlayer), dotB = Vector3.Dot(axisB, toPlayer);
             Vector3 approach = Mathf.Abs(dotA) >= Mathf.Abs(dotB) ? axisA * Mathf.Sign(dotA) : axisB * Mathf.Sign(dotB);
+            if (cargo.TryGetComponent(out CarryGripEnds _))
+            {
+                // Long cargo: always grip an end (front/back); take the free one when the other carrier holds this end.
+                float endSign = dotB >= 0f ? 1f : -1f;
+                if (cargo.CurrentCarrierCount > 0 && OtherCarrierAtEnd(cargo, axisB * endSign, center)) endSign = -endSign;
+                approach = axisB * endSign;
+            }
             Vector3 side = Vector3.Cross(Vector3.up, -approach).normalized; // player's right when facing the crate
             float height = Mathf.Min(center.y, Mathf.Lerp(bounds.min.y, bounds.max.y, .3f));
             Vector3 grip = new Vector3(center.x, height, center.z);
@@ -1899,6 +1906,18 @@ namespace CoopGame.Player
                 right = SurfaceFrom(approach, grip + side * spread);
             }
             return true;
+        }
+
+        /// <summary>True when another player already carries <paramref name="cargo"/> from the end that lies towards <paramref name="endDirection"/>.
+        /// Runs once per pickup request (not per frame).</summary>
+        private bool OtherCarrierAtEnd(CarryableObject cargo, Vector3 endDirection, Vector3 center)
+        {
+            foreach (var other in FindObjectsByType<RagdollCharacter>(FindObjectsInactive.Exclude))
+            {
+                if (other == this || other._bodies[Hips] == null || other.CarriedCargo != cargo) continue;
+                if (Vector3.Dot(Flat(other._bodies[Hips].position - center), endDirection) > 0f) return true;
+            }
+            return false;
         }
 
         private static Vector3 ClosestOn(Collider[] colliders, Vector3 point)
