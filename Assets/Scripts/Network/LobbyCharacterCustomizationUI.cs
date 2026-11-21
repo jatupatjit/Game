@@ -487,14 +487,14 @@ namespace CoopGame.Network
             overlayRect.offsetMin = overlayRect.offsetMax = Vector2.zero;
 
             // Cute kit (Canva page 70): wide beige card, plank title, preview left, options right.
-            // Order top to bottom (George 2026-11-08): nickname > character colour > face > hat.
-            var content = Box(_panel.transform, "FaceCustomization", new Vector2(1300, 800), Vector2.zero, Color.white);
+            // Order top to bottom (George 2026-11-08): nickname > character colour > face (hat row removed 2026-11-21).
+            var content = Box(_panel.transform, "FaceCustomization", new Vector2(1300, 680), Vector2.zero, Color.white);
             UITheme.StyleCuteCard(content.GetComponent<Image>(), true);
             UITheme.MakeCutePlank(content.transform, "แต่งตัวละคร", 400f, 96f, 40f, 32);
-            UITheme.AddCuteTape(content.transform, 6, new Vector2(.5f, .5f), new Vector2(-560, 318), 35f, 96f);
-            UITheme.AddCuteTape(content.transform, 5, new Vector2(.5f, .5f), new Vector2(560, 318), -30f, 96f);
+            UITheme.AddCuteTape(content.transform, 6, new Vector2(.5f, .5f), new Vector2(-560, 258), 35f, 96f);
+            UITheme.AddCuteTape(content.transform, 5, new Vector2(.5f, .5f), new Vector2(560, 258), -30f, 96f);
 
-            var previewBox = Box(content.transform, "Preview", new Vector2(360, 551), new Vector2(-400, -8), Color.white);
+            var previewBox = Box(content.transform, "Preview", new Vector2(318, 480), new Vector2(-410, -12), Color.white);
             _previewBoxImage = previewBox.GetComponent<Image>();
             UITheme.StyleShape(_previewBoxImage, UITheme.SmallSprite, Color.white);
             var previewGO = new GameObject("Portrait", typeof(RectTransform), typeof(RawImage));
@@ -508,14 +508,14 @@ namespace CoopGame.Network
             const float left = column - 290f; // left edge of the option column (section titles line up here)
 
             // 1) Nickname: shown in the top-left player list and to every player (PlayerExpeditionState.DisplayName).
-            var nickLabel = Label(content.transform, "ชื่อเล่น", 24, new Vector2(120, 50), new Vector2(left + 60, 262));
+            var nickLabel = Label(content.transform, "ชื่อเล่น", 24, new Vector2(120, 50), new Vector2(left + 60, 206));
             nickLabel.alignment = TextAnchor.MiddleLeft;
             UITheme.StyleCuteText(nickLabel);
             UITheme.SetWeight(nickLabel, UITheme.FontMedium);
             var (nickGO, nickInput) = ProceduralUIUtility.MakeInputField(content, "NicknameInput", "พิมพ์ชื่อเล่น (ไม่เกิน 16 ตัว)", 54);
             var nickRect = (RectTransform)nickGO.transform;
             nickRect.sizeDelta = new Vector2(440, 54);
-            nickRect.anchoredPosition = new Vector2(column + 70, 262);
+            nickRect.anchoredPosition = new Vector2(column + 70, 206);
             nickInput.characterLimit = PlayerExpeditionState.NicknameMaxChars;
             nickInput.lineType = InputField.LineType.SingleLine;
             // Match the cute card: white rounded box, dark ink text.
@@ -528,7 +528,7 @@ namespace CoopGame.Network
             _nicknameInput = nickInput;
 
             // 2) Character colour.
-            var colorTitle = Label(content.transform, "สีตัวละคร", 22, new Vector2(580, 34), new Vector2(column, 200));
+            var colorTitle = Label(content.transform, "สีตัวละคร", 22, new Vector2(580, 34), new Vector2(column, 146));
             colorTitle.alignment = TextAnchor.MiddleLeft;
             UITheme.StyleCuteText(colorTitle);
             UITheme.SetWeight(colorTitle, UITheme.FontMedium);
@@ -538,7 +538,7 @@ namespace CoopGame.Network
             for (int i = 0; i < PlayerAppearance.ColorCount; i++)
             {
                 int colorIndex = i;
-                Vector2 at = new Vector2(column + (i - colorCenterIndex) * 84f, 146);
+                Vector2 at = new Vector2(column + (i - colorCenterIndex) * 84f, 92);
                 var ring = Box(content.transform, "SelectedRing", new Vector2(76, 76), at, UITheme.Primary);
                 UITheme.StyleShape(ring.GetComponent<Image>(), round, UITheme.Primary);
                 ring.GetComponent<Image>().raycastTarget = false;
@@ -558,17 +558,17 @@ namespace CoopGame.Network
             }
 
             // 3) Face: header "ใบหน้า n/10" with arrows, then 10 faces in two rows of 5 (knockdown faces left out).
-            _styleLabel = Label(content.transform, "", 24, new Vector2(340, 44), new Vector2(column, 80));
+            _styleLabel = Label(content.transform, "", 24, new Vector2(340, 44), new Vector2(column, 26));
             UITheme.StyleCuteText(_styleLabel);
             UITheme.SetWeight(_styleLabel, UITheme.FontMedium);
-            UITheme.StyleButton(Button(content.transform, "<", new Vector2(70, 54), new Vector2(column - 230, 80), () => ChangeStyle(-1)), UIButtonStyle.WhiteShort);
-            UITheme.StyleButton(Button(content.transform, ">", new Vector2(70, 54), new Vector2(column + 230, 80), () => ChangeStyle(1)), UIButtonStyle.WhiteShort);
+            UITheme.StyleButton(Button(content.transform, "<", new Vector2(70, 54), new Vector2(column - 230, 26), () => ChangeStyle(-1)), UIButtonStyle.WhiteShort);
+            UITheme.StyleButton(Button(content.transform, ">", new Vector2(70, 54), new Vector2(column + 230, 26), () => ChangeStyle(1)), UIButtonStyle.WhiteShort);
             _faceOutlines = new Outline[PlayerAppearance.PickableFaces.Length];
             _faceBgImages = new Image[PlayerAppearance.PickableFaces.Length];
             for (int i = 0; i < _faceOutlines.Length; i++)
             {
                 int index = PlayerAppearance.PickableFaces[i];
-                var button = Button(content.transform, "", new Vector2(92, 78), new Vector2(column + (i % 5 - 2f) * 112, 4 - i / 5 * 88), () =>
+                var button = Button(content.transform, "", new Vector2(92, 78), new Vector2(column + (i % 5 - 2f) * 112, -50 - i / 5 * 88), () =>
                 {
                     _draft = index;
                     Refresh();
@@ -590,38 +590,13 @@ namespace CoopGame.Network
                 _faceOutlines[i] = outline;
             }
 
-            // 4) Hat: hats bought in the shop (K) can be worn here; ones not bought yet show their price.
-            var hatTitle = Label(content.transform, "หมวก (ซื้อเพิ่มที่ร้านแต่งตัว)", 22, new Vector2(580, 34), new Vector2(column, -146));
-            hatTitle.alignment = TextAnchor.MiddleLeft;
-            UITheme.StyleCuteText(hatTitle);
-            UITheme.SetWeight(hatTitle, UITheme.FontMedium);
-            int hatCount = Cosmetics.HatNames.Length;
-            _hatButtons = new Button[hatCount];
-            _hatRings = new Image[hatCount];
-            _hatLabels = new Text[hatCount];
-            for (int i = 0; i < hatCount; i++)
-            {
-                int hat = i;
-                Vector2 at = new Vector2(column + (i - (hatCount - 1) * .5f) * 112, -204);
-                var ring = Box(content.transform, "HatRing", new Vector2(104, 66), at, UITheme.Primary);
-                UITheme.StyleShape(ring.GetComponent<Image>(), UITheme.SmallSprite, UITheme.Primary);
-                ring.GetComponent<Image>().raycastTarget = false;
-                _hatRings[i] = ring.GetComponent<Image>();
-                var hatBtn = Button(content.transform, "", new Vector2(94, 56), at, () => PickHat(hat));
-                UITheme.StyleShape(hatBtn.GetComponent<Image>(), UITheme.SmallSprite, Color.white);
-                var tint = hatBtn.colors; tint.normalColor = tint.selectedColor = Color.white; tint.highlightedColor = UITheme.Hover(Color.white); tint.pressedColor = UITheme.Pressed(Color.white); tint.disabledColor = new Color(1f, 1f, 1f, .45f); hatBtn.colors = tint;
-                var hatLabel = Label(hatBtn.transform, Cosmetics.HatNames[i], 16, new Vector2(94, 56), Vector2.zero);
-                UITheme.StyleCuteText(hatLabel);
-                hatLabel.lineSpacing = .85f;
-                _hatButtons[i] = hatBtn;
-                _hatLabels[i] = hatLabel;
-            }
+            // Hats are picked and bought at the outfit stall in the Lobby now (George 2026-11-21: no hat row here).
 
             // Colour name line from the old panel; the kit layout has no room for it.
             _status = Label(content.transform, "", 15, new Vector2(610, 32), new Vector2(column, -240));
             _status.gameObject.SetActive(false);
-            UITheme.StyleButton(Button(content.transform, "ยกเลิก", new Vector2(270, 70), new Vector2(column - 145, -312), Cancel), UIButtonStyle.White);
-            UITheme.StyleButton(Button(content.transform, "บันทึก", new Vector2(270, 70), new Vector2(column + 145, -312), Save), UIButtonStyle.White);
+            UITheme.StyleButton(Button(content.transform, "ยกเลิก", new Vector2(270, 70), new Vector2(column - 145, -252), Cancel), UIButtonStyle.White);
+            UITheme.StyleButton(Button(content.transform, "บันทึก", new Vector2(270, 70), new Vector2(column + 145, -252), Save), UIButtonStyle.White);
             _panel.SetActive(false);
         }
 

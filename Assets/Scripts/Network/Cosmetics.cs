@@ -24,12 +24,22 @@ namespace CoopGame.Network
         };
         private const string Lobby = "Lobby";
 
+        /// <summary>George 2026-11-21: only the party hat (the first one) takes a chosen colour; the others keep their own.</summary>
+        public static bool HatHasColor(int hat) => hat == 1;
+
         public static bool IsOpen { get; private set; }
         private static Material _template;
         private readonly Dictionary<PlayerExpeditionState, (Transform hat, int key)> _shown = new();
         private GameObject _root;
         private Text _wallet;
         private readonly List<Button> _hatButtons = new();
+        private readonly List<Image> _hatRings = new();
+        private readonly List<GameObject> _swatches = new();
+        private readonly List<Image> _swatchRings = new();
+        private GameObject _colorTitle;
+        private Button _action;
+        private Text _actionLabel;
+        private int _selHat = -1, _selColor;
         private bool _restored;
 
         public static bool Owns(int hat) => SaveSystem.OwnsHat(hat); // local save file (was PlayerPrefs; migrated on first run)
@@ -116,13 +126,15 @@ namespace CoopGame.Network
             float top = .45f;
             foreach (var renderer in player.GetComponentsInChildren<SkinnedMeshRenderer>())
                 if (renderer.name.StartsWith("body")) top = Mathf.Clamp(renderer.bounds.max.y - head.position.y, .2f, .9f);
-            var root = new GameObject("CosmeticHat").transform;
+            var root = new GameObject("CosmeticHat", typeof(CosmeticPart)).transform;
             root.SetParent(head, false);
             Vector3 lossy = head.lossyScale;
             root.localScale = new Vector3(1f / Mathf.Max(1e-4f, lossy.x), 1f / Mathf.Max(1e-4f, lossy.y), 1f / Mathf.Max(1e-4f, lossy.z));
             root.position = head.position + Vector3.up * (top - .04f);
             root.rotation = Quaternion.LookRotation(player.transform.forward, Vector3.up);
-            Material main = MaterialFor(color), dark = MaterialFor(color * .6f), gold = MaterialFor(new Color(1f, .82f, .2f));
+            // Only the party hat takes the chosen colour; the others keep their own look (and the body colour never dyes them).
+            if (!HatHasColor(hat)) color = hat == 2 ? new Color(.15f, .14f, .17f) : new Color(.24f, .49f, .85f);
+            Material main = MaterialFor(color), dark = MaterialFor(hat == 2 ? new Color(.85f, .28f, .23f) : color * .6f), gold = MaterialFor(new Color(1f, .82f, .2f));
             switch (hat)
             {
                 case 1: // party cone with a pompom
@@ -201,7 +213,13 @@ namespace CoopGame.Network
             else if (IsOpen) UIPanels.MarkClosed();
             IsOpen = open && SceneManager.GetActiveScene().name == Lobby && Local() != null;
             shop._root.SetActive(IsOpen);
-            if (IsOpen) shop.RefreshShop();
+            if (IsOpen)
+            {
+                var state = Local();
+                shop._selHat = -1;
+                shop._selColor = state != null ? state.HatColor.Value : 0;
+                shop.RefreshShop();
+            }
             Cursor.lockState = IsOpen ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = IsOpen;
         }
@@ -241,29 +259,53 @@ namespace CoopGame.Network
             UITheme.StyleCuteText(_wallet);
             ((RectTransform)_wallet.transform).sizeDelta = new Vector2(500f, 40f);
             ((RectTransform)_wallet.transform).anchoredPosition = new Vector2(0f, 290f);
+            // George 2026-11-21: click a hat to pick it, the bottom button buys / wears it, ออก closes.
+            // Colour swatches only for the party hat (the other hats keep their own colours).
             for (int hat = 0; hat < HatNames.Length; hat++)
             {
                 int id = hat;
-                var button = UITheme.MakeButton(card.transform, "Hat" + hat, HatNames[hat], UIButtonStyle.White, new Vector2(460f, 72f), 24);
-                ((RectTransform)button.transform).anchoredPosition = new Vector2(0f, 205f - hat * 84f);
-                button.onClick.AddListener(() => OnHat(id));
+                Vector2 at = new Vector2(0f, 212f - hat * 78f);
+                _hatRings.Add(GearShop.SelectRing(card.transform, at, new Vector2(476f, 80f)));
+                var button = UITheme.MakeButton(card.transform, "Hat" + hat, HatNames[hat], UIButtonStyle.White, new Vector2(460f, 66f), 24);
+                ((RectTransform)button.transform).anchoredPosition = at;
+                button.onClick.AddListener(() => { _selHat = id; RefreshShop(); });
                 _hatButtons.Add(button);
             }
+            var colorTitle = UITheme.MakeText(card.transform, "ColorTitle", "สีหมวกปาร์ตี้", 20, UITextRole.Secondary, TextAnchor.MiddleCenter);
+            UITheme.StyleCuteText(colorTitle);
+            ((RectTransform)colorTitle.transform).sizeDelta = new Vector2(500f, 30f);
+            ((RectTransform)colorTitle.transform).anchoredPosition = new Vector2(0f, -178f);
+            _colorTitle = colorTitle.gameObject;
+            Sprite round = ProceduralUIUtility.GetRoundedSprite(30, 0);
             for (int c = 0; c < HatColors.Length; c++)
             {
                 int color = c;
+                Vector2 at = new Vector2((c - (HatColors.Length - 1) * .5f) * 72f, -226f);
+                var ring = new GameObject("ColorRing" + c, typeof(RectTransform), typeof(Image));
+                ring.transform.SetParent(card.transform, false);
+                ((RectTransform)ring.transform).sizeDelta = new Vector2(68f, 68f);
+                ((RectTransform)ring.transform).anchoredPosition = at;
+                var ringImage = ring.GetComponent<Image>();
+                UITheme.StyleShape(ringImage, round, UITheme.Primary);
+                ringImage.raycastTarget = false;
+                _swatchRings.Add(ringImage);
                 var swatch = new GameObject("Color" + c, typeof(RectTransform), typeof(Image), typeof(Button));
                 swatch.transform.SetParent(card.transform, false);
                 var rect = (RectTransform)swatch.transform;
-                rect.sizeDelta = new Vector2(58f, 58f);
-                rect.anchoredPosition = new Vector2((c - (HatColors.Length - 1) * .5f) * 72f, -240f);
-                swatch.GetComponent<Image>().color = HatColors[c];
-                swatch.GetComponent<Button>().onClick.AddListener(() => { var s = Local(); if (s != null) Equip(s.Hat.Value, color); });
+                rect.sizeDelta = new Vector2(56f, 56f);
+                rect.anchoredPosition = at;
+                UITheme.StyleShape(swatch.GetComponent<Image>(), round, HatColors[c]);
+                swatch.GetComponent<Button>().onClick.AddListener(() => { _selColor = color; RefreshShop(); });
+                _swatches.Add(swatch);
+                _swatches.Add(ring);
             }
-            var hint = UITheme.MakeText(card.transform, "Hint", "แตะสีเพื่อเปลี่ยนสีหมวก • Esc ปิด", 20, UITextRole.Secondary, TextAnchor.MiddleCenter);
-            UITheme.StyleCuteText(hint);
-            ((RectTransform)hint.transform).sizeDelta = new Vector2(500f, 34f);
-            ((RectTransform)hint.transform).anchoredPosition = new Vector2(0f, -310f);
+            var exit = UITheme.MakeButton(card.transform, "Exit", "ออก", UIButtonStyle.White, new Vector2(220f, 64f), 24);
+            ((RectTransform)exit.transform).anchoredPosition = new Vector2(-125f, -310f);
+            exit.onClick.AddListener(() => SetOpen(false));
+            _action = UITheme.MakeButton(card.transform, "Action", "เลือก", UIButtonStyle.Pink, new Vector2(240f, 64f), 24);
+            ((RectTransform)_action.transform).anchoredPosition = new Vector2(125f, -310f);
+            _action.onClick.AddListener(OnAction);
+            _actionLabel = _action.GetComponentInChildren<Text>();
             _root.SetActive(false);
         }
 
@@ -275,19 +317,37 @@ namespace CoopGame.Network
             for (int hat = 0; hat < _hatButtons.Count; hat++)
             {
                 bool owned = Owns(hat), worn = state.Hat.Value == hat;
-                string label = HatNames[hat] + (worn ? "  ✓ ใส่อยู่" : owned ? "  • ใส่" : "  • " + HatPrices[hat] + " เหรียญ");
+                string label = HatNames[hat] + (worn ? "  ✓ ใส่อยู่" : owned ? (hat == 0 ? "" : "  • มีแล้ว") : "  • " + HatPrices[hat] + " เหรียญ");
                 var text = _hatButtons[hat].GetComponentInChildren<Text>();
                 if (text != null && text.text != label) text.text = label;
-                _hatButtons[hat].interactable = owned || state.Coins.Value >= HatPrices[hat];
+                _hatRings[hat].enabled = hat == _selHat;
             }
+            bool colorable = HatHasColor(_selHat);
+            _colorTitle.SetActive(_selHat > 0);
+            var titleText = _colorTitle.GetComponent<Text>();
+            string title = colorable ? "สีหมวกปาร์ตี้" : "หมวกนี้มีสีของตัวเอง เปลี่ยนสีไม่ได้";
+            if (titleText != null && titleText.text != title) titleText.text = title;
+            foreach (var go in _swatches) go.SetActive(colorable);
+            for (int c = 0; c < _swatchRings.Count; c++) _swatchRings[c].enabled = colorable && c == _selColor;
+            string action; bool can;
+            int coins = state.Coins.Value;
+            if (_selHat < 0) { action = "เลือกหมวกก่อน"; can = false; }
+            else if (!Owns(_selHat)) { can = coins >= HatPrices[_selHat]; action = can ? "ซื้อ " + HatPrices[_selHat] + " เหรียญ" : "เงินไม่พอ"; }
+            else if (state.Hat.Value == _selHat && (!colorable || state.HatColor.Value == _selColor)) { action = _selHat == 0 ? "ไม่ได้ใส่อยู่" : "ใส่อยู่แล้ว"; can = false; }
+            else { action = _selHat == 0 ? "ถอดหมวก" : colorable && state.Hat.Value == _selHat ? "บันทึกสี" : "ใส่"; can = true; }
+            if (_actionLabel.text != action) _actionLabel.text = action;
+            _action.interactable = can;
         }
 
-        private static void OnHat(int hat)
+        /// <summary>Bottom button: buy the picked hat (in the picked colour) or wear it.</summary>
+        private void OnAction()
         {
             var state = Local();
-            if (state == null) return;
-            if (Owns(hat)) Equip(hat, state.HatColor.Value);
-            else state.BuyHatRpc((byte)hat);
+            if (state == null || _selHat < 0) return;
+            int color = HatHasColor(_selHat) ? _selColor : state.HatColor.Value;
+            if (Owns(_selHat)) Equip(_selHat, color);
+            else { SaveSystem.Current.hatColor = color; state.BuyHatRpc((byte)_selHat); }
+            RefreshShop();
         }
 
         /// <summary>Test probe: buy or wear a hat.</summary>

@@ -39,6 +39,10 @@ namespace CoopGame.Network
         private static GameObject _root;
         private readonly List<Button> _buttons = new();
         private Text _wallet;
+        private readonly List<Image> _rings = new();
+        private Button _action;
+        private Text _actionLabel;
+        private static int _selected = -1;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -115,29 +119,56 @@ namespace CoopGame.Network
             UITheme.StyleCuteText(_wallet);
             ((RectTransform)_wallet.transform).sizeDelta = new Vector2(500f, 40f);
             ((RectTransform)_wallet.transform).anchoredPosition = new Vector2(0f, 290f);
+            // George 2026-11-21: click a row to pick it, then the bottom button buys / wears / takes it off; ออก closes.
             for (int i = 0; i < Items.Length; i++)
             {
                 int index = i;
-                var button = UITheme.MakeButton(card.transform, "Gear" + i, Items[i].Name, UIButtonStyle.White, new Vector2(480f, 110f), 22);
-                ((RectTransform)button.transform).anchoredPosition = new Vector2(0f, 190f - i * 124f);
+                Vector2 at = new Vector2(0f, 196f - i * 118f);
+                _rings.Add(SelectRing(card.transform, at, new Vector2(496f, 116f)));
+                var button = UITheme.MakeButton(card.transform, "Gear" + i, Items[i].Name, UIButtonStyle.White, new Vector2(480f, 104f), 22);
+                ((RectTransform)button.transform).anchoredPosition = at;
                 var text = button.GetComponentInChildren<Text>();
                 if (text != null) text.supportRichText = true;
-                button.onClick.AddListener(() => OnClick(index));
+                button.onClick.AddListener(() => { _selected = index; _nextRefresh = 0; });
                 _buttons.Add(button);
             }
-            var hint = UITheme.MakeText(card.transform, "Hint", "ใส่ได้ถุงมือ 1 คู่ + แว่น 1 อัน • กดอันที่ใส่อยู่เพื่อถอด • Esc ปิด", 19, UITextRole.Secondary, TextAnchor.MiddleCenter);
+            var hint = UITheme.MakeText(card.transform, "Hint", "ใส่ได้ถุงมือ 1 คู่ + แว่น 1 อัน", 19, UITextRole.Secondary, TextAnchor.MiddleCenter);
             UITheme.StyleCuteText(hint);
             ((RectTransform)hint.transform).sizeDelta = new Vector2(520f, 34f);
-            ((RectTransform)hint.transform).anchoredPosition = new Vector2(0f, -310f);
+            ((RectTransform)hint.transform).anchoredPosition = new Vector2(0f, -258f);
+            var exit = UITheme.MakeButton(card.transform, "Exit", "ออก", UIButtonStyle.White, new Vector2(220f, 64f), 24);
+            ((RectTransform)exit.transform).anchoredPosition = new Vector2(-125f, -318f);
+            exit.onClick.AddListener(() => SetOpen(false));
+            _action = UITheme.MakeButton(card.transform, "Action", "เลือก", UIButtonStyle.Pink, new Vector2(240f, 64f), 24);
+            ((RectTransform)_action.transform).anchoredPosition = new Vector2(125f, -318f);
+            _action.onClick.AddListener(OnAction);
+            _actionLabel = _action.GetComponentInChildren<Text>();
             _root.SetActive(false);
         }
 
-        private static void OnClick(int index)
+        /// <summary>Pink rounded frame behind a row, shown while that row is picked.</summary>
+        internal static Image SelectRing(Transform parent, Vector2 at, Vector2 size)
+        {
+            var go = new GameObject("SelectRing", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rect = (RectTransform)go.transform;
+            rect.sizeDelta = size;
+            rect.anchoredPosition = at;
+            var image = go.GetComponent<Image>();
+            UITheme.StyleShape(image, UITheme.SmallSprite, UITheme.Primary);
+            image.raycastTarget = false;
+            image.enabled = false;
+            return image;
+        }
+
+        /// <summary>Bottom button: buy the picked item, wear it, or take it off.</summary>
+        private static void OnAction()
         {
             var state = Local();
-            if (state == null) return;
-            if (SaveSystem.OwnsGear(index)) Wear(index);
-            else state.BuyGearRpc((byte)index);
+            if (state == null || _selected < 0) return;
+            if (SaveSystem.OwnsGear(_selected)) Wear(_selected); // wearing the worn one takes it off
+            else state.BuyGearRpc((byte)_selected);
+            _nextRefresh = 0;
         }
 
         /// <summary>Opened by the gear stall in the Lobby (George 2026-11-20); its own window, no longer beside the hat shop.</summary>
@@ -149,6 +180,7 @@ namespace CoopGame.Network
             if (_root.activeSelf == open) return;
             if (!open) UIPanels.MarkClosed();
             _root.SetActive(open);
+            if (open) _selected = -1;
             Cursor.lockState = open ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = open;
             if (open) _nextRefresh = 0;
@@ -171,12 +203,19 @@ namespace CoopGame.Network
             {
                 var def = Items[i];
                 bool owned = SaveSystem.OwnsGear(i), worn = Worn(def.Slot) == i;
-                string status = worn ? "✓ ใส่อยู่" : owned ? "กดเพื่อใส่" : def.Price + " เหรียญ";
+                string status = worn ? "✓ ใส่อยู่" : owned ? "มีแล้ว" : def.Price + " เหรียญ";
                 string label = $"{(def.Slot == Slot.Gloves ? "[ถุงมือ]" : "[แว่น]")} {def.Name}  •  {status}\n<size=18>{def.Detail}</size>";
                 var text = _buttons[i].GetComponentInChildren<Text>();
                 if (text != null && text.text != label) text.text = label;
-                _buttons[i].interactable = owned || coins >= def.Price;
+                _rings[i].enabled = i == _selected;
             }
+            string action; bool can;
+            if (_selected < 0) { action = "เลือกของก่อน"; can = false; }
+            else if (Worn(Items[_selected].Slot) == _selected) { action = "ถอดออก"; can = true; }
+            else if (SaveSystem.OwnsGear(_selected)) { action = "ใส่"; can = true; }
+            else { can = coins >= Items[_selected].Price; action = can ? "ซื้อ " + Items[_selected].Price + " เหรียญ" : "เงินไม่พอ"; }
+            if (_actionLabel.text != action) _actionLabel.text = action;
+            _action.interactable = can;
         }
     }
 }
