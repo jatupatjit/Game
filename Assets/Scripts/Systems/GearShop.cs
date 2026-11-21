@@ -124,7 +124,7 @@ namespace CoopGame.Network
             {
                 int index = i;
                 Vector2 at = new Vector2(0f, 196f - i * 118f);
-                _rings.Add(SelectRing(card.transform, at, new Vector2(496f, 116f)));
+                _rings.Add(SelectRing(card.transform, at, new Vector2(494f, 116f)));
                 var button = UITheme.MakeButton(card.transform, "Gear" + i, Items[i].Name, UIButtonStyle.White, new Vector2(480f, 104f), 22);
                 ((RectTransform)button.transform).anchoredPosition = at;
                 var text = button.GetComponentInChildren<Text>();
@@ -155,7 +155,8 @@ namespace CoopGame.Network
             rect.sizeDelta = size;
             rect.anchoredPosition = at;
             var image = go.GetComponent<Image>();
-            UITheme.StyleShape(image, UITheme.SmallSprite, UITheme.Primary);
+            // Same rounded pill sprite as the buttons (George 2026-11-21: the square frame poked out at the corners).
+            UITheme.StyleShape(image, UITheme.ButtonSprite(UIButtonStyle.Pink), Color.white);
             image.raycastTarget = false;
             image.enabled = false;
             return image;
