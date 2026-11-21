@@ -11,6 +11,44 @@ namespace CoopGame.Network
     /// and worn gear is saved in <see cref="SaveSystem"/>. Bonuses act on the owner's stamina, which the owner
     /// simulates (<see cref="PlayerExpeditionState"/> FixedUpdate multiplies them in).
     /// </summary>
+    /// <summary>
+    /// An item row in a shop window (George 2026-11-21): no frame and no pink on mouse-over; the row turns pink
+    /// only while it is the picked one.
+    /// </summary>
+    internal sealed class ShopRow
+    {
+        private readonly Button _button;
+        private readonly Image _image;
+        private readonly Sprite _normal, _pink;
+        private readonly Color _normalText;
+        private int _shown = -1;
+
+        public ShopRow(Button button)
+        {
+            _button = button;
+            _image = button.targetGraphic as Image;
+            _normal = _image != null ? _image.sprite : null;
+            _pink = UITheme.ButtonSprite(UIButtonStyle.Pink);
+            var label = button.GetComponentInChildren<Text>(true);
+            _normalText = label != null ? label.color : Color.black;
+            var hover = button.GetComponent<UIHoverPink>();
+            if (hover != null) hover.enabled = false;
+            var colors = button.colors;
+            colors.highlightedColor = colors.normalColor;
+            colors.selectedColor = colors.normalColor;
+            button.colors = colors;
+        }
+
+        public void SetPicked(bool picked)
+        {
+            int state = picked ? 1 : 0;
+            if (_shown == state) return;
+            _shown = state;
+            if (_image != null) _image.sprite = picked ? _pink : _normal;
+            foreach (var text in _button.GetComponentsInChildren<Text>(true)) text.color = picked ? UITheme.TextPrimary : _normalText;
+        }
+    }
+
     public sealed class GearShop : MonoBehaviour
     {
         public enum Slot : byte { Gloves, Glasses }
@@ -39,7 +77,7 @@ namespace CoopGame.Network
         private static GameObject _root;
         private readonly List<Button> _buttons = new();
         private Text _wallet;
-        private readonly List<Image> _rings = new();
+        private readonly List<ShopRow> _rows = new();
         private Button _action;
         private Text _actionLabel;
         private static int _selected = -1;
@@ -124,13 +162,13 @@ namespace CoopGame.Network
             {
                 int index = i;
                 Vector2 at = new Vector2(0f, 196f - i * 118f);
-                _rings.Add(SelectRing(card.transform, at, new Vector2(496f, 116f)));
                 var button = UITheme.MakeButton(card.transform, "Gear" + i, Items[i].Name, UIButtonStyle.White, new Vector2(480f, 104f), 22);
                 ((RectTransform)button.transform).anchoredPosition = at;
                 var text = button.GetComponentInChildren<Text>();
                 if (text != null) text.supportRichText = true;
                 button.onClick.AddListener(() => { _selected = index; _nextRefresh = 0; });
                 _buttons.Add(button);
+                _rows.Add(new ShopRow(button));
             }
             var hint = UITheme.MakeText(card.transform, "Hint", "ใส่ได้ถุงมือ 1 คู่ + แว่น 1 อัน", 19, UITextRole.Secondary, TextAnchor.MiddleCenter);
             UITheme.StyleCuteText(hint);
@@ -146,20 +184,6 @@ namespace CoopGame.Network
             _root.SetActive(false);
         }
 
-        /// <summary>Pink rounded frame behind a row, shown while that row is picked.</summary>
-        internal static Image SelectRing(Transform parent, Vector2 at, Vector2 size)
-        {
-            var go = new GameObject("SelectRing", typeof(RectTransform), typeof(Image));
-            go.transform.SetParent(parent, false);
-            var rect = (RectTransform)go.transform;
-            rect.sizeDelta = size;
-            rect.anchoredPosition = at;
-            var image = go.GetComponent<Image>();
-            UITheme.StyleShape(image, UITheme.SmallSprite, UITheme.Primary);
-            image.raycastTarget = false;
-            image.enabled = false;
-            return image;
-        }
 
         /// <summary>Bottom button: buy the picked item, wear it, or take it off.</summary>
         private static void OnAction()
@@ -207,7 +231,7 @@ namespace CoopGame.Network
                 string label = $"{(def.Slot == Slot.Gloves ? "[ถุงมือ]" : "[แว่น]")} {def.Name}  •  {status}\n<size=18>{def.Detail}</size>";
                 var text = _buttons[i].GetComponentInChildren<Text>();
                 if (text != null && text.text != label) text.text = label;
-                _rings[i].enabled = i == _selected;
+                _rows[i].SetPicked(i == _selected);
             }
             string action; bool can;
             if (_selected < 0) { action = "เลือกของก่อน"; can = false; }

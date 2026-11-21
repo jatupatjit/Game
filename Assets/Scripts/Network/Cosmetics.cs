@@ -33,7 +33,7 @@ namespace CoopGame.Network
         private GameObject _root;
         private Text _wallet;
         private readonly List<Button> _hatButtons = new();
-        private readonly List<Image> _hatRings = new();
+        private readonly List<ShopRow> _hatRows = new();
         private readonly List<GameObject> _swatches = new();
         private readonly List<Image> _swatchRings = new();
         private GameObject _colorTitle;
@@ -265,11 +265,11 @@ namespace CoopGame.Network
             {
                 int id = hat;
                 Vector2 at = new Vector2(0f, 212f - hat * 78f);
-                _hatRings.Add(GearShop.SelectRing(card.transform, at, new Vector2(476f, 80f)));
                 var button = UITheme.MakeButton(card.transform, "Hat" + hat, HatNames[hat], UIButtonStyle.White, new Vector2(460f, 66f), 24);
                 ((RectTransform)button.transform).anchoredPosition = at;
                 button.onClick.AddListener(() => { _selHat = id; RefreshShop(); });
                 _hatButtons.Add(button);
+                _hatRows.Add(new ShopRow(button));
             }
             var colorTitle = UITheme.MakeText(card.transform, "ColorTitle", "สีหมวกปาร์ตี้", 20, UITextRole.Secondary, TextAnchor.MiddleCenter);
             UITheme.StyleCuteText(colorTitle);
@@ -320,7 +320,7 @@ namespace CoopGame.Network
                 string label = HatNames[hat] + (worn ? "  ✓ ใส่อยู่" : owned ? (hat == 0 ? "" : "  • มีแล้ว") : "  • " + HatPrices[hat] + " เหรียญ");
                 var text = _hatButtons[hat].GetComponentInChildren<Text>();
                 if (text != null && text.text != label) text.text = label;
-                _hatRings[hat].enabled = hat == _selHat;
+                _hatRows[hat].SetPicked(hat == _selHat);
             }
             bool colorable = HatHasColor(_selHat);
             _colorTitle.SetActive(_selHat > 0);
