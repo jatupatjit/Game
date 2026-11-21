@@ -24,11 +24,8 @@ namespace CoopGame.Network
         [SerializeField] private Color _signColor = new Color(1f, .97f, .9f);
         [Tooltip("Display items that turn and bob.")]
         [SerializeField] private Transform[] _spin;
-        [Tooltip("Dark plate behind the 'press E' prompt (unlit material).")]
-        [SerializeField] private Material _promptPlate;
 
         private TextMeshPro _prompt;
-        private Transform _plate;
         private string _shownPrompt;
         private Vector3[] _spinBase;
         private bool _near;
@@ -46,20 +43,17 @@ namespace CoopGame.Network
                 sign.outlineWidth = .22f;
                 sign.outlineColor = new Color32(59, 38, 24, 255);
             }
-            _prompt = MakeText("Prompt", transform, "", 2.6f, Color.white);
-            _prompt.outlineWidth = .15f;
+            // George 2026-11-21: text only, no plate behind it; a dark outline + soft drop shadow keep it readable on the stall.
+            _prompt = MakeText("Prompt", transform, "", 3f, Color.white);
+            var mat = _prompt.fontMaterial; // own instance, the shared font asset is untouched
+            mat.EnableKeyword(ShaderUtilities.Keyword_Underlay);
+            mat.SetColor(ShaderUtilities.ID_UnderlayColor, new Color(0f, 0f, 0f, .75f));
+            mat.SetFloat(ShaderUtilities.ID_UnderlayOffsetX, .6f);
+            mat.SetFloat(ShaderUtilities.ID_UnderlayOffsetY, -.6f);
+            mat.SetFloat(ShaderUtilities.ID_UnderlaySoftness, .4f);
+            mat.SetFloat(ShaderUtilities.ID_UnderlayDilate, .4f);
+            _prompt.outlineWidth = .28f;
             _prompt.outlineColor = new Color32(26, 18, 20, 255);
-            if (_promptPlate != null)
-            {
-                var plate = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                plate.name = "Plate";
-                Destroy(plate.GetComponent<Collider>());
-                plate.transform.SetParent(_prompt.transform, false);
-                plate.transform.localPosition = new Vector3(0f, 0f, .03f);
-                plate.GetComponent<Renderer>().sharedMaterial = _promptPlate;
-                plate.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                _plate = plate.transform;
-            }
             _prompt.gameObject.SetActive(false);
             if (_spin != null)
             {
@@ -119,8 +113,6 @@ namespace CoopGame.Network
                     {
                         _shownPrompt = text;
                         _prompt.text = text;
-                        _prompt.ForceMeshUpdate();
-                        if (_plate != null) _plate.localScale = new Vector3(_prompt.preferredWidth + .45f, .62f, 1f);
                     }
                     _prompt.transform.position = counter + Vector3.up * 2.2f;
                     var cam = Camera.main;

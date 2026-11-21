@@ -69,16 +69,6 @@ namespace CoopGame.EditorTools
             return mat;
         }
 
-        private static Material PromptPlate()
-        {
-            string path = MatDir + "/Lobby_PromptPlate.mat";
-            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (mat == null) { mat = new Material(Shader.Find("Universal Render Pipeline/Unlit")); AssetDatabase.CreateAsset(mat, path); }
-            mat.SetColor("_BaseColor", Hex("#3B2618"));
-            EditorUtility.SetDirty(mat);
-            return mat;
-        }
-
         private static Color Hex(string hex) { ColorUtility.TryParseHtmlString(hex, out var c); return c; }
 
         // ───────────────────────── Shapes ─────────────────────────
@@ -211,7 +201,6 @@ namespace CoopGame.EditorTools
             so.FindProperty("_title").stringValue = gear ? "ร้านอุปกรณ์" : "ร้านแต่งตัว";
             so.FindProperty("_counter").objectReferenceValue = counter;
             so.FindProperty("_signAnchor").objectReferenceValue = signAnchor;
-            so.FindProperty("_promptPlate").objectReferenceValue = PromptPlate();
             var list = so.FindProperty("_spin");
             list.arraySize = spin.Count;
             for (int i = 0; i < spin.Count; i++) list.GetArrayElementAtIndex(i).objectReferenceValue = spin[i];
