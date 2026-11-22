@@ -168,7 +168,7 @@ namespace CoopGame.CarrySystem
 
             // Safe pads (hay, capstan lift, checkpoint, repair, CargoSnapPad) accept the crate from beside them:
             // it glides onto the pad's slot instead of needing a perfectly flat footprint under it.
-            if (TrySnapPadTarget(bounds, out Vector3 snapPos, out Quaternion snapRot, out Rigidbody snapFollow, out Collider snapFloor))
+            if (CargoSnapPad.SnapLockEnabled && TrySnapPadTarget(bounds, out Vector3 snapPos, out Quaternion snapRot, out Rigidbody snapFollow, out Collider snapFloor))
             {
                 target = snapPos;
                 _snapFound = true;
@@ -557,7 +557,9 @@ namespace CoopGame.CarrySystem
                 if (floor == null) continue;
                 if (HayCushion.IsCushion(floor)) return true;
                 Rigidbody body = floor.attachedRigidbody;
-                if (body != null && (body.TryGetComponent<CargoCart>(out _) || CoopGame.Network.CoopCapstanLift.IsPlatformBody(body))) return true;
+                if (body != null && body.TryGetComponent<CargoCart>(out _)) return true;
+                if (!CargoSnapPad.SnapLockEnabled) continue; // lift, checkpoint, repair and snap pads cost HP while the switch is off
+                if (CoopGame.Network.CoopCapstanLift.IsPlatformBody(body)) return true;
                 if (floor.GetComponentInParent<CoopGame.Network.CoopCapstanLift>() != null ||
                     floor.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null ||
                     floor.GetComponentInParent<CoopGame.Network.RepairStation>() != null ||

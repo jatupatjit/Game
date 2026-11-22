@@ -282,7 +282,7 @@ namespace CoopGame.CarrySystem
         protected override void OnPlacementCompleted()
         {
             base.OnPlacementCompleted();
-            if (!_isDestroyed && !IsSecured && _placeDamage > 0 && !PlacedOnCushion() && !PlacedOnCheckpoint()) ApplyDamageServer(_placeDamage, "Placed off hay");
+            if (!_isDestroyed && !IsSecured && _placeDamage > 0 && !PlacedOnCushion() && !(CargoSnapPad.SnapLockEnabled && PlacedOnCheckpoint())) ApplyDamageServer(_placeDamage, "Placed off hay");
         }
 
         private bool PlacedOnCheckpoint()
@@ -353,12 +353,13 @@ namespace CoopGame.CarrySystem
             // Hay bales cushion the crate: no impact or scrape damage on them.
             if (HayCushion.IsCushion(other)) return;
             // George 2026-11-11: bumping into a checkpoint (e.g. the horse cart's bed, rails and wheels) never hurts the crate.
-            if (other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
-            // Capstan lift deck, repair pad and explicit snap pads are safe cargo spots too.
-            if (other.GetComponentInParent<CoopGame.Network.CoopCapstanLift>() != null ||
+            // George 2026-11-23: only while the safe-pad switch is on (CargoSnapPad.SnapLockEnabled, off for now).
+            if (CargoSnapPad.SnapLockEnabled && other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
+            // Capstan lift deck, repair pad and explicit snap pads are safe cargo spots too (same switch).
+            if (CargoSnapPad.SnapLockEnabled && (other.GetComponentInParent<CoopGame.Network.CoopCapstanLift>() != null ||
                 other.GetComponentInParent<CoopGame.Network.RepairStation>() != null ||
                 other.GetComponentInParent<CargoSnapPad>() != null ||
-                CoopGame.Network.CoopCapstanLift.IsPlatformBody(other.attachedRigidbody)) return;
+                CoopGame.Network.CoopCapstanLift.IsPlatformBody(other.attachedRigidbody))) return;
             // Crates riding a cart never take impact or scrape damage from the cart itself.
             if (other.attachedRigidbody != null && other.attachedRigidbody.TryGetComponent<CargoCart>(out _)) return;
 
