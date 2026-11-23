@@ -319,7 +319,7 @@ namespace CoopGame.Network
 
         private void Update()
         {
-            bool available = CanCustomize && !PauseMenu.IsPaused;
+            bool available = CanCustomize && !PauseMenu.IsPaused && !TitleScreen.IsVisible; // not over the main menu
             if (_launchButton != null && _launchButton.gameObject.activeSelf != available)
                 _launchButton.gameObject.SetActive(available);
             if (!available)

@@ -38,6 +38,7 @@ namespace CoopGame.Network
         }
 
         private bool _forced;
+        private const float LogoX = 400f, LogoY = -320f; // logo centre from the top-left corner (1920x1080 layout)
 
         private void Build()
         {
@@ -53,36 +54,45 @@ namespace CoopGame.Network
             _root = new GameObject("Title", typeof(RectTransform), typeof(Image));
             _root.transform.SetParent(transform, false);
             Stretch((RectTransform)_root.transform);
-            _root.GetComponent<Image>().color = new Color(.47f, .74f, .95f, .96f); // sky
+            var rootImage = _root.GetComponent<Image>();
+            rootImage.color = new Color(.47f, .74f, .95f, 1f); // sky, behind the art while it loads / if it is missing
 
-            var card = new GameObject("Card", typeof(RectTransform), typeof(Image));
-            card.transform.SetParent(_root.transform, false);
-            var cardRect = (RectTransform)card.transform;
-            cardRect.sizeDelta = new Vector2(900f, 560f);
-            cardRect.anchoredPosition = new Vector2(0f, -40f);
-            UITheme.StyleCuteCard(card.GetComponent<Image>(), true);
-            UITheme.AddCuteTape(card.transform, 5, new Vector2(1f, 1f), new Vector2(-90f, -50f), -25f, 110f);
-            UITheme.AddCuteTape(card.transform, 2, new Vector2(0f, 0f), new Vector2(90f, 60f), 25f, 95f);
+            // George 2026-11-23: his main menu art (background + logo), Resources/UI/MainMenu.
+            var art = Resources.Load<Sprite>("UI/MainMenu/MenuBackground");
+            if (art != null)
+            {
+                var bg = new GameObject("Background", typeof(RectTransform), typeof(Image), typeof(AspectRatioFitter));
+                bg.transform.SetParent(_root.transform, false);
+                var bgImage = bg.GetComponent<Image>();
+                bgImage.sprite = art;
+                bgImage.raycastTarget = false;
+                var fitter = bg.GetComponent<AspectRatioFitter>();
+                fitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+                fitter.aspectRatio = art.rect.width / art.rect.height;
+            }
 
-            UITheme.MakeCutePlank(card.transform, "DON'T DROP IT!", 680f, 150f, 8f, 72);
-            var subtitle = UITheme.MakeText(card.transform, "Subtitle", "ช่วยกันขนลังไปส่ง อย่าให้หล่น!", 36, UITextRole.Primary, TextAnchor.MiddleCenter);
-            UITheme.StyleCuteText(subtitle);
-            var subtitleRect = (RectTransform)subtitle.transform;
-            subtitleRect.sizeDelta = new Vector2(800f, 60f);
-            subtitleRect.anchoredPosition = new Vector2(0f, 95f);
+            var logoSprite = Resources.Load<Sprite>("UI/MainMenu/GameLogo");
+            var logo = new GameObject("Logo", typeof(RectTransform), typeof(Image));
+            logo.transform.SetParent(_root.transform, false);
+            _crate = (RectTransform)logo.transform;
+            _crate.anchorMin = _crate.anchorMax = new Vector2(0f, 1f);
+            _crate.pivot = new Vector2(.5f, .5f);
+            _crate.sizeDelta = new Vector2(620f, 550f);
+            _crate.anchoredPosition = new Vector2(LogoX, LogoY);
+            var logoImage = logo.GetComponent<Image>();
+            logoImage.raycastTarget = false;
+            if (logoSprite != null) { logoImage.sprite = logoSprite; logoImage.preserveAspect = true; }
+            else { logoImage.enabled = false; UITheme.MakeCutePlank(logo.transform, "DON'T DROP IT!", 600f, 140f, 0f, 64); }
 
-            var crate = new GameObject("Crate", typeof(RectTransform), typeof(Image));
-            crate.transform.SetParent(card.transform, false);
-            _crate = (RectTransform)crate.transform;
-            _crate.sizeDelta = new Vector2(130f, 130f);
-            _crate.anchoredPosition = new Vector2(0f, -20f);
-            UITheme.StyleIcon(crate.GetComponent<Image>(), UITheme.IconCargoHud);
-
-            var start = UITheme.MakeButton(card.transform, "Start", "เริ่มเล่น", UIButtonStyle.White, new Vector2(380f, 96f), 36);
-            ((RectTransform)start.transform).anchoredPosition = new Vector2(-200f, -190f);
+            var start = UITheme.MakeButton(_root.transform, "Start", "เริ่มเล่น", UIButtonStyle.White, new Vector2(380f, 96f), 36);
+            var startRect = (RectTransform)start.transform;
+            startRect.anchorMin = startRect.anchorMax = new Vector2(0f, 1f);
+            startRect.anchoredPosition = new Vector2(LogoX, LogoY - 400f);
             start.onClick.AddListener(Hide);
-            var quit = UITheme.MakeButton(card.transform, "Quit", "ออกจากเกม", UIButtonStyle.White, new Vector2(320f, 96f), 32);
-            ((RectTransform)quit.transform).anchoredPosition = new Vector2(200f, -190f);
+            var quit = UITheme.MakeButton(_root.transform, "Quit", "ออกจากเกม", UIButtonStyle.White, new Vector2(380f, 96f), 32);
+            var quitRect = (RectTransform)quit.transform;
+            quitRect.anchorMin = quitRect.anchorMax = new Vector2(0f, 1f);
+            quitRect.anchoredPosition = new Vector2(LogoX, LogoY - 512f);
             quit.onClick.AddListener(Application.Quit);
             var settings = UITheme.MakeButton(_root.transform, "Settings", "ตั้งค่า", UIButtonStyle.White, new Vector2(240f, 84f), 30);
             var settingsRect = (RectTransform)settings.transform;
@@ -118,8 +128,8 @@ namespace CoopGame.Network
             if (!_forced && manager != null && manager.IsListening) { Hide(); return; }
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             if (!SettingsMenu.IsOpen && keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame)) { Hide(); return; }
-            _crate.anchoredPosition = new Vector2(0f, -20f + 10f * Mathf.Sin(Time.unscaledTime * 2.2f));
-            _crate.localRotation = Quaternion.Euler(0f, 0f, 6f * Mathf.Sin(Time.unscaledTime * 1.3f));
+            _crate.anchoredPosition = new Vector2(LogoX, LogoY + 8f * Mathf.Sin(Time.unscaledTime * 2.2f));
+            _crate.localRotation = Quaternion.Euler(0f, 0f, 2f * Mathf.Sin(Time.unscaledTime * 1.3f));
             if (Cursor.lockState != CursorLockMode.None) { Cursor.lockState = CursorLockMode.None; Cursor.visible = true; }
         }
     }
