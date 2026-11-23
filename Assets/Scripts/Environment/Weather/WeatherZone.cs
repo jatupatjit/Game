@@ -4,7 +4,7 @@ using UnityEngine;
 namespace CoopGame.Weather
 {
     /// <summary>
-    /// A hand-placed area where one weather event takes effect (George 2026-11-17: every event happens in placed areas,
+    /// A hand-placed area where one weather event takes effect (every event happens in placed areas,
     /// only rain covers the whole map). Wind uses <see cref="WeatherWindZone"/>; this box is for the other kinds:
     /// GoldenCrate = crates inside take no damage and players inside spend no stamina while the event runs.
     /// Same box on every machine, and the event clock is the server's, so every screen agrees.

@@ -5,9 +5,9 @@ using UnityEngine;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// George 2026-11-23 (climbing with a purpose, idea B): a rope hoist at the top of a cliff. A team-mate down below
+    /// A rope hoist at the top of a cliff. A team-mate down below
     /// sets the crate in the basket; someone who climbed up holds Interact (E) at the winch to haul it up. Needs at
-    /// least 2 players in the session (George: the game should need several players). Letting go half way drops
+    /// least 2 players in the session. Letting go half way drops
     /// the basket faster than the crate can fall, so the crate free-falls and takes normal impact damage when it lands.
     /// At the top the basket latches until the crate is lifted out, then winds itself back down.
     /// Server simulates; every peer moves the basket, rope and winch from the same synced progress.
@@ -62,7 +62,7 @@ namespace CoopGame.Network
             if (_wheel != null) _wheelRest = _wheel.localRotation;
         }
 
-        // ── Input: every machine, for its own player ──
+        // Input: every machine, for its own player
         private void Update()
         {
             if (!IsSpawned || !IsClient || _winch == null) return;

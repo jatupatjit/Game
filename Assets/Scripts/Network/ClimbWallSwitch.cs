@@ -5,7 +5,7 @@ using UnityEngine;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// George 2026-11-23 (climbing with a purpose, idea A): a lever high on a climbable wall. A player climbs up and
+    /// A lever high on a climbable wall. A player climbs up and
     /// presses Interact (E) next to it; it latches ON for the whole party and stays on. Anything with a
     /// <see cref="SwitchTarget"/> pointing at this switch then opens on every screen: a gate rises, a bridge lowers,
     /// a platform slides out. Only reachable from up the wall (reach + height check), validated on the server.

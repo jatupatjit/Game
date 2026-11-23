@@ -7,7 +7,7 @@ using UnityEngine;
 namespace CoopGame.EditorTools
 {
     /// <summary>
-    /// George 2026-11-20: the Lobby moves onto the big island (เกาะใหญ่). Builds two shop stall prefabs
+    /// The Lobby moves onto the big island (เกาะใหญ่). Builds two shop stall prefabs
     /// (gear + outfit, press E at the counter, <see cref="ShopStall"/>) and lays the Lobby out on the island:
     /// portal + spawn + stalls + toys + decor. The old flat floor, walls and see-saw are removed.
     /// Menu: Tools/Expedition/Build Lobby Island (open Lobby first). Backup of the scene before this: E:/Unity/Backups/20261120-LobbyShops.
@@ -40,7 +40,7 @@ namespace CoopGame.EditorTools
             Debug.Log("[LobbyIsland] built stalls and laid out the Lobby on the island.");
         }
 
-        // ───────────────────────── Materials ─────────────────────────
+        // Materials
 
         private static readonly Dictionary<string, Material> _mats = new();
 
@@ -71,7 +71,7 @@ namespace CoopGame.EditorTools
 
         private static Color Hex(string hex) { ColorUtility.TryParseHtmlString(hex, out var c); return c; }
 
-        // ───────────────────────── Shapes ─────────────────────────
+        // Shapes
 
         private static Transform Group(Transform parent, string name, Vector3 pos, Vector3 euler = default)
         {
@@ -125,7 +125,7 @@ namespace CoopGame.EditorTools
             return go.transform;
         }
 
-        // ───────────────────────── Stalls ─────────────────────────
+        // Stalls
 
         private static void EnsureFolder(string path)
         {
@@ -354,7 +354,7 @@ namespace CoopGame.EditorTools
             big.localEulerAngles = new Vector3(0f, 0f, -12f);
         }
 
-        // ───────────────────────── Lobby layout ─────────────────────────
+        // Lobby layout
 
         private static GameObject Find(string name)
         {
@@ -387,7 +387,7 @@ namespace CoopGame.EditorTools
 
         public static void LayOut()
         {
-            // 1) Old flat lobby out (George: "ลบอันอื่นออก").
+            // 1) Old flat lobby out.
             foreach (var n in new[] { "Plane", "wall", "wall (1)", "wall (2)", "SeeSaw", "SeeSawWeight", "=== Lobby Island ===" }) Remove(n);
 
             var island = new GameObject("=== Lobby Island ===").transform;

@@ -72,7 +72,7 @@ namespace CoopGame.Network
         /// <summary>Tooltip text: name, then the Thai effect text.</summary>
         public static string Tooltip(byte id) => id == 0 ? None.Description : Get(id).Name + "\n" + Get(id).Description;
 
-        // ── Art ──────────────────────────────────────────────────────────────
+        // Art
         private const string ArtFolder = "Cards/";
         /// <summary>Share of the card height (from the top) holding the illustration; the rest is the baked name/effect strip.</summary>
         public const float IllustrationFraction = .78f;
@@ -104,7 +104,7 @@ namespace CoopGame.Network
             return icon;
         }
 
-        // ── Random offer (server draws, three distinct ids packed in a uint: id0 | id1<<8 | id2<<16) ──
+        // Random offer (server draws, three distinct ids packed in a uint: id0 | id1<<8 | id2<<16)
         public static uint Draw(System.Random rng)
         {
             var pool = new List<byte>(Cards.Length);

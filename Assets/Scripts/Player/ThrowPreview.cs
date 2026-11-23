@@ -17,12 +17,12 @@ namespace CoopGame.Player
     public sealed class ThrowPreview : MonoBehaviour
     {
         private const int MaxSteps = 180;          // 3.6 s at 50 Hz
-        // Big, high-contrast marks (George 2026-11-05): every bright mark has a dark copy just behind it.
+        // Big, high-contrast marks: every bright mark has a dark copy just behind it.
         private const float ArrowSpacing = 1.1f, ArrowSpeed = 2.6f, ArrowSize = .55f, RingRadius = 1.2f;
         private const float RippleTime = 1.1f;
         private static readonly Color Shade = new Color(0f, 0f, 0f, .55f);
         private const float BeamHeight = 5f, BeamWidth = .35f;
-        /// <summary>How much of the carried crate still shows while aiming (George 2026-11-05: the crate fades more
+        /// <summary>How much of the carried crate still shows while aiming (the crate fades more
         /// than the body, it sits in the middle of the screen).</summary>
         public const float CargoGhostAlpha = .2f;
         private static readonly Color Weak = new Color(1f, 1f, 1f, .85f), Strong = new Color(1f, .75f, .2f, .95f);

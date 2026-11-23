@@ -5,7 +5,7 @@ using UnityEngine;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// Liquid crate (George 2026-11-19, idea 1): a glass water tank. Tilting it past a calm angle, hard starts and
+    /// Liquid crate: a glass water tank. Tilting it past a calm angle, hard starts and
     /// stops, and knocks spill water; the delivery score is multiplied by the water left (100% = full score).
     /// The host simulates the spill and syncs the fill; every screen draws the water level, a slosh, drips where it
     /// pours over the rim, and a small water bar over the tank.
@@ -80,7 +80,7 @@ namespace CoopGame.CarrySystem
             _shownFill = Fill01;
         }
 
-        // ───────────────────────── Spill (host) ─────────────────────────
+        // Spill (host)
 
         private void FixedUpdate()
         {
@@ -130,7 +130,7 @@ namespace CoopGame.CarrySystem
             if (IsSpawned) _fill.Value = 1f; else _localFill = 1f;
         }
 
-        // ───────────────────────── Look (every screen) ─────────────────────────
+        // Look (every screen)
 
         private void Update()
         {

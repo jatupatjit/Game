@@ -61,7 +61,7 @@ public static class FloatingCoopRouteExtension
         {
             FloatingCoopLevelBuilder.Island(names[i], centers[i], radii[i], 119 + i * 13);
             FloatingCoopLevelBuilder.Parking(names[i] + "_Rest", centers[i] + new Vector3(0, 0, -4));
-            FloatingCoopLevelBuilder.Flag(names[i] + "_Flag", centers[i] + new Vector3(radii[i].x * .72f, 0, 0), i == 4 ? _gold : _blue);
+            FloatingCoopLevelBuilder.Flag(names[i] + "_Flag", centers[i] + new Vector3(radii[i].x * .72f, 0, 0), i == 4 ? _gold: _blue);
             // Outer trees stay away from the diagonal bridge approaches and wall ledges.
             FloatingCoopLevelBuilder.Tree(names[i] + "_Tree", centers[i] + new Vector3(radii[i].x * .65f, 0, -radii[i].y * .4f));
         }

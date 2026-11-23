@@ -452,7 +452,7 @@ namespace CoopGame.Player
             float easeTime = holdView ? _aimEaseInTime : _aimEaseOutTime;
             _aimProgress = Mathf.MoveTowards(_aimProgress, holdView ? 1f : 0f, easeTime > 1e-3f ? Time.deltaTime / easeTime : 1f);
             _aimBlend = Mathf.SmoothStep(0f, 1f, _aimProgress);
-            // George 2026-11-20: looking up to throw far used to push the landing ring below the screen. While aiming,
+            // Looking up to throw far used to push the landing ring below the screen. While aiming,
             // the view (not the aim: ThrowVelocity reads Pitch) stops tilting up once the ring would leave the bottom.
             float floor = -90f;
             if (aiming && _fullRagdoll.TryGetThrowLanding(out Vector3 landing))

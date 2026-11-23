@@ -4,8 +4,8 @@ using UnityEngine;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// Wooden cart / sled with a flat bed and low rails that carries several crates (2026-11-20, item 5 of the co-op
-    /// mechanisms). It is a normal <see cref="CarryableObject"/>: one player drags it by an end, two carry it, and
+    /// Wooden cart / sled with a flat bed and low rails that carries several crates.
+    /// It is a normal <see cref="CarryableObject"/>: one player drags it by an end, two carry it, and
     /// crates are set on the bed with a gentle F placement (the bed counts as a valid floor, the rails never block it)
     /// and lifted off again with F. While nobody holds it, it runs downhill by itself. Crates resting on the bed are
     /// pulled along with it and never take impact or scrape damage from the cart (see FragileCargo).
@@ -64,7 +64,7 @@ namespace CoopGame.CarrySystem
             CarryPassengers();
         }
 
-        // ───────────────────────── Downhill run ─────────────────────────
+        // Downhill run
         private void RunDownhill()
         {
             Vector3 origin = _rigidbody.position + Vector3.up * .2f;
@@ -94,7 +94,7 @@ namespace CoopGame.CarrySystem
             _rigidbody.AddForce(downhill * _slideBoost, ForceMode.Acceleration);
         }
 
-        // ───────────────────────── Passengers ─────────────────────────
+        // Passengers
         private void CarryPassengers()
         {
             if (_bed == null || _passengerGrip <= 0f) return;

@@ -21,7 +21,7 @@ namespace CoopGame.CarrySystem
         public static readonly List<CargoSnapPad> Active = new();
 
         /// <summary>
-        /// George 2026-11-23: the game should make the crate lose HP, so the safe-pad snap + lock is a switch and OFF
+        /// The game should make the crate lose HP, so the safe-pad snap + lock is a switch and OFF
         /// for now. Off: F never glides/locks the crate onto a pad, and the capstan lift, checkpoint pads, repair
         /// stations and snap pads cost HP like any other floor (5 HP to set down, normal bump/scrape damage).
         /// Hay bales and cargo carts stay soft as before. Set to true to bring the whole safe-pad behaviour back.

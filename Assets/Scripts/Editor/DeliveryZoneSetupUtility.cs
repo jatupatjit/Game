@@ -83,7 +83,7 @@ namespace CoopGame.EditorTools
                 zone.EnsureVisuals();
                 // Keep the mission's wooden crate; never resurrect the removed package.
                 var mission = Object.FindAnyObjectByType<CoopGame.Network.LevelMission>();
-                FragileCargo cargo = mission != null ? mission.Cargo : null;
+                FragileCargo cargo = mission != null ? mission.Cargo: null;
                 if (cargo == null) cargo = Object.FindAnyObjectByType<FragileCargo>();
                 if (cargo != null)
                 {

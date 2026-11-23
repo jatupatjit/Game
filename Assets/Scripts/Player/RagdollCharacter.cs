@@ -6,7 +6,7 @@ using UnityEngine;
 namespace CoopGame.Player
 {
     /// <summary>
-    /// The full-physics player (default since 2026-10-30; untick Full Ragdoll for the old animated player).
+    /// The full-physics player (default since; untick Full Ragdoll for the old animated player).
     ///
     /// The owner simulates 16 jointed bodies. Every body is held up and moved by the same acceleration (so the figure
     /// walks as one), the hips and chest are torqued upright toward the camera heading, and the joint drives chase the
@@ -361,7 +361,7 @@ namespace CoopGame.Player
         private const float TurnRate = 720f, SlowTurnRate = 240f; // deg/s
         // Carrying turns the body (and the crate, which is held in front of the body, not the camera) slower: a fast
         // mouse flick swung the crate round faster than the body and the hands dragged the body off (1.4 m slide and
-        // a dropped crate at 540 deg/s, 2026-11-05). The camera still turns freely.
+        // a dropped crate at 540 deg/s). The camera still turns freely.
         private const float CarryTurnRate = 200f;
         private const float CarryStopSpeed = .25f, CarryBrake = 12f;
         private float _nextHeavySlip;
@@ -498,7 +498,7 @@ namespace CoopGame.Player
         private bool Exhausted => _stamina != null && _stamina.IsExhausted;
         private float Card(CoopGame.Network.CardEffect effect) => _expedition != null ? _expedition.CardMagnitude(effect) : 1f;
 
-        // ───────────────────────── Input (owner) ─────────────────────────
+        // Input (owner)
 
         private void Update()
         {
@@ -515,7 +515,7 @@ namespace CoopGame.Player
             if (_carry != null)
             {
                 if (UpdateThrowAim(canAct)) { }
-                // F sets the crate down (George 2026-11-05: the mouse buttons are for climbing only).
+                // F sets the crate down (the mouse buttons are for climbing only).
                 else if (_input.CarryPressed && canAct) RequestPlace();
                 if (_input.ScrollStep != 0)
                     _liftSteps = Mathf.Clamp(_liftSteps + _input.ScrollStep, -CarryableObject.HoldLowerSteps, CarryableObject.HoldRaiseSteps);
@@ -537,7 +537,7 @@ namespace CoopGame.Player
             }
         }
 
-        // ───────────────────────── Physics (owner) ─────────────────────────
+        // Physics (owner)
 
         private void FixedUpdate()
         {
@@ -565,7 +565,7 @@ namespace CoopGame.Player
             if (UpdateGetUp()) return;
 
             bool moving = move.sqrMagnitude > .01f;
-            // No sprinting while holding a crate (George 2026-11-09: sprint + carry kept stamina from draining).
+            // No sprinting while holding a crate (sprint + carry kept stamina from draining).
             bool sprint = _input != null && _input.SprintHeld && moving && !Exhausted && _carry == null;
             if (sprint && _stamina != null) _stamina.ConsumeActionStamina(_sprintStaminaDrain * dt);
             Vector3 desired = facing * new Vector3(move.x, 0f, move.y);
@@ -576,7 +576,7 @@ namespace CoopGame.Player
             Vector3 hipsVel = _bodies[Hips].linearVelocity;
             Vector3 flatVel = Flat(hipsVel);
             Vector3 carryPush = Vector3.zero;
-            // Carrying together (George 2026-11-09): every carrier walks with the crate, and the crate moves with the
+            // Carrying together: every carrier walks with the crate, and the crate moves with the
             // team's averaged input. Same speed in every direction, and a carrier who stops slows the team (instead of
             // sliding after it on their own).
             bool teamCarry = _carry != null && _carry.CurrentCarrierCount >= 2;
@@ -712,8 +712,8 @@ namespace CoopGame.Player
             _jumpPoseLeftGroundAt = Time.time;
         }
 
-        // ───────────────────────── Jump pose ─────────────────────────
-        // George 2026-11-11 (photo of a jumping child): in the air after a jump, arms up in a V with the elbows a
+        // Jump pose
+        // In the air after a jump, arms up in a V with the elbows a
         // little bent, knees bent with the feet tucked behind, head up a little. Eased in on the way up and back out
         // while falling, so the legs are straight again before landing. Not while carrying, climbing or knocked down.
         [Header("Jump Pose")]
@@ -781,7 +781,7 @@ namespace CoopGame.Player
             for (int i = 1; i < BoneCount; i++) _target[i] = Quaternion.Slerp(_target[i], _jumpPose[i], w);
         }
 
-        // ───────────────────────── Mixamo clips (George 2026-11-11) ─────────────────────────
+        // Mixamo clips
         // A second hidden copy of the character plays one of these clips through a manual PlayableGraph; its bone
         // rotations become pose targets, the same way the animated clone drives walking. The physics body follows
         // through its joint drives, so collisions and the ragdoll still work.
@@ -896,7 +896,7 @@ namespace CoopGame.Player
             }
             if (_jumpClipWristStraighten > 0f)
             {
-                // George 2026-11-11: the clip's hands hang off bent wrists, so the wrist (not the fingertips) led the
+                // The clip's hands hang off bent wrists, so the wrist (not the fingertips) led the
                 // arms up. Line the hands up with the forearms so the fingers lead.
                 if (!_hasGetUpAxes) BuildGetUpAxes();
                 for (int h = 0; h < 2; h++)
@@ -977,7 +977,7 @@ namespace CoopGame.Player
             body.AddTorque(torque * strength * body.mass / 10f, ForceMode.Force);
         }
 
-        // ───────────────────────── Target pose ─────────────────────────
+        // Target pose
 
         /// <summary>Procedural fallback when there is no clone: rest pose plus a simple walk cycle.</summary>
         private void UpdateTargetPose(float speed, Quaternion facing, float dt)
@@ -1035,8 +1035,8 @@ namespace CoopGame.Player
             }
         }
 
-        // ───────────────────────── Get-up after a fall respawn ─────────────────────────
-        // George 2026-11-11: five key poses (lying face down, push up on the hands, kneel on one knee, push up with
+        // Get-up after a fall respawn
+        // Five key poses (lying face down, push up on the hands, kneel on one knee, push up with
         // the bottom high, stand). The bodies turn kinematic and are posed like the climb: each bone aimed along a
         // direction in the side plane of the body, the keys joined by a Catmull-Rom curve so the motion flows through
         // them, the ragdoll's real lying pose blended into the first key, then physics takes over standing.
@@ -1224,7 +1224,7 @@ namespace CoopGame.Player
             for (int i = joint; i < joint + 2; i++) _target[i] = r * _target[i];
         }
 
-        // ───────────────────────── Arms ─────────────────────────
+        // Arms
         // Arms that hold or reach something start from the still idle arm pose (so the run cycle's swing and twist
         // never leak into them) and are bent onto their target by two-bone IK. Free arms keep the animation.
 
@@ -1370,7 +1370,7 @@ namespace CoopGame.Player
             _target[hand] = r2 * _target[hand];
         }
 
-        // ───────────────────────── Climb (Wallclimb) ─────────────────────────
+        // Climb (Wallclimb)
 
         /// <summary>
         /// While Wallclimb holds a wall or pulls up, it moves the root through the CharacterController (the old
@@ -1492,7 +1492,7 @@ namespace CoopGame.Player
             _wasGrounded = false;
         }
 
-        // ───────────────────────── Carry ─────────────────────────
+        // Carry
         // The old hold-pose carry: the crate attaches this player as a carrier and steers itself in front of the
         // player root (CarryableObject.HoldPose), so it stays level and steady while the body walks as physics. The
         // server owns attach/place/throw (a client asks by RPC); the owner's hands spring onto the grips of the crate
@@ -1531,7 +1531,7 @@ namespace CoopGame.Player
             if (shift != Vector3.zero) _bones[Hips].position = hips + Vector3.ClampMagnitude(shift, DrawnBodyMaxShift);
         }
 
-        // George 2026-11-12 "the player goes through the crate": the hips keep their clearance, but strafing or a
+        // "the player goes through the crate": the hips keep their clearance, but strafing or a
         // partner tugging leans the chest/head forward into the crate (limbs ignore collisions with carried cargo).
         // Measured on Level02's crate: head 0.2-0.28 m inside while strafing with A/D.
         private const float UpperBodyClearance = .03f, UpperBodySpring = 400f, UpperBodyDamper = 20f, UpperBodyMaxAccel = 150f;
@@ -1786,7 +1786,7 @@ namespace CoopGame.Player
             float overlap = gap - CarryStanceApproach;
             // Dragging a two-carrier crate alone: its grips follow the body and its tipped near edge comes into the
             // clearance zone, so pushing the body out made body and crate chase each other backwards (up to 12 m/s,
-            // 3 of 5 lifts, 2026-11-12). The crate is still kept out of the body by CarryableObject.PushOutOfCarriers.
+            // 3 of 5 lifts). The crate is still kept out of the body by CarryableObject.PushOutOfCarriers.
             if (overlap > 0f && !_carry.IsSoloDragging)
             {
                 float closing = Mathf.Max(0f, Vector3.Dot(flatVel - cargoVel, dir));
@@ -1837,7 +1837,7 @@ namespace CoopGame.Player
         {
             if (_ignoredAfterCarry == null) return;
             // Knocked down while carrying: the limp body used to fall into the crate and stay inside it, because
-            // collisions only came back once nothing overlapped (George 2026-11-09). Restore them right after the fall
+            // collisions only came back once nothing overlapped. Restore them right after the fall
             // starts so physics pushes the body out instead.
             bool fallen = IsKnockedDown && Time.time > _ignoredAfterCarrySince + .12f;
             if (!fallen)
@@ -1937,7 +1937,7 @@ namespace CoopGame.Player
             return best;
         }
 
-        // ───────────────────────── Carry: server side ─────────────────────────
+        // Carry: server side
 
         private void ServerStartCarry(CarryableObject cargo, Vector3 localL, Vector3 localR)
         {
@@ -2033,7 +2033,7 @@ namespace CoopGame.Player
         [Rpc(SendTo.Owner)]
         private void CarryEndedRpc() => OnCarryEnded();
 
-        // ───────────────────────── Sound and effects ─────────────────────────
+        // Sound and effects
 
         /// <summary>Carry and knockdown cues for every screen (server or owner sends; nothing gameplay-related).</summary>
         [Rpc(SendTo.Everyone)]
@@ -2062,7 +2062,7 @@ namespace CoopGame.Player
             CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.ClimbGrab, _bones[hand].position);
         }
 
-        // ───────────────────────── Drawing ─────────────────────────
+        // Drawing
 
         private void LateUpdate()
         {
@@ -2105,9 +2105,9 @@ namespace CoopGame.Player
             }
         }
 
-        // ───────────────────────── Clavicles ─────────────────────────
+        // Clavicles
         // The physics body has no clavicles, so raising an arm above the shoulder only turns the upper arm and the
-        // shoulder skin collapses (George 2026-11-11: arms twisted, shoulders shrank in the jump pose). Drawing only:
+        // shoulder skin collapses (arms twisted, shoulders shrank in the jump pose). Drawing only:
         // the clavicle lifts with the arm's elevation along the torso and the arm keeps its drawn direction.
         [Header("Clavicles (drawing)")]
         [Tooltip("Clavicle lift per degree the upper arm points above shoulder level (0 = off).")]
@@ -2152,7 +2152,7 @@ namespace CoopGame.Player
             }
         }
 
-        // ───────────────────────── Fists ─────────────────────────
+        // Fists
 
         [Header("Fists")]
         [Tooltip("Finger curl (degrees) of a hand holding a wall or a crate")]
@@ -2190,7 +2190,7 @@ namespace CoopGame.Player
             }
         }
 
-        // ───────────────────────── First-person hands ─────────────────────────
+        // First-person hands
         // In first person the owner's body is shadow-only and a second copy of the body mesh is drawn in which every
         // bone except the forearms, hands and fingers is collapsed onto the camera position. Geometry collapsed onto
         // the eye projects to nothing, so only the forearms and hands show, following the physics arms. Only the
@@ -2299,7 +2299,7 @@ namespace CoopGame.Player
             return true;
         }
 
-        // ───────────────────────── Climb fade ─────────────────────────
+        // Climb fade
         // While climbing, the owner's own body turns see-through on their screen so the wall and holds behind it
         // show. Body and face swap to transparent copies of their materials (the alpha rides on the colour property
         // block PlayerAppearance already sets); the gloves keep their solid material. Others see the body as usual.
@@ -2391,7 +2391,7 @@ namespace CoopGame.Player
             _wasGrounded = true;
         }
 
-        // ───────────────────────── Build ─────────────────────────
+        // Build
 
         private void BuildPhysics()
         {
@@ -2633,7 +2633,7 @@ namespace CoopGame.Player
             return mass;
         }
 
-        // ───────────────────────── Knockdown ─────────────────────────
+        // Knockdown
 
         private void DetectHardLanding(float verticalSpeed)
         {
@@ -2683,7 +2683,7 @@ namespace CoopGame.Player
             _climbing = false;
         }
 
-        // ───────────────────────── Crate contact ─────────────────────────
+        // Crate contact
         // The torso and legs see cargo as immovable (contact mass scaling), so walking into a crate cannot launch
         // it; a bump gives it a small capped nudge instead. Free hands touch cargo with a capped impulse.
 
@@ -2758,7 +2758,7 @@ namespace CoopGame.Player
             body.AddTorque(Vector3.up * Random.Range(-.4f, .4f), ForceMode.VelocityChange);
         }
 
-        // ───────────────────────── Diagnostics ─────────────────────────
+        // Diagnostics
 
         public Vector3 HipsPosition => _physicsRoot != null ? _bodies[Hips].position : (_bonesReady ? _bones[Hips].position : transform.position);
         public Vector3 HeadPosition => _physicsRoot != null ? _bodies[Head].position : (_bonesReady ? _bones[Head].position : transform.position);

@@ -10,7 +10,7 @@ public enum UIButtonStyle { Primary, Secondary, Danger, Pink, Blue, White, White
 public enum UITextRole { Primary, Secondary, Accent, OnPrimary, Positive, Danger, OnLight }
 
 /// <summary>
-/// Single source of the UI look: the user's own design kit (Assets/Art/UI, sprites built by
+/// Single source of the UI look: the design kit (Assets/Art/UI, sprites built by
 /// Tools/UI Kit/Rebuild Sprites into Assets/Art/UI/Resources/UIKit). Pink primary / light-pink
 /// secondary buttons with dark outline, dark translucent rounded panels, beige panels with a darker
 /// top band, red mission/danger, yellow stamina, round player faces, card backs and icons.
@@ -18,7 +18,7 @@ public enum UITextRole { Primary, Secondary, Accent, OnPrimary, Positive, Danger
 /// </summary>
 public static class UITheme
 {
-    // ── Palette (sampled from the kit art) ───────────────────────────────────
+    // Palette (sampled from the kit art)
     public static readonly Color Panel         = Color.white;           // kit panels carry their own colour/alpha
     public static readonly Color PanelSolid    = Color.white;
     public static readonly Color Track         = Hex("#313336");        // stamina-bar frame grey: dividers, tracks
@@ -54,12 +54,12 @@ public static class UITheme
     /// <summary>Meters below this ratio switch to <see cref="Danger"/>.</summary>
     public const float LowRatio = 0.3f;
 
-    // ── Derived interaction colours (kit sprites are full colour, so tints only darken) ──
+    // Derived interaction colours (kit sprites are full colour, so tints only darken)
     public static Color Hover(Color c) => new Color(c.r * 0.93f, c.g * 0.93f, c.b * 0.93f, c.a);
     public static Color Pressed(Color c) => new Color(c.r * 0.8f, c.g * 0.8f, c.b * 0.8f, c.a);
     public static Color Disabled(Color c) => new Color(c.r * 0.6f, c.g * 0.6f, c.b * 0.6f, c.a * 0.6f);
 
-    // ── Kit sprites ──────────────────────────────────────────────────────────
+    // Kit sprites
     private static readonly Dictionary<string, Sprite> _kit = new Dictionary<string, Sprite>();
 
     /// <summary>Loads a kit sprite from Resources/UIKit (cached). Null if missing.</summary>
@@ -127,7 +127,7 @@ public static class UITheme
     public static Sprite CardBack(byte card) =>
         card == 1 ? Kit("CardBackRed") : card == 2 ? Kit("CardBackBlue") : Kit("CardBackYellow");
 
-    // ── Font ─────────────────────────────────────────────────────────────────
+    // Font
     // Mitr (rounded Thai, SIL OFL, Assets/Art/Fonts/Mitr) in real weights via Resources/UIFontSet;
     // GameThai (Sarabun) then the builtin font are fallbacks. Never use FontStyle.Bold (fake bold).
     private static UIFontSet _fontSet;
@@ -201,7 +201,7 @@ public static class UITheme
         text.fontStyle = FontStyle.Normal;
     }
 
-    // ── Colour lookups ───────────────────────────────────────────────────────
+    // Colour lookups
     /// <summary>Tint applied to the button sprite (kit sprites are already coloured, so mostly white).</summary>
     public static Color ButtonColor(UIButtonStyle style) => style == UIButtonStyle.Danger ? Danger : Color.white;
 
@@ -253,7 +253,7 @@ public static class UITheme
     /// <summary>Meter colour: <paramref name="normal"/> at or above <see cref="LowRatio"/>, Danger below.</summary>
     public static Color Meter(float ratio, Color normal) => ratio >= LowRatio ? normal : Danger;
 
-    // ── Stylers (restyle existing Graphics) ──────────────────────────────────
+    // Stylers (restyle existing Graphics)
     /// <summary>Dark translucent kit panel; <paramref name="small"/> = compact rounded dark chip.</summary>
     public static void StylePanel(Image image, bool small = false)
     {
@@ -366,7 +366,7 @@ public static class UITheme
         }
     }
 
-    // ── Cute kit builders (Canva pages 64-74) ────────────────────────────────
+    // Cute kit builders (Canva pages 64-74)
     /// <summary>Beige card; <paramref name="wide"/> = the wide arched card (card select, customization).</summary>
     public static void StyleCuteCard(Image image, bool wide = false)
     {
@@ -410,7 +410,7 @@ public static class UITheme
 
     /// <summary>Decorative tape strip (ignored by layouts), anchored on <paramref name="anchor"/> of the parent.</summary>
     /// <summary>
-    /// George's hand-drawn sticker (Resources/UI/HandDrawn/<paramref name="sprite"/>) hung off a card edge like the tapes:
+    /// Hand-drawn sticker (Resources/UI/HandDrawn/<paramref name="sprite"/>) hung off a card edge like the tapes:
     /// ignores the parent's layout, keeps its aspect, never blocks clicks. Returns null if the sprite is missing.
     /// </summary>
     public static Image AddHandDrawnSticker(Transform parent, string sprite, Vector2 anchor, Vector2 position, float angle, float size, bool flip = false)
@@ -510,7 +510,7 @@ public static class UITheme
         toggle.colors = colors;
     }
 
-    // ── Builders (for new code) ──────────────────────────────────────────────
+    // Builders (for new code)
     public static Image MakePanel(Transform parent, string name, Vector2 size, bool small = false)
     {
         var go = new GameObject(name, typeof(RectTransform), typeof(Image));
@@ -607,7 +607,7 @@ public static class UITheme
         field.colors = colors;
     }
 
-    // ── Glyphs ───────────────────────────────────────────────────────────────
+    // Glyphs
     // Colour emoji (outside the BMP) do not render in GameThai/Sarabun or its fallbacks; these BMP
     // symbols do (verified in Play Mode alongside ▶ ⚙ ✕ ✓ ←).
     private static readonly string[,] _emojiSwaps =
@@ -635,7 +635,7 @@ public static class UITheme
             text.text = ReplaceEmoji(text.text);
     }
 
-    // ── Layout helpers ───────────────────────────────────────────────────────
+    // Layout helpers
     /// <summary>LayoutElement preferred height (-1 = let the content decide); never flexible.</summary>
     public static void SetPreferredHeight(GameObject go, float height)
     {
@@ -700,7 +700,7 @@ public static class UITheme
     /// <summary>"#RRGGBB" for IMGUI rich-text colour tags.</summary>
     public static string RichHex(Color c) => "#" + ColorUtility.ToHtmlStringRGB(c);
 
-    // ── IMGUI (legacy OnGUI screens) ─────────────────────────────────────────
+    // IMGUI (legacy OnGUI screens)
     // Styles are created lazily inside OnGUI (GUI.skin is only valid there) and cached.
     private static readonly System.Collections.Generic.Dictionary<long, Texture2D> _imguiTextures =
         new System.Collections.Generic.Dictionary<long, Texture2D>();

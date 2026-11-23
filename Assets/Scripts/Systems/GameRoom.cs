@@ -25,7 +25,7 @@ namespace CoopGame.Network
             { Name = name; Crate = crate; Detail = detail; Reward = reward; Color = color; }
         }
 
-        /// <summary>Three difficulties (George 2026-11-09). Each level start draws one crate from the difficulty's set.</summary>
+        /// <summary>Three difficulties. Each level start draws one crate from the difficulty's set.</summary>
         public static readonly DifficultyDef[] Difficulties =
         {
             new("ง่าย", "ลังไม้", "ลังธรรมดา", 1f, new Color(.45f, .85f, .5f)),

@@ -5,7 +5,7 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// End-of-delivery result card (cute kit, George's mockup 2026-11-02): 1-3 stars over a wooden plank title, a
+    /// End-of-delivery result card (cute kit mockup): 1-3 stars over a wooden plank title, a
     /// beige card with cargo HP / time / coins rows, an optional shop row, then "เดินต่อ" and the host-only
     /// "กลับ Lobby พร้อมกัน". Presentation only: <see cref="ExpeditionHUD"/> owns the data and the button actions.
     /// <see cref="ExtraContent"/> is an empty layout slot under the stat rows for per-player stats / awards.
@@ -106,7 +106,7 @@ namespace CoopGame.Network
             ((RectTransform)_continue.transform).anchoredPosition = new Vector2(show ? -190f : 0f, ButtonY);
         }
 
-        // ── Layout ───────────────────────────────────────────────────────────
+        // Layout
         private const float CardWidth = 700f, ButtonY = -34f;
         private static readonly Color StarEmpty = new Color(1f, 1f, 1f, 0.28f);
         private static readonly Color RowLine = new Color(0.18f, 0.23f, 0.45f, 0.12f);
@@ -259,7 +259,7 @@ namespace CoopGame.Network
             rect.offsetMin = rect.offsetMax = Vector2.zero;
         }
 
-        // ── Star art (no star sprite in the kit): yellow five-point star with a dark rim and a soft highlight ──
+        // Star art (no star sprite in the kit): yellow five-point star with a dark rim and a soft highlight
         private static Sprite _star;
 
         public static Sprite StarSprite()

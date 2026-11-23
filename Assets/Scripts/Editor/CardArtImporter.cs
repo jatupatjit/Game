@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Builds the runtime card sprites from the user's final 2480x3508 card art. The originals stay outside the
+/// Builds the runtime card sprites from the final 2480x3508 card art. The originals stay outside the
 /// project (multi-MB); each is area-downscaled to 640x904 (multiple of 4 so it can be block-compressed),
 /// written as Assets/Art/UI/Resources/Cards/{key}.jpg and imported as a UI sprite. Menu: Tools/UI Kit/Rebuild Card Art.
 /// </summary>

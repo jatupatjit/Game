@@ -33,7 +33,7 @@ namespace CoopGame.CarrySystem
 
 
         [Header("Explosive")]
-        [Tooltip("Drops (let go without a gentle F set-down, counted when it lands) before it blows up (George 2026-11-12: 2).")]
+        [Tooltip("Drops (let go without a gentle F set-down, counted when it lands) before it blows up (2).")]
         [SerializeField, Min(1)] private int _dropsToExplode = 2;
         [Tooltip("Tall stack: a hit of at least this much damage with nobody holding it knocks a box off (placing costs less).")]
         [SerializeField] private int _dropDamage = 10;
@@ -72,7 +72,7 @@ namespace CoopGame.CarrySystem
             foreach (Transform child in transform) if (child.name.StartsWith("Stack")) pieces.Add(child);
             if (_kind == CargoKind.Chicken)
             {
-                // George 2026-11-12: the old white chicken (and its random crate jerks) is replaced by the hen in a nest.
+                // The old white chicken (and its random crate jerks) is replaced by the hen in a nest.
                 var old = transform.Find("Chicken");
                 if (old != null) old.gameObject.SetActive(false);
                 if (!TryGetComponent(out ChickenOnCrate _)) gameObject.AddComponent<ChickenOnCrate>();
@@ -200,8 +200,8 @@ namespace CoopGame.CarrySystem
         }
 
         // Host: a let-go that is not a gentle F set-down (out of stamina, knocked down, thrown and not caught) is a
-        // drop once the crate comes to rest on something; catching it again first cancels it. (George 2026-11-12:
-        // dropping from carry height often does no damage, so drops are counted from the release, not from HP.)
+        // drop once the crate comes to rest on something; catching it again first cancels it.
+        // (Dropping from carry height often does no damage, so drops are counted from the release, not from HP.)
         private void TrackDrop(Vector3 velocity)
         {
             bool carried = _cargo.IsCarried;

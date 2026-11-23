@@ -7,7 +7,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
-/// Hooks George's Level02 fork (2026-11-07) to BranchChoice: fork island (31); left/easy = (32), (36)-(42);
+/// Hooks the Level02 fork to BranchChoice: fork island (31); left/easy = (32), (36)-(42);
 /// right/hard = (33), (34), (35), (44)-(54) + stepping stones L2_Mid_Fork (6)-(25) + the repair shop on (35).
 /// The cargo entering one side makes the other side sink away. Safe to re-run.
 /// </summary>

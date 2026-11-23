@@ -7,7 +7,7 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// George's hand-drawn hand icons on the wall spot each hand would climb (local player only, visual only).
+    /// Hand-drawn hand icons on the wall spot each hand would climb (local player only, visual only).
     /// Open hand = that hand can grab there (<see cref="Wallclimb.TryGetGrabPreview"/>); fist = that hand holds the wall
     /// there (<see cref="Wallclimb.TryGetGripPoint"/>, left/right click). Nothing is shown when no wall is in reach.
     /// Replaces the small white sphere marker of <see cref="GameplayHighlights"/>.

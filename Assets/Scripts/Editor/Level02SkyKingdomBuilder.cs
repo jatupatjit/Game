@@ -9,7 +9,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-/// <summary>Builds Level02 from the user's sketch: village start island, spike/hammer islets,
+/// <summary>Builds Level02 from the sketch: village start island, spike/hammer islets,
 /// a dense forest island and a castle delivery island, descending gently between them.
 /// Re-running replaces only the generated root; earlier Level02 geometry is preserved inactive.</summary>
 public static class Level02SkyKingdomBuilder

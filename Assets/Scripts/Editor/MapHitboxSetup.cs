@@ -61,9 +61,7 @@ namespace CoopGame.EditorTools
             return DEFAULT_CLIMB_LAYER;
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // MENU ACTIONS
-        // ─────────────────────────────────────────────────────────────────────────
 
         [MenuItem("CoopGame/Map/Setup Hitboxes for 'Island' (Auto-Find & Make เกาะปีน Climbable)", priority = 1)]
         public static void MenuSetupIslandHitboxes()
@@ -152,9 +150,7 @@ namespace CoopGame.EditorTools
         [MenuItem("CoopGame/Map/Remove All Mesh Colliders from Selected Parent", validate = true)]
         private static bool MenuRemoveMeshColliders_Validate() => Selection.activeGameObject != null;
 
-        // ─────────────────────────────────────────────────────────────────────────
         // CORE PROCESSING
-        // ─────────────────────────────────────────────────────────────────────────
 
         /// <summary>
         /// Finds the "Island" parent GameObject in open scenes or Level01, sets hitboxes on all children,

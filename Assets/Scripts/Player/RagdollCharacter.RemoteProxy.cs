@@ -7,7 +7,7 @@ namespace CoopGame.Player
     public partial class RagdollCharacter
     {
         // Other players' ragdolls are simulated only on their own machine, so here they had no collider at all and
-        // walking (or carrying) went straight through them (George 2026-11-09). A kinematic capsule follows the
+        // walking (or carrying) went straight through them. A kinematic capsule follows the
         // remote player's hips so local bodies and crates bump into them. It ignores the crate that player carries
         // (it sits inside their arms) and turns off while they are knocked down.
         private const float RemoteProxyRadius = .28f, RemoteProxyHeight = 1.3f, RemoteProxyLift = .15f;

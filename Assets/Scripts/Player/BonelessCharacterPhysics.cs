@@ -197,9 +197,7 @@ namespace CoopGame.Player
 
             bool isGrounded = (_characterController != null) ? _characterController.isGrounded : true;
 
-            // ─────────────────────────────────────────────────────────────────
             // 1. Squash & Stretch Physics (Spring Oscillator)
-            // ─────────────────────────────────────────────────────────────────
             // Landing impact detection
             if (isGrounded && !_wasGrounded)
             {
@@ -231,9 +229,7 @@ namespace CoopGame.Player
                 _baseLocalScale.z * horizontalScale
             );
 
-            // ─────────────────────────────────────────────────────────────────
             // 2. Human Fall Flat Waddle & Hip Bob
-            // ─────────────────────────────────────────────────────────────────
             float rollWaddle = 0.0f;
             float verticalBob = 0.0f;
 
@@ -266,9 +262,7 @@ namespace CoopGame.Player
             transform.localPosition = _baseLocalPosition + renderOffset +
                                       Vector3.up * (verticalBob + squashHeightOffset);
 
-            // ─────────────────────────────────────────────────────────────────
             // 3. Inertial Torso Lean & Tilt
-            // ─────────────────────────────────────────────────────────────────
             // Forward/backward lean based on forward velocity
             float forwardLean = Mathf.Clamp(localVelocity.z * 1.5f, -_velocityLeanAngle, _velocityLeanAngle);
 

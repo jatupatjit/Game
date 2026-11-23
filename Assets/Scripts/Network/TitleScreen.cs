@@ -57,7 +57,7 @@ namespace CoopGame.Network
             var rootImage = _root.GetComponent<Image>();
             rootImage.color = new Color(.47f, .74f, .95f, 1f); // sky, behind the art while it loads / if it is missing
 
-            // George 2026-11-23: his main menu art (background + logo), Resources/UI/MainMenu.
+            // His main menu art (background + logo), Resources/UI/MainMenu.
             var art = Resources.Load<Sprite>("UI/MainMenu/MenuBackground");
             if (art != null)
             {

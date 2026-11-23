@@ -226,7 +226,7 @@ namespace CoopGame.EditorTools
             audio.minDistance = 2f;
             audio.maxDistance = 25f;
 
-            // ──────────────── Fulcrum Stand (Base) ────────────────
+            // Fulcrum Stand (Base)
             GameObject fulcrum = new GameObject("Fulcrum");
             fulcrum.transform.SetParent(root.transform, false);
 
@@ -270,7 +270,7 @@ namespace CoopGame.EditorTools
                 new Vector3(1.54f, 1.4f, 0f), new Vector3(0.24f, 0.06f, 0.24f), goldMat, hasCollider: false);
             nutR.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
 
-            // ──────────────── Plank (Tilting Board) ────────────────
+            // Plank (Tilting Board)
             GameObject plank = new GameObject("Plank");
             plank.transform.SetParent(root.transform, false);
             plank.transform.localPosition = new Vector3(0f, 1.4f, 0f);
@@ -314,7 +314,7 @@ namespace CoopGame.EditorTools
                     new Vector3(0f, 0.13f, slatPositions[i]), new Vector3(2.15f, 0.02f, 0.14f), woodMat, hasCollider: false);
             }
 
-            // ──────────────── Side A (Weight Docking Zone) ────────────────
+            // Side A (Weight Docking Zone)
             // Heavy steel docking pad
             CreatePrimitive(PrimitiveType.Cube, "SideA_WeightPad", plank.transform,
                 new Vector3(0f, 0.13f, -3.6f), new Vector3(1.6f, 0.02f, 1.6f), metalMat, hasCollider: false);
@@ -337,7 +337,7 @@ namespace CoopGame.EditorTools
             CreatePrimitive(PrimitiveType.Cube, "SideA_Bracket_BR", plank.transform,
                 new Vector3(0.65f, 0.19f, -4.25f), new Vector3(0.16f, 0.10f, 0.16f), metalMat, hasCollider: false);
 
-            // ──────────────── Side B (Crossing Runway Chevrons) ────────────────
+            // Side B (Crossing Runway Chevrons)
             float[] chevronZ = { 2.6f, 3.4f, 4.2f };
             for (int i = 0; i < chevronZ.Length; i++)
             {
@@ -345,7 +345,7 @@ namespace CoopGame.EditorTools
                     new Vector3(0f, 0.135f, chevronZ[i]), new Vector3(1.1f - i * 0.15f, 0.015f, 0.22f), glowMat, hasCollider: false);
             }
 
-            // ──────────────── Shock Absorber Bumpers ────────────────
+            // Shock Absorber Bumpers
             CreatePrimitive(PrimitiveType.Cube, "Bumper_A", plank.transform,
                 new Vector3(0f, -0.22f, -4.8f), new Vector3(0.6f, 0.25f, 0.6f), metalMat, hasCollider: false);
             CreatePrimitive(PrimitiveType.Cube, "Bumper_A_Tip", plank.transform,

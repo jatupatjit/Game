@@ -3,7 +3,7 @@ using UnityEngine;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Something a <see cref="ClimbWallSwitch"/> opens (George 2026-11-23: "opens anything"): moves and/or turns this
+    /// Something a <see cref="ClimbWallSwitch"/> opens ("opens anything"): moves and/or turns this
     /// transform from its rest pose to the open pose once the switch is on, the same way on every screen (driven only
     /// by the switch's synced state, so no extra network traffic). Gate = move up, bridge = rotate down,
     /// platform = slide out. A kinematic Rigidbody on it is moved with MovePosition so riders and crates follow.

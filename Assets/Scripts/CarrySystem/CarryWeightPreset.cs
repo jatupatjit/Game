@@ -26,7 +26,7 @@ namespace CoopGame.CarrySystem
 
         public static float HandLoadScale(bool multiCarrier) => (multiCarrier ? CoopScale : SoloScale)[Index];
 
-        // F6 was removed (2026-11-08): the preset is now changed only from the dev cheat panel (F2).
+        // F6 was removed: the preset is now changed only from the dev cheat panel (F2).
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetIndex() => Index = 0;
     }

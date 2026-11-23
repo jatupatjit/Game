@@ -13,7 +13,7 @@ namespace CoopGame.Network
     public enum BindRole
     {
         Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, GrabLeft, GrabRight, Carry,
-        // 2026-11-17 (George): the keys that used to be fixed in code, read through GameSettings.Pressed/Held.
+        // The keys that used to be fixed in code, read through GameSettings.Pressed/Held.
         PingHere, PingHelp, PingWarn, Wave, CameraView, Cards, Map, Scoreboard, Shop, Wardrobe, PhotoMode, PhotoShot, Spectate,
     }
 
@@ -291,7 +291,7 @@ namespace CoopGame.Network
             if (!_rebinding && _rebindEndedFrame != Time.frameCount && keyboard != null && keyboard.escapeKey.wasPressedThisFrame) Close();
         }
 
-        // ───────────────────────── Layout ─────────────────────────
+        // Layout
 
         private void Build()
         {
@@ -424,7 +424,7 @@ namespace CoopGame.Network
                 i => GameSettings.FrameCap = GameSettings.FrameCaps[i]);
         }
 
-        // Three columns of groups (George 2026-11-17: every key rebindable, laid out tidily).
+        // Three columns of groups (every key rebindable, laid out tidily).
         private void BuildKeys()
         {
             const float width = 330f;
@@ -475,7 +475,7 @@ namespace CoopGame.Network
             key.onClick.AddListener(() => StartRebind(role, label));
         }
 
-        // ───────────────────────── Rows ─────────────────────────
+        // Rows
 
         private static string Percent(float v) => Mathf.RoundToInt(v * 100f) + "%";
 

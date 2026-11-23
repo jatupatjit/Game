@@ -4,7 +4,7 @@ using UnityEngine;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Hold-button door (George 2026-11-19, idea 9): a portcullis opens only while a player stands on one of its
+    /// Hold-button door: a portcullis opens only while a player stands on one of its
     /// floor buttons (one on each side), so one player holds it while the others carry the crate through; a button
     /// on the far side lets them open it again for the holder. Released, it waits a moment and closes, but never on
     /// a player or a crate in the doorway. In a solo session one press keeps it open for a while (demo mode).

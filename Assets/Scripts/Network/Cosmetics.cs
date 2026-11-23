@@ -24,7 +24,7 @@ namespace CoopGame.Network
         };
         private const string Lobby = "Lobby";
 
-        /// <summary>George 2026-11-21: only the party hat (the first one) takes a chosen colour; the others keep their own.</summary>
+        /// <summary>Only the party hat (the first one) takes a chosen colour; the others keep their own.</summary>
         public static bool HatHasColor(int hat) => hat == 1;
 
         public static bool IsOpen { get; private set; }
@@ -77,7 +77,7 @@ namespace CoopGame.Network
             go.AddComponent<Cosmetics>().BuildShop();
         }
 
-        // ───────────────────────── Hats on heads (every screen) ─────────────────────────
+        // Hats on heads (every screen)
 
         private void LateUpdate()
         {
@@ -203,7 +203,7 @@ namespace CoopGame.Network
             return _cone;
         }
 
-        // ───────────────────────── Shop panel (Lobby outfit stall, E) ─────────────────────────
+        // Shop panel (Lobby outfit stall, E)
 
         public static void SetOpen(bool open)
         {
@@ -229,7 +229,7 @@ namespace CoopGame.Network
             bool inLobby = SceneManager.GetActiveScene().name == Lobby;
             if (IsOpen && (!inLobby || Local() == null)) SetOpen(false);
             if (IsOpen && Time.frameCount % 15 == 0) RefreshShop();
-            // George 2026-11-20: no K key any more; the outfit stall in the Lobby opens this (ShopStall).
+            // No K key any more; the outfit stall in the Lobby opens this (ShopStall).
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             if (keyboard == null || !inLobby) return;
             if (IsOpen && keyboard.escapeKey.wasPressedThisFrame) SetOpen(false);
@@ -259,7 +259,7 @@ namespace CoopGame.Network
             UITheme.StyleCuteText(_wallet);
             ((RectTransform)_wallet.transform).sizeDelta = new Vector2(500f, 40f);
             ((RectTransform)_wallet.transform).anchoredPosition = new Vector2(0f, 290f);
-            // George 2026-11-21: click a hat to pick it, the bottom button buys / wears it, ออก closes.
+            // Click a hat to pick it, the bottom button buys / wears it, ออก closes.
             // Colour swatches only for the party hat (the other hats keep their own colours).
             for (int hat = 0; hat < HatNames.Length; hat++)
             {

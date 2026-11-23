@@ -7,7 +7,7 @@ using UnityEngine.UI;
 namespace CoopGame.Player
 {
     /// <summary>
-    /// Help a team-mate up (George 2026-11-19, idea 11): a player lying after a knockdown or a fall, or getting up,
+    /// Help a team-mate up: a player lying after a knockdown or a fall, or getting up,
     /// can be helped by a team-mate standing next to them who taps F. A knockdown ends at once (short stand-up),
     /// a fall-respawn lie starts the get-up at once and plays it faster, a get-up in progress finishes right away.
     /// The owner publishes its down state; the helper asks the server, which checks the distance, tells the downed

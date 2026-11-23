@@ -68,7 +68,7 @@ namespace CoopGame.CarrySystem
             bool show = !CoopGame.Network.PauseMenu.IsPaused && !CoopGame.Network.ExpeditionHUD.OverlayOpen;
             if (_canvas != null && _canvas.enabled != show) _canvas.enabled = show;
 
-            // Above the drawn crate, not its pivot (George 2026-11-12: a crate whose pivot sat 3 m above its box
+            // Above the drawn crate, not its pivot (a crate whose pivot sat 3 m above its box
             // showed the label 3 m too high).
             float top = float.NegativeInfinity;
             bool foundRenderer = false;

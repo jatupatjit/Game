@@ -5,7 +5,7 @@ using UnityEngine;
 namespace CoopGame.Player
 {
     /// <summary>
-    /// Lift key, catching and the aimed throw (2026-11-05).
+    /// Lift key, catching and the aimed throw.
     /// F: a tap (released within <see cref="_catchHoldTime"/>) lifts the aimed crate; holding it readies a catch: the
     /// body glows on every screen and a crate thrown by anyone that comes within <see cref="_catchRadius"/> is taken
     /// straight into the hands (the normal lift request, so the server checks it as usual; a crate caught before it

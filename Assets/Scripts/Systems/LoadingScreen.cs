@@ -102,7 +102,7 @@ namespace CoopGame.Network
             _walker.SetParent(_orbit, false);
             var icon = walker.GetComponent<Image>();
             _walkerIcon = icon;
-            // George's hand-drawn carrier (faces left, so mirrored to walk right); old UIKit icon as fallback.
+            // Hand-drawn carrier (faces left, so mirrored to walk right); old UIKit icon as fallback.
             icon.sprite = Resources.Load<Sprite>("UI/HandDrawn/PoseCarry");
             if (icon.sprite != null)
             {

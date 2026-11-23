@@ -69,7 +69,7 @@ namespace CoopGame.EditorTools.Decor
             public Kind(string p, float d, float clear, float spacing, bool rim, float s0, float s1) { Prefab = p; PerSqM = d; Clear = clear; Spacing = spacing; Rim = rim; MinScale = s0; MaxScale = s1; }
         }
 
-        // George 2026-11-09: the first pass was too busy. Small props (grass, flowers, small rocks, bushes) at 40%, big rocks at 60%.
+        // The first pass was too busy. Small props (grass, flowers, small rocks, bushes) at 40%, big rocks at 60%.
         private const float SmallDecorDensity = .4f, BigRockDensity = .6f;
 
         private static readonly Kind[] Kinds =

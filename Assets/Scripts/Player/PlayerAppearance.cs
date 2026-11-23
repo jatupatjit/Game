@@ -245,7 +245,7 @@ namespace CoopGame.Player
                 Renderer r = renderers[i];
                 if (r == null || r == _faceRenderer || r.gameObject == gameObject) continue;
                 if (r.name.StartsWith("face_", System.StringComparison.OrdinalIgnoreCase)) continue;
-                // George 2026-11-21: hats keep their own colours; the body colour must not dye them.
+                // Hats keep their own colours; the body colour must not dye them.
                 if (r.GetComponentInParent<CosmeticPart>(true) != null) continue;
 
                 EnsureGlowKeyword(r);

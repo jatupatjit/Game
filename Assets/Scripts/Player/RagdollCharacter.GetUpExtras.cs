@@ -4,7 +4,7 @@ using Unity.Netcode;
 namespace CoopGame.Player
 {
     /// <summary>
-    /// Extras for the fall-respawn get-up (George 2026-11-17 picked all four):
+    /// Extras for the fall-respawn get-up:
     /// 1. dust ring + thud when the dropped body hits the pad (and a small puff as the hands push off), 2. dizzy stars from the moment the body lands until the get-up ends, plus a short head shake once standing,
     /// 3. moving after the halfway point skips the rest of the get-up, 4. traps cannot hit you while you lie,
     /// get up, and for a moment after. Dust/thud and stars go to every screen through <see cref="GetUpFxRpc"/>;
@@ -56,7 +56,7 @@ namespace CoopGame.Player
             _thudAt = -1f;
             float strength = Mathf.Clamp01(Mathf.Max(_thudMaxFall, 2f) / 4f);
             SendGetUpFx(0, GroundBelow(_bodies[Hips].position), strength);
-            // Dizzy stars from the moment the body hits the ground, through the get-up, until it ends (George 2026-11-19).
+            // Dizzy stars from the moment the body hits the ground, through the get-up, until it ends.
             _dizzyFxSent = true;
             SendGetUpFx(1, _bodies[Head].position, 1f);
         }

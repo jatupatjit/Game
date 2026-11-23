@@ -5,7 +5,7 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Event feed (like a kill feed, on the left side of the screen): "P1 George ทำลังกระแทก -12", "P2 ล้ม", ...
+    /// Event feed (like a kill feed, on the left side of the screen): "P1 Ninja ทำลังกระแทก -12", "P2 ล้ม", ...
     /// The newest line is on top; each slides in, stays ~5 s, then fades and slides away. Lines come from the host
     /// through <see cref="GameRoom.ServerFeed"/>; <see cref="Post"/> shows a line on this machine only.
     /// </summary>

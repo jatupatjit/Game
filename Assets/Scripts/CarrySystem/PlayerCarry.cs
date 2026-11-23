@@ -135,7 +135,7 @@ namespace CoopGame.CarrySystem
         private Vector3 _lastAimLeftNormal = Vector3.up;
         private Vector3 _lastAimRightNormal = Vector3.up;
         private const float LocalContactSlack = .04f;
-        // Extra distance a hand may reach for when grabbing (George, 2026-10-29): the hold pose then draws the cargo in.
+        // Extra distance a hand may reach for when grabbing: the hold pose then draws the cargo in.
         private const float GrabReachBonus = .35f;
         private CoopGame.Player.ActiveRagdoll _ragdoll;
         // Two-hand pickup grip: how low on the cargo (0 bottom, 1 top), how far apart on a wide face,
@@ -834,7 +834,7 @@ namespace CoopGame.CarrySystem
 
             // Stay horizontally centred; hold low on the face (GripLowFraction of its height, so the cargo rides
             // on the hands) and rise toward the top edge only as far as needed for both hands to reach.
-            // Never above the middle of the cargo: the hands go no higher than its centre (George, 2026-10-28).
+            // Never above the middle of the cargo: the hands go no higher than its centre.
             float top = center.y;
             float low = Mathf.Min(top, Mathf.Lerp(BoundsBottom(target), BoundsTop(target), GripLowFraction));
             for (int step = 0; step <= 8; step++)

@@ -233,7 +233,7 @@ namespace CoopGame.Network
             catch { return 0; }
         }
 
-        // ───────────────────────── Reading (every machine) ─────────────────────────
+        // Reading (every machine)
 
         public static string NameOf(PlayerExpeditionState player) =>
             "P" + (player.OwnerClientId + 1) + (player.DisplayName.Value.Length > 0 ? " " + player.DisplayName.Value : "");

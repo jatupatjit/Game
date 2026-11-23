@@ -1,7 +1,7 @@
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Lobby windows that take the mouse (George 2026-11-20: K and C opened on top of each other).
+    /// Lobby windows that take the mouse (K and C opened on top of each other).
     /// Only one may be open: every panel calls <see cref="CloseOthers"/> right before it opens.
     /// </summary>
     public static class UIPanels

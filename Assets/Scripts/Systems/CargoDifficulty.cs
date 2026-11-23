@@ -36,7 +36,7 @@ namespace CoopGame.Network
         private float _nextHiss;
         private float _top = .5f;
 
-        // ── Attach to the level crate on scene load ──
+        // Attach to the level crate on scene load
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Hook()
         {
@@ -102,7 +102,7 @@ namespace CoopGame.Network
             float s = size;
             switch (kind)
             {
-                case 1: // the hen in her nest is ChickenOnCrate (added above), George 2026-11-12
+                case 1: // the hen in her nest is ChickenOnCrate (added above)
                     break;
                 case 2: // two boxes stacked on top
                     var a = Part(_addOn, PrimitiveType.Cube, new Vector3(0f, .16f * s, 0f), new Vector3(.6f, .32f, .6f) * s, new Color(.8f, .6f, .38f));
@@ -184,7 +184,7 @@ namespace CoopGame.Network
             if (!_cargo.IsCarried) { _wobble = 0f; return; }
             if (kind == 2 && _serverFallen < _pieces.Count)
             {
-                // George 2026-11-09: about half as harsh as the variant prefab (limit 12 -> 18, drain 4 -> 6, 6 -> 4 HP).
+                // About half as harsh as the variant prefab (limit 12 -> 18, drain 4 -> 6, 6 -> 4 HP).
                 _wobble = Mathf.Max(0f, _wobble - 6f * Time.fixedDeltaTime) + change.magnitude;
                 if (_wobble > 18f) { _wobble = 0f; ServerTopple(); _cargo.ApplyDamageServer(4, "Tall stack jerked: a box fell off"); }
             }
@@ -235,14 +235,14 @@ namespace CoopGame.Network
                 if (hp > 1) _cargo.CurrentHP.Value = Mathf.Max(1, hp - extra);
             }
             // A hard landing with nobody holding the crate (dropped, thrown and not caught, knocked off a ledge).
-            // Placing costs 5, below this. George 2026-11-12: the stack's top box falls, the bomb counts the drop.
+            // Placing costs 5, below this. the stack's top box falls, the bomb counts the drop.
             if (_cargo.IsCarried || damage < 10) return;
             if (_applied == 2 && _serverFallen < _pieces.Count) { ServerTopple(); _hitSinceRelease = true; }
         }
 
         // Host: a let-go that is not a gentle F set-down (out of stamina, knocked down, thrown and not caught) is a
         // drop once the crate comes to rest; catching it again first cancels it. Counted from the release because
-        // dropping from carry height often does no damage (George 2026-11-12: bomb goes off on the 2nd drop).
+        // dropping from carry height often does no damage (bomb goes off on the 2nd drop).
         private void TrackDrop(Vector3 velocity)
         {
             bool carried = _cargo.IsCarried;

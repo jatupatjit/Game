@@ -9,12 +9,12 @@ using Object = UnityEngine.Object;
 namespace CoopGame.EditorTools.Traps
 {
     /// <summary>
-    /// George 2026-11-23, "climbing should do something": builds the climb challenges as prefabs in
+    /// Builds the climb challenges as prefabs in
     /// Assets/Prefabs/Traps/Climb and a test scene Assets/Scenes/Test/ClimbChallenges.unity to try them.
     /// A: Climb_WallSwitch (climb up, E pulls a lever, latches on for good) opening Climb_SwitchGate (rises),
     ///    Climb_SwitchBridge (lowers over a gap) and Climb_SwitchPlatform (slides out).
     /// B: Climb_RopeHoist (cliff + winch + basket; needs 2+ players; letting go drops the crate).
-    /// E: Climb_ThrowShortcut (George picked E-b: a 4.5 m wall; one climbs up, the other throws the crate up to be
+    /// E: Climb_ThrowShortcut (a 4.5 m wall; one climbs up, the other throws the crate up to be
     ///    caught with hold-F; a miss drops the crate. In the test scene a long ramp is the safe way round).
     /// Menu: Tools/Traps/Build Climb Challenges. Safe to run again (prefabs and the test scene are rebuilt).
     /// </summary>
@@ -58,7 +58,7 @@ namespace CoopGame.EditorTools.Traps
             return log;
         }
 
-        // ───────────────────────── A: wall switch + targets ─────────────────────────
+        // A: wall switch + targets
 
         private static string BuildSwitch()
         {
@@ -148,7 +148,7 @@ namespace CoopGame.EditorTools.Traps
             return Save(root, PlatformPath);
         }
 
-        // ───────────────────────── B: rope hoist ─────────────────────────
+        // B: rope hoist
 
         private static string BuildHoist()
         {
@@ -231,7 +231,7 @@ namespace CoopGame.EditorTools.Traps
             return Save(root, HoistPath);
         }
 
-        // ───────────────────────── E: throw-up shortcut ─────────────────────────
+        // E: throw-up shortcut
 
         private static string BuildShortcut()
         {
@@ -254,7 +254,7 @@ namespace CoopGame.EditorTools.Traps
             return Save(root, ShortcutPath);
         }
 
-        // ───────────────────────── Test scene ─────────────────────────
+        // Test scene
 
         private static string BuildTestScene()
         {
@@ -332,7 +332,7 @@ namespace CoopGame.EditorTools.Traps
             label.characterSize = .026f;
         }
 
-        // ───────────────────────── Helpers ─────────────────────────
+        // Helpers
 
         private static void Grips(Transform parent, float width, float height, float faceZ)
         {

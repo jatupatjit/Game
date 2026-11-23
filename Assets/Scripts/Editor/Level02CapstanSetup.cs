@@ -83,7 +83,7 @@ public static class Level02CapstanSetup
     }
 
     /// <summary>
-    /// The FBX art George placed in Level02 has no colliders. Pine trunks and the wooden barricade logs get convex
+    /// The FBX art placed in Level02 has no colliders. Pine trunks and the wooden barricade logs get convex
     /// mesh colliders; the round trees (one mesh with the canopy) get a trunk capsule only, so the canopy stays open.
     /// </summary>
     [MenuItem("Tools/Expedition/Level02 Art Colliders")]

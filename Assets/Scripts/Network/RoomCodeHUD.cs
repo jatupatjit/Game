@@ -38,7 +38,6 @@ namespace CoopGame.Network
         private bool      _wasActive = false;
         private Coroutine _copyFeedbackCoroutine;
 
-        // ─────────────────────────────────────────────────────────────────────
 
         private void Awake()
         {
@@ -73,7 +72,7 @@ namespace CoopGame.Network
             BuildCuteCard();
         }
 
-        // ── Cute kit lobby card (Canva page 68): blue room-code block + light player list with 4 slots ──
+        // Cute kit lobby card (Canva page 68): blue room-code block + light player list with 4 slots
         private const int MaxSlots = 4;
         private const float CuteWidth = 340f, CodeBlockHeight = 124f, RowHeight = 46f, RowGap = 8f;
         private readonly Image[] _rowBg = new Image[MaxSlots], _rowIcon = new Image[MaxSlots], _rowFace = new Image[MaxSlots];
@@ -292,7 +291,7 @@ namespace CoopGame.Network
             if (sessionActive) RefreshHUDContent();
         }
 
-        // ─────────────────────────────────────────── Content ──────────────────
+        // Content
 
         public void RefreshHUDContent()
         {
@@ -348,7 +347,7 @@ namespace CoopGame.Network
             }
         }
 
-        // ─────────────────────────────────────────── Copy Button ──────────────
+        // Copy Button
 
         private void OnCopyClicked()
         {
@@ -380,7 +379,7 @@ namespace CoopGame.Network
                 btnLabel.text = originalText;
         }
 
-        // ─────────────────────────────────────────── Fade ─────────────────────
+        // Fade
 
         private bool IsSessionActive()
         {
@@ -401,7 +400,7 @@ namespace CoopGame.Network
             if (target > 0.5f) { _hudGroup.interactable = true; _hudGroup.blocksRaycasts = true; RefreshHUDContent(); }
         }
 
-        // ─────────────────────────────────── Runtime Self-Builder ─────────────
+        // Runtime Self-Builder
 
         private void BuildRuntime()
         {

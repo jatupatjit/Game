@@ -82,7 +82,7 @@ public static class IslandCoopGauntlet
                 }
             }
             RefineCorridors(route, islands);
-            // Maintain the user's request: no world instruction text or boards.
+            // No world instruction text or boards.
             foreach(var text in scene.GetRootGameObjects().SelectMany(g=>g.GetComponentsInChildren<TextMesh>(true))) Hide(text.gameObject);
             EditorSceneManager.MarkSceneDirty(scene);
             if(!EditorSceneManager.SaveScene(scene)) throw new IOException("Scene save failed.");

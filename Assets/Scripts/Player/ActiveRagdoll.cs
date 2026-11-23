@@ -366,7 +366,7 @@ namespace CoopGame.Player
             for (int i = 0; i < BoneCount; i++) _bones[i].localRotation = _savedLocalRot[i];
         }
 
-        // ───────────────────────── Owner physics ─────────────────────────
+        // Owner physics
 
         private void BuildPhysics()
         {
@@ -582,7 +582,7 @@ namespace CoopGame.Player
             _appliedStrength = -1f;
         }
 
-        // ───────────────────────── Knockdown ─────────────────────────
+        // Knockdown
 
         private void DetectHardLanding()
         {

@@ -55,7 +55,6 @@ namespace CoopGame.Network
         private bool _isPaused     = false;
         private bool _settingsOpen = false;
 
-        // ─────────────────────────────────────────────────────────────────────
 
         public static PauseMenu EnsureInstance()
         {
@@ -86,7 +85,7 @@ namespace CoopGame.Network
             BuildRoomCodeSection();
         }
 
-        // ─────────────────────────────────────────── Room Code Section ────────
+        // Room Code Section
         // Room code + Copy + player list inside the main pause card (replaces the always-visible
         // RoomCodeHUD card). Hidden when there is no code (solo / offline / not connected).
 
@@ -344,8 +343,8 @@ namespace CoopGame.Network
 
         private const float CuteCardWidth = 560f;
 
-        // George 2026-11-17: the quit confirm was the old small English box. Same cute card as the pause menu,
-        // Thai text, only two choices (George: to close the game, go back to the main menu first): keep playing or
+        // The quit confirm was the old small English box. Same cute card as the pause menu,
+        // Thai text, only two choices (to close the game, go back to the main menu first): keep playing or
         // back to the main menu. White buttons that turn pink under the mouse, like the Settings tabs.
         private Text _confirmSubtext;
 
@@ -523,7 +522,7 @@ namespace CoopGame.Network
             else ShowPause();
         }
 
-        // ─────────────────────────────────────────── Pause Toggle ─────────────
+        // Pause Toggle
 
         public void ShowPause()
         {
@@ -597,7 +596,7 @@ namespace CoopGame.Network
             }
         }
 
-        // ─────────────────────────────────────────── Button Handlers ──────────
+        // Button Handlers
 
         private void OnContinueClicked() => HidePause();
 
@@ -636,7 +635,7 @@ namespace CoopGame.Network
 
         private void OnCancelQuit() => HideConfirmDialog();
 
-        // ─────────────────────────────────────────── Settings Panel ───────────
+        // Settings Panel
 
         private void ShowSettingsPanel()
         {
@@ -661,7 +660,7 @@ namespace CoopGame.Network
             if (_quitToMenuButton != null) _quitToMenuButton.gameObject.SetActive(v);
         }
 
-        // ─────────────────────────────────────────── Confirm Dialog ───────────
+        // Confirm Dialog
 
         private void ShowConfirmDialog()
         {
@@ -676,7 +675,7 @@ namespace CoopGame.Network
             if (_pausePanel != null) _pausePanel.SetActive(true);
         }
 
-        // ─────────────────────────────────────────── Fade ─────────────────────
+        // Fade
 
         private bool IsSessionActive()
         {
@@ -696,7 +695,7 @@ namespace CoopGame.Network
             if (target < 0.5f) { _pauseRoot.interactable = false; _pauseRoot.blocksRaycasts = false; }
         }
 
-        // ─────────────────────────────────── Runtime Self-Builder ─────────────
+        // Runtime Self-Builder
 
         private void BuildRuntime()
         {
@@ -811,7 +810,7 @@ namespace CoopGame.Network
             Debug.Log("[PauseMenu] Runtime self-build complete.");
         }
 
-        // ─── Helpers ─────────────────────────────────────────────────────────
+        // Helpers
 
         private static Font BFont() => UITheme.Font;
 

@@ -772,7 +772,7 @@ namespace CoopGame.Network
             viewLayout.childForceExpandWidth = viewLayout.childForceExpandHeight = false;
             var viewFit = viewHint.AddComponent<ContentSizeFitter>();
             viewFit.horizontalFit = viewFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            // "V มุมมอง" sits here too (George 2026-11-05: on the left it ran into the stamina bar).
+            // "V มุมมอง" sits here too (on the left it ran into the stamina bar).
             KeyCap(viewHint.transform, GameSettings.KeyName(BindRole.CameraView), 32f, 35f);
             var cameraLabel = UITheme.MakeText(viewHint.transform, "Hint V", "มุมมอง", 20, UITextRole.Primary);
             cameraLabel.horizontalOverflow = HorizontalWrapMode.Overflow;

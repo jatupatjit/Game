@@ -6,7 +6,7 @@ using UnityEngine;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// The chicken crate (George 2026-11-12): a brown hen sits in a twig nest on the lid. She slides about the lid with
+    /// The chicken crate: a brown hen sits in a twig nest on the lid. She slides about the lid with
     /// the crate's tilt and jolts but never falls off. Tilting, jerking, hitting the crate or pinning her against the
     /// edge fills her anger bar; smooth carrying calms her. At full anger she jumps off and runs away. Delivering the
     /// crate with the hen still aboard pays <see cref="Bonus"/>.
@@ -21,7 +21,7 @@ namespace CoopGame.CarrySystem
 
         // Tuning (anger per second unless noted; 100 = escape).
         private const float CalmTilt = 10f, TiltAnger = 3f;           // per degree past CalmTilt
-        // Measured 2026-11-12: a carried crate's start/stop peaks at ~5 m/s² (the carry caps it), so one start or stop
+        // Measured: a carried crate's start/stop peaks at ~5 m/s² (the carry caps it), so one start or stop
         // adds ~8 and drains away, while jerking back and forth every ~0.35 s fills the bar in ~6-8 s.
         private const float JoltThreshold = 3.5f, JoltAnger = 10f;    // m/s² sideways; anger per jolt
         private const float EdgeAnger = 30f, CalmDown = 8f, CalmDelay = 1f, HitAnger = 25f;
@@ -68,7 +68,7 @@ namespace CoopGame.CarrySystem
 
         private void Start() => Build();
 
-        // ───────────────────────── Look ─────────────────────────
+        // Look
 
         private void Build()
         {
@@ -178,7 +178,7 @@ namespace CoopGame.CarrySystem
             return go.transform;
         }
 
-        // ───────────────────────── Motion and anger (every screen) ─────────────────────────
+        // Motion and anger (every screen)
 
         private void Update()
         {
@@ -288,7 +288,7 @@ namespace CoopGame.CarrySystem
             }
         }
 
-        // ───────────────────────── Escape (host decides, every screen plays) ─────────────────────────
+        // Escape (host decides, every screen plays)
 
         private void ServerEscape()
         {

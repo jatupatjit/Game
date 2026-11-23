@@ -11,7 +11,7 @@ using Object = UnityEngine.Object;
 namespace CoopGame.EditorTools.Traps
 {
     /// <summary>
-    /// Builds the co-op mechanisms of 2026-11-19 as prefabs in Assets/Prefabs/Traps/Coop:
+    /// Builds the co-op mechanisms of as prefabs in Assets/Prefabs/Traps/Coop:
     /// Coop_HoldButtonDoor (portcullis + a floor button on each side, <see cref="HoldPlateDoor"/>) and
     /// Coop_Drawbridge (hinged deck over a gap + two crank wheels, <see cref="CoopDrawbridge"/>). Safe to run again.
     /// </summary>
@@ -29,7 +29,7 @@ namespace CoopGame.EditorTools.Traps
         [MenuItem("Tools/Traps/Build Coop Drawbridge")]
         public static void BuildBridgeMenu() => Debug.Log(BuildBridge());
 
-        // ───────────────────────── Hold-button door ─────────────────────────
+        // Hold-button door
         public static string BuildDoor()
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode) return "[CoopMechanismBuilder] Stop Play mode first.";
@@ -120,7 +120,7 @@ namespace CoopGame.EditorTools.Traps
             });
         }
 
-        // ───────────────────────── Drawbridge ─────────────────────────
+        // Drawbridge
         public static string BuildBridge()
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode) return "[CoopMechanismBuilder] Stop Play mode first.";
@@ -214,7 +214,7 @@ namespace CoopGame.EditorTools.Traps
             });
         }
 
-        // ───────────────────────── Cargo cart / sled ─────────────────────────
+        // Cargo cart / sled
         [MenuItem("Tools/Traps/Build Cargo Cart")]
         public static void BuildCartMenu() => Debug.Log(BuildCart());
 
@@ -328,7 +328,7 @@ namespace CoopGame.EditorTools.Traps
             return material;
         }
 
-        // ───────────────────────── Helpers ─────────────────────────
+        // Helpers
         private static string InTempScene(System.Func<string> build)
         {
             var previous = EditorSceneManager.GetActiveScene();

@@ -10,7 +10,7 @@ using UnityEngine;
 namespace CoopGame.EditorTools
 {
     /// <summary>
-    /// Throwable fun props (George 2026-11-17: balls, flowers, ...): plain carryables (F lift, Q throw, hold F to catch)
+    /// Throwable fun props (balls, flowers, ...): plain carryables (F lift, Q throw, hold F to catch)
     /// that count for nothing, sync through the same NetworkTransform as crates and go home if they fall off
     /// (<see cref="CarryableHome"/>). Tools/Expedition/Build Fun Props makes the prefabs; ".. And Place In Open Scene"
     /// also drops a set in front of the open scene's spawn area under "=== Fun Props ===".
@@ -64,7 +64,7 @@ namespace CoopGame.EditorTools
             go.name = name;
             go.transform.localScale = Vector3.one * diameter;
             // Box hitbox, not the sphere: a held sphere flung the carrier off (measured 2.7-4 m in 0.5 s and a drop,
-            // box-shaped pot 0.01 m, 2026-11-17); the carry grips are built for box faces.
+            // box-shaped pot 0.01 m); the carry grips are built for box faces.
             Object.DestroyImmediate(go.GetComponent<SphereCollider>());
             var box = go.AddComponent<BoxCollider>();
             box.size = Vector3.one * .9f;

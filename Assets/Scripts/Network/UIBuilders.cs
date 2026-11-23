@@ -5,19 +5,13 @@ using CoopGame.Network;
 using UnityEditor;
 #endif
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Spinner Animator (Runtime Component)
 // Place outside #if UNITY_EDITOR so standalone builds will compile cleanly!
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
 // UI Button Hover & Press Animator (Runtime Component)
-// Smooth scale transitions on hover and click for modern tactile feel
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
+// Small scale change on hover and click
 // Procedural UI Utility (Shared Runtime & Editor)
 // Provides 9-sliced rounded anti-aliased sprites, color palettes, and UI helpers
-// ─────────────────────────────────────────────────────────────────────────────
-// Colours, font and shapes come only from UITheme (the user's pink UI kit). Old per-screen palette
+// Colours, font and shapes come only from UITheme (the pink UI kit). Old per-screen palette
 // constants were removed so no screen can drift from the theme.
 public static class ProceduralUIUtility
 {
@@ -276,14 +270,12 @@ public static class ProceduralUIUtility
 }
 
 #if UNITY_EDITOR
-// ─────────────────────────────────────────────────────────────────────────────
 // UIBuilders.cs  |  Editor Only
 // Procedural builders for:
 // 1. LobbyUI (Peak-style lobby with Host Room, Settings, Quit, and Sub-menus)
 // 2. PauseMenu (In-game ESC menu with Continue, Settings, Quit)
 // 3. RoomCodeHUD (Top-left corner room code overlay)
 // Uses 100% standard UnityEngine.UI (Text, InputField, Button). Zero TMPro dependencies.
-// ─────────────────────────────────────────────────────────────────────────────
 
 public static class LobbyUIBuilder
 {
@@ -350,7 +342,7 @@ public static class LobbyUIBuilder
         var statusLE = statusMsgText.gameObject.AddComponent<LayoutElement>();
         statusLE.preferredHeight = 18;
 
-        // ── 5. MAIN MENU PANEL (PLAY / SETTINGS / QUIT) ───────────────────────
+        // 5. MAIN MENU PANEL (PLAY / SETTINGS / QUIT)
         var mainPanel = ProceduralUIUtility.MakeEmpty(cardGO, "MainMenuPanel");
         var mainLE = mainPanel.AddComponent<LayoutElement>();
         mainLE.preferredHeight = 360;
@@ -378,7 +370,7 @@ public static class LobbyUIBuilder
         var quitLE = quitBtn.GetComponent<LayoutElement>();
         if (quitLE != null) { quitLE.preferredHeight = 48; quitLE.flexibleHeight = 0; }
 
-        // ── 6. PLAY / HOST ROOM SUB-PANEL (Host / Join / Back) ────────────────
+        // 6. PLAY / HOST ROOM SUB-PANEL (Host / Join / Back)
         var hostRoomPanel = ProceduralUIUtility.MakeEmpty(cardGO, "HostRoomSubPanel");
         var hostRoomLE = hostRoomPanel.AddComponent<LayoutElement>();
         hostRoomLE.preferredHeight = 360;
@@ -412,7 +404,7 @@ public static class LobbyUIBuilder
         if (backHostLE != null) { backHostLE.preferredHeight = 48; backHostLE.flexibleHeight = 0; }
         hostRoomPanel.SetActive(false);
 
-        // ── 7. JOIN ROOM SUB-PANEL (Input + Paste Row / Join Button / Back) ────
+        // 7. JOIN ROOM SUB-PANEL (Input + Paste Row / Join Button / Back)
         var joinPanel = ProceduralUIUtility.MakeEmpty(cardGO, "JoinSubPanel");
         var joinPanelLE = joinPanel.AddComponent<LayoutElement>();
         joinPanelLE.preferredHeight = 360;
@@ -474,7 +466,7 @@ public static class LobbyUIBuilder
         if (backJoinLE != null) { backJoinLE.preferredHeight = 48; backJoinLE.flexibleHeight = 0; }
         joinPanel.SetActive(false);
 
-        // ── 8. SETTINGS SUB-PANEL ─────────────────────────────────────────────
+        // 8. SETTINGS SUB-PANEL
         var settingsPanel = ProceduralUIUtility.MakeEmpty(cardGO, "SettingsSubPanel");
         var settingsLE = settingsPanel.AddComponent<LayoutElement>();
         settingsLE.preferredHeight = 360;
@@ -512,7 +504,7 @@ public static class LobbyUIBuilder
         if (backSettingsLE != null) { backSettingsLE.preferredHeight = 48; backSettingsLE.flexibleHeight = 0; }
         settingsPanel.SetActive(false);
 
-        // ── 9. CONNECTING PANEL ───────────────────────────────────────────────
+        // 9. CONNECTING PANEL
         var connectingPanel = ProceduralUIUtility.MakeEmpty(cardGO, "ConnectingPanel");
         var connPanelLE = connectingPanel.AddComponent<LayoutElement>();
         connPanelLE.preferredHeight = 360;
@@ -574,7 +566,7 @@ public static class LobbyUIBuilder
 
         connectingPanel.SetActive(false);
 
-        // ── 10. Wire references to LobbyUI via SerializedObject ───────────────
+        // 10. Wire references to LobbyUI via SerializedObject
         SerializedObject so = new SerializedObject(target);
         so.FindProperty("_canvas").objectReferenceValue = canvas;
         so.FindProperty("_lobbyRoot").objectReferenceValue = lobbyRoot;
@@ -616,9 +608,7 @@ public static class LobbyUIBuilder
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // PauseMenuBuilder
-// ─────────────────────────────────────────────────────────────────────────────
 public static class PauseMenuBuilder
 {
     public static void Build(PauseMenu target)
@@ -686,7 +676,7 @@ public static class PauseMenuBuilder
         var (_, settingsBtn) = ProceduralUIUtility.MakeButton(panelGO, "SettingsButton", "⚙  SETTINGS", UIButtonStyle.Secondary, 50);
         var (_, quitBtn)     = ProceduralUIUtility.MakeButton(panelGO, "QuitToMenuButton", "✕  QUIT TO MENU", UIButtonStyle.Secondary, 50);
 
-        // ── Settings Sub-Panel ─────
+        // Settings Sub-Panel
         var settingsPanelGO = ProceduralUIUtility.MakePanel(target.gameObject, "SettingsPanel", new Vector2(440, 380), Vector2.zero);
         var settingsRT = settingsPanelGO.GetComponent<RectTransform>();
         settingsRT.anchorMin = settingsRT.anchorMax = new Vector2(0.5f, 0.5f);
@@ -766,7 +756,7 @@ public static class PauseMenuBuilder
         var (_, backBtn) = ProceduralUIUtility.MakeButton(settingsPanelGO, "BackFromSettingsButton", "←  BACK", UIButtonStyle.Secondary, 46);
         settingsPanelGO.SetActive(false);
 
-        // ── Confirm Quit Sub-Panel ─────
+        // Confirm Quit Sub-Panel
         var confirmGO = ProceduralUIUtility.MakePanel(target.gameObject, "ConfirmQuitDialog", new Vector2(400, 200), Vector2.zero);
         var confirmRT = confirmGO.GetComponent<RectTransform>();
         confirmRT.anchorMin = confirmRT.anchorMax = new Vector2(0.5f, 0.5f);
@@ -827,9 +817,7 @@ public static class PauseMenuBuilder
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // RoomCodeHUDBuilder
-// ─────────────────────────────────────────────────────────────────────────────
 public static class RoomCodeHUDBuilder
 {
     public static void Build(RoomCodeHUD target)
@@ -958,11 +946,9 @@ public static class RoomCodeHUDBuilder
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // AutoSceneUIInstaller
 // Automatically sets up EventSystem, LobbyUI, PauseMenu, and RoomCodeHUD in the scene
 // Or use the Unity top menu: CoopGame → Build All UI in Scene
-// ─────────────────────────────────────────────────────────────────────────────
 [InitializeOnLoad]
 public static class AutoSceneUIInstaller
 {
@@ -974,7 +960,7 @@ public static class AutoSceneUIInstaller
         return scene.isLoaded && scene.path == LobbyScenePath;
     }
 
-    private static T FindInLobbyScene<T>() where T : Component
+    private static T FindInLobbyScene<T>() where T: Component
     {
         var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
         foreach (var root in scene.GetRootGameObjects())

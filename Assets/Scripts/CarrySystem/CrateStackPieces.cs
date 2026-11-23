@@ -4,7 +4,7 @@ using UnityEngine;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// The boxes stacked on a tall-stack crate (George 2026-11-12: the upper boxes should really fall off). The carried
+    /// The boxes stacked on a tall-stack crate (the upper boxes should really fall off). The carried
     /// crate keeps its single collider (players grip the bottom box); when a box falls, every screen hides it and drops
     /// a loose physics copy in its place. The copy is local to each machine (looks, no gameplay), lies on the ground for
     /// a while and then shrinks away. Used by <see cref="CargoVariant"/> and <see cref="CoopGame.Network.CargoDifficulty"/>.

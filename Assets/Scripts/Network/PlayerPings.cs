@@ -18,11 +18,11 @@ namespace CoopGame.Network
         public const byte Here = 0, Help = 1, Danger = 2, Wait = 3, ThisWay = 4;
         public static readonly string[] Labels = { "มานี่!", "ช่วยยก!", "ระวัง!", "รอก่อน!", "ไปทางนี้!" };
         public static readonly Color[] Colors = { new Color(.35f, .8f, 1f), new Color(.45f, 1f, .45f), new Color(1f, .4f, .3f), new Color(1f, .85f, .3f), new Color(.8f, .55f, 1f) };
-        private const float PinSeconds = 4f, MaxDistance = 3000f, SkyDistance = 60f, Cooldown = .4f; // George 2026-11-23: ping any distance
+        private const float PinSeconds = 4f, MaxDistance = 3000f, SkyDistance = 60f, Cooldown = .4f; // Ping any distance
         private static readonly string[] IconNames = { "PingHere", "PingHelp", "PingDanger" };
         private static readonly Sprite[] IconCache = new Sprite[3];
 
-        /// <summary>George's hand-drawn icon for Here / Help / Danger (Resources/UI/HandDrawn), else null.</summary>
+        /// <summary>Hand-drawn icon for Here / Help / Danger (Resources/UI/HandDrawn), else null.</summary>
         public static Sprite Icon(int kind)
         {
             if (kind < 0 || kind >= IconNames.Length) return null;
@@ -97,7 +97,7 @@ namespace CoopGame.Network
         }
 
         /// <summary>Every machine: show a pin at <paramref name="point"/> from <paramref name="from"/>.
-        /// George 2026-11-23: seen from any distance, never hidden behind islands (drawn on a screen overlay at the
+        /// Seen from any distance, never hidden behind islands (drawn on a screen overlay at the
         /// spot), and when the spot is off screen or behind the camera an arrow at the screen edge points to it.</summary>
         public static void Show(byte kind, Vector3 point, string from)
         {

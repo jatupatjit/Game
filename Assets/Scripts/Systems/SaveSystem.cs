@@ -93,7 +93,7 @@ namespace CoopGame.Network
             Changed?.Invoke();
         }
 
-        // ── Stars ──
+        // Stars
         public static int Stars(string level)
         {
             foreach (var s in Current.stars) if (s.level == level) return s.stars;
@@ -108,7 +108,7 @@ namespace CoopGame.Network
             Save();
         }
 
-        // ── Coins ──
+        // Coins
         public static void SetCoins(int coins)
         {
             coins = Mathf.Clamp(coins, 0, 1000000);
@@ -117,7 +117,7 @@ namespace CoopGame.Network
             Save();
         }
 
-        // ── Hats ──
+        // Hats
         public static bool OwnsHat(int hat) => hat == 0 || (Current.hatsOwned & (1 << hat)) != 0;
         public static void MarkHatOwned(int hat) { Current.hatsOwned |= 1 << hat; Save(); }
         public static void SetHat(int hat, int color)
@@ -126,7 +126,7 @@ namespace CoopGame.Network
             Current.hatEquipped = hat; Current.hatColor = color; Save();
         }
 
-        // ── Gear ──
+        // Gear
         public static bool OwnsGear(int gearBit) => (Current.gearOwned & (1 << gearBit)) != 0;
         public static void MarkGearOwned(int gearBit) { Current.gearOwned |= 1 << gearBit; Save(); }
     }

@@ -11,7 +11,7 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Level02 middle section (2026-11-07): from George's island 29 to island (4). Fork island with a cargo-chosen branch
+/// Level02 middle section: from island 29 to island (4). Fork island with a cargo-chosen branch
 /// (easy main route or a harder route to a free repair shop; the unchosen branch sinks away), then a climb-switch lift
 /// up to island (4). The far section (island 4 .. castle) is moved down once to meet the lift. Re-running rebuilds the
 /// section; the far section is only moved while it is still high.
@@ -30,7 +30,7 @@ public static class Level02SpiralBuilder
 
     private static Material _wood, _gold, _gray, _cloth, _roof, _plaster, _green;
 
-    // Menu removed 2026-11-07: George rebuilt this section by hand; use Level02ForkWiring instead.
+    // Menu removed: this section was rebuilt by hand; use Level02ForkWiring instead.
     public static void Menu() => Debug.Log(Build());
 
     public static string Build()

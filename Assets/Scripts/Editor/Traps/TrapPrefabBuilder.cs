@@ -63,7 +63,7 @@ namespace CoopGame.EditorTools.Traps
             return "[TrapPrefabBuilder] Built " + made.Count + " prefabs:\n" + string.Join("\n", made);
         }
 
-        // ───────────────────────── Setup ─────────────────────────
+        // Setup
 
         private static void EnsureFolders()
         {
@@ -127,7 +127,7 @@ namespace CoopGame.EditorTools.Traps
             return mat;
         }
 
-        // ───────────────────────── Shape helpers ─────────────────────────
+        // Shape helpers
 
         private static GameObject Node(string name, Transform parent, Vector3 position, Vector3 euler = default)
         {
@@ -237,7 +237,7 @@ namespace CoopGame.EditorTools.Traps
             return path;
         }
 
-        // ───────────────────────── A: always-on traps ─────────────────────────
+        // A: always-on traps
 
         private static IEnumerable<string> BuildNewTraps()
         {
@@ -406,7 +406,7 @@ namespace CoopGame.EditorTools.Traps
             }
         }
 
-        // ───────────────────────── B: ragdoll obstacles ─────────────────────────
+        // B: ragdoll obstacles
 
         private static IEnumerable<string> BuildObstacles()
         {
@@ -536,7 +536,7 @@ namespace CoopGame.EditorTools.Traps
             }
         }
 
-        // ───────────────────────── Co-op lift ─────────────────────────
+        // Co-op lift
 
         private static string BuildCoopLift()
         {
@@ -559,7 +559,7 @@ namespace CoopGame.EditorTools.Traps
             return Save(root, CoopFolder);
         }
 
-        // ───────────────────────── Remakes of the old hazards ─────────────────────────
+        // Remakes of the old hazards
 
         private static readonly string[] TelegraphNames =
             { "Warning", "_Status", "ThaiSignBacking", "WaitHereTip", "SafeWaitingBay", "Tip", "Sign", "Lamp", "CrushZone", "SweepZone", "PulseMarker", "RestoreSafetyVolume" };
@@ -808,7 +808,7 @@ namespace CoopGame.EditorTools.Traps
             Hit(collider.gameObject, TrapHitbox.PushDirection.Motion, launch, upward, damage, reason);
         }
 
-        // ───────────────────────── TrapGym showcase scene ─────────────────────────
+        // TrapGym showcase scene
 
         public static string BuildGym()
         {

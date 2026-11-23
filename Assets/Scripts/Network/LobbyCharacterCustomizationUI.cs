@@ -241,7 +241,7 @@ namespace CoopGame.Network
             dof.focusDistance.Override(PreviewDistance);
             dof.aperture.Override(2f);
             dof.focalLength.Override(90f);
-            // The lobby is lit from above/behind, so the face read dark (George 2026-11-07): lift exposure a little
+            // The lobby is lit from above/behind, so the face read dark: lift exposure a little
             // and add a soft front light from just above the camera.
             var color = _previewProfile.Add<ColorAdjustments>(true);
             color.postExposure.Override(0.45f);
@@ -273,7 +273,7 @@ namespace CoopGame.Network
             Vector3 forward = Vector3.ProjectOnPlane(face.transform.forward, Vector3.up);
             if (forward.sqrMagnitude < 0.01f) forward = player.transform.forward;
             forward.Normalize();
-            // Head and upper body with some room above for a hat (George 2026-11-08: the old shot was too close).
+            // Head and upper body with some room above for a hat (the old shot was too close).
             Vector3 target = center - Vector3.up * 0.28f;
             _previewCamera.transform.position = center + forward * PreviewDistance + Vector3.up * 0.05f;
             _previewCamera.transform.rotation = Quaternion.LookRotation(target - _previewCamera.transform.position, Vector3.up);
@@ -487,7 +487,7 @@ namespace CoopGame.Network
             overlayRect.offsetMin = overlayRect.offsetMax = Vector2.zero;
 
             // Cute kit (Canva page 70): wide beige card, plank title, preview left, options right.
-            // Order top to bottom (George 2026-11-08): nickname > character colour > face (hat row removed 2026-11-21).
+            // Order top to bottom: nickname > character colour > face (hat row removed).
             var content = Box(_panel.transform, "FaceCustomization", new Vector2(1300, 680), Vector2.zero, Color.white);
             UITheme.StyleCuteCard(content.GetComponent<Image>(), true);
             UITheme.MakeCutePlank(content.transform, "แต่งตัวละคร", 400f, 96f, 40f, 32);
@@ -590,7 +590,7 @@ namespace CoopGame.Network
                 _faceOutlines[i] = outline;
             }
 
-            // Hats are picked and bought at the outfit stall in the Lobby now (George 2026-11-21: no hat row here).
+            // Hats are picked and bought at the outfit stall in the Lobby now (no hat row here).
 
             // Colour name line from the old panel; the kit layout has no room for it.
             _status = Label(content.transform, "", 15, new Vector2(610, 32), new Vector2(column, -240));

@@ -148,7 +148,7 @@ public static class PlayerCharacterSetup
         return controller;
     }
 
-    /// <summary>Idle / Locomotion (2D blend tree on MoveX, MoveZ) / Jump / Fall / Climb. Built once; later runs keep George's edits.</summary>
+    /// <summary>Idle / Locomotion (2D blend tree on MoveX, MoveZ) / Jump / Fall / Climb. Built once; later runs keep manual edits.</summary>
     private static void BuildBaseLayer(AnimatorController controller)
     {
         var sm = controller.layers[0].stateMachine;

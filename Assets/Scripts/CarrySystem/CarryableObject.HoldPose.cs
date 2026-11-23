@@ -3,7 +3,7 @@ using UnityEngine;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// Hold-pose carry (2026-10-27 rewrite). While carried, the cargo is not supported by hand springs any more:
+    /// Hold-pose carry. While carried, the cargo is not supported by hand springs any more:
     /// it moves with the carriers' averaged walking intent, and the server works out where every carrier's hands
     /// should be (chest height, a fixed distance in front of the body) and steers the Rigidbody so each grip lands
     /// there. The cargo stays level, so it

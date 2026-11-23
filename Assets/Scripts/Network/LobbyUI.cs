@@ -63,7 +63,6 @@ namespace CoopGame.Network
         public bool IsMenuVisible => isActiveAndEnabled &&
             (_lobbyRoot == null || _lobbyRoot.alpha > 0.01f);
 
-        // ─────────────────────────────────────────────────────────────────────
 
         private void Awake()
         {
@@ -141,7 +140,7 @@ namespace CoopGame.Network
 
         private const int SubtitleFontSize = 16, MinLabelFontSize = 15, MinButtonFontSize = 16;
 
-        // ── Cute kit (Canva pages 65-67): beige card, wooden plank title per screen, glossy buttons ──
+        // Cute kit (Canva pages 65-67): beige card, wooden plank title per screen, glossy buttons
         private Text _plankTitle;
         private const float CuteCardWidth = 620f, CuteButtonHeight = 86f, CuteSmallButtonHeight = 76f;
 
@@ -394,7 +393,7 @@ namespace CoopGame.Network
             }
         }
 
-        // ─────────────────────────────────────────── Navigation ───────────────
+        // Navigation
 
         private void OnHostRoomMenuClicked() => ShowPanel(MenuState.HostRoom);
         private void OnSettingsMenuClicked() => SettingsMenu.Open();
@@ -421,7 +420,7 @@ namespace CoopGame.Network
 #endif
         }
 
-        // ─────────────────────────────────────────── Host / Join ──────────────
+        // Host / Join
 
         private void OnHostClicked()
         {
@@ -472,7 +471,7 @@ namespace CoopGame.Network
             if (upper != value) _roomCodeInput.text = upper;
         }
 
-        // ─────────────────────────────────────────── Panel Switching ──────────
+        // Panel Switching
 
         private void ShowPanel(MenuState state)
         {
@@ -494,7 +493,7 @@ namespace CoopGame.Network
 
         private static void SetActive(GameObject go, bool active) { if (go != null) go.SetActive(active); }
 
-        // ─────────────────────────────────────────── Status Labels ────────────
+        // Status Labels
 
         private void UpdateStatusLabels()
         {
@@ -555,7 +554,7 @@ namespace CoopGame.Network
             return status;
         }
 
-        // ─────────────────────────────────────────── Visibility ───────────────
+        // Visibility
 
         private bool IsSessionActive()
         {
@@ -617,7 +616,7 @@ namespace CoopGame.Network
             gameObject.SetActive(false);
         }
 
-        // ─────────────────────────────────── Runtime Self-Builder ─────────────
+        // Runtime Self-Builder
         // Creates the entire UI hierarchy procedurally at runtime when
         // the serialized references are missing (e.g. scene data was wiped).
 
@@ -906,7 +905,7 @@ namespace CoopGame.Network
             Debug.Log("[LobbyUI] Runtime self-build complete.");
         }
 
-        // ─── Helpers ─────────────────────────────────────────────────────────
+        // Helpers
 
         private static void LE(GameObject go, float height)
         {

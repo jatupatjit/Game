@@ -123,7 +123,7 @@ namespace CoopGame.Player
             for (int h = 0; h < 2; h++)
             {
                 Vector3 point = default, normal = default;
-                // George's hand icons (HandGripHUD) mark the grab spot instead of the sphere when they are loaded.
+                // The hand icons (HandGripHUD) mark the grab spot instead of the sphere when they are loaded.
                 bool show = !CoopGame.Network.HandGripHUD.ShowsGrabSpots && climb != null && climb.TryGetGrabPreview(h == 0, out point, out normal);
                 if (show)
                 {

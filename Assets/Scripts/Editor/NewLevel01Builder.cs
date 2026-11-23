@@ -12,7 +12,7 @@ namespace CoopGame.EditorTools
 {
     /// <summary>
     /// Builder for "New Level 01" scene.
-    /// Continues from the user's map layout:
+    /// Continues from the map layout:
     /// 1. First Big Island: Starter Village with PlayerStart in center, WoodenCrateItem, village houses, well, stalls, torches, flags.
     /// 2. Small Islands between Island 1 and Island 2: Separated with jump gaps, decorated with trees (ต้นสน), spikes (หนามไม้), and traps.
     /// 3. Middle Big Island: Dense pine forest with clear winding walking path, mid-way checkpoint pad, and crusher hazard.
@@ -27,7 +27,7 @@ namespace CoopGame.EditorTools
         public const string ScenePath = "Assets/Scenes/New Level 01.unity";
         private const string BackupPath = "Assets/Scenes/New Level 01_Backup.unity";
 
-        // Big Island center coordinates laid out by the user
+        // Big Island center coordinates
         public static readonly Vector3 Island1_Center = new Vector3(41.93f, 5.36f, -183.06f);
         public static readonly Vector3 Island2_Center = new Vector3(20.68f, 9.38f, -38.68f);
         public static readonly Vector3 Island3_Center = new Vector3(-50.10f, 11.32f, 41.70f);
@@ -154,9 +154,7 @@ namespace CoopGame.EditorTools
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // ASSET LOADING
-        // ─────────────────────────────────────────────────────────────────────────
         private static void LoadAssets()
         {
             _grass = LoadMat("Assets/Environment/FloatingCoop/Grass.mat");
@@ -195,9 +193,7 @@ namespace CoopGame.EditorTools
             return obj.transform;
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // CLEANUP STRAY OBJECTS
-        // ─────────────────────────────────────────────────────────────────────────
         private static void CleanStrayObjects()
         {
             // Remove misplaced remnants floating out at Z > 100
@@ -213,9 +209,7 @@ namespace CoopGame.EditorTools
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 1. SMALL ISLAND SPACING & BRIDGING
-        // ─────────────────────────────────────────────────────────────────────────
         private static void OrganizeAndBridgeSmallIslands(Transform parent)
         {
             // Find all small islands under Map Prefap
@@ -302,9 +296,7 @@ namespace CoopGame.EditorTools
             return go;
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 2. STARTER VILLAGE (FIRST BIG ISLAND)
-        // ─────────────────────────────────────────────────────────────────────────
         private static void BuildStarterVillage(Transform sceneryRoot)
         {
             Transform village = sceneryRoot.Find("StarterVillage");
@@ -377,9 +369,7 @@ namespace CoopGame.EditorTools
             CreateTorch("VillageTorch_Exit3", village, new Vector3(center.x + 7f, baseY, center.z + 28f));
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 3. MIDDLE BIG ISLAND (DENSE FOREST & PATH POLISH)
-        // ─────────────────────────────────────────────────────────────────────────
         private static void PolishForestWalkingPath(Transform sceneryRoot)
         {
             Transform forestPath = sceneryRoot.Find("ForestWalkingPath");
@@ -419,9 +409,7 @@ namespace CoopGame.EditorTools
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 4. LAST BIG ISLAND (GRAND CASTLE & DELIVERY ZONE)
-        // ─────────────────────────────────────────────────────────────────────────
         private static void BuildGrandCastleAndDeliveryZone(Transform sceneryRoot)
         {
             Transform castleRoot = sceneryRoot.Find("GrandCastle");
@@ -527,9 +515,7 @@ namespace CoopGame.EditorTools
             CreateTorch("CastleGateTorch_R", castleRoot, center + forward * 5f + right * 3.2f);
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 5. DECORATE SMALL ISLANDS (TREES, SPIKES, TRAPS)
-        // ─────────────────────────────────────────────────────────────────────────
         private static void DecorateSmallIslands(Transform mapPrefap, Transform sceneryRoot)
         {
             Transform decorRoot = sceneryRoot.Find("SmallIslandDecorations");
@@ -613,9 +599,7 @@ namespace CoopGame.EditorTools
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 6. SURROUNDING CLOUDS
-        // ─────────────────────────────────────────────────────────────────────────
         private static void BuildSurroundingClouds(Transform cloudsRoot)
         {
             // Clear existing clouds if any
@@ -683,9 +667,7 @@ namespace CoopGame.EditorTools
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // 7. MESH COLLIDERS FOR ALL ISLANDS
-        // ─────────────────────────────────────────────────────────────────────────
         private static void EnsureAllIslandColliders(Transform mapPrefap)
         {
             MeshFilter[] filters = mapPrefap.GetComponentsInChildren<MeshFilter>(true);
@@ -718,9 +700,7 @@ namespace CoopGame.EditorTools
             Debug.Log($"[NewLevel01Builder] Verified non-convex MeshColliders on {addedCount} island meshes.");
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
         // HELPER BUILDERS
-        // ─────────────────────────────────────────────────────────────────────────
         private static GameObject CreateBoxPrimitive(string name, Transform parent, Vector3 localPos, Vector3 size, Material mat, bool solid)
         {
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);

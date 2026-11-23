@@ -102,7 +102,7 @@ namespace CoopGame.Traps
                     else
                     {
                         // Team carry: the crate hangs between the carriers, so the trap usually only touches a carrier and,
-                        // unlike a solo carry, nobody drops it, so it never took damage (George 2026-11-09).
+                        // unlike a solo carry, nobody drops it, so it never took damage.
                         // A trap hitting a carrier of a crate held by 2+ players now hurts the crate as well.
                         var carrier = RagdollCharacter.FindByCollider(other);
                         var held = carrier != null ? carrier.CarriedCargo as FragileCargo : null;

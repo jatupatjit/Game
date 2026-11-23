@@ -164,9 +164,7 @@ namespace CoopGame.Network
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
         // 1. LOBBY MENU (Host Room, Setting, Quit)
-        // ─────────────────────────────────────────────────────────────────────
 
         private void DrawLobbyMenu(SteamLobbyManager steamManager)
         {
@@ -362,9 +360,7 @@ namespace CoopGame.Network
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
         // 2. IN-GAME ROOM CODE (Above Left Corner)
-        // ─────────────────────────────────────────────────────────────────────
 
         private void DrawAboveLeftRoomCodeHUD(NetworkManager nm, SteamLobbyManager steamManager)
         {
@@ -405,9 +401,7 @@ namespace CoopGame.Network
             GUILayout.EndArea();
         }
 
-        // ─────────────────────────────────────────────────────────────────────
         // 3. IN-GAME ESC PAUSE MENU (Continue, Setting, Quit)
-        // ─────────────────────────────────────────────────────────────────────
 
         private void DrawInGamePauseMenu(NetworkManager nm, SteamLobbyManager steamManager)
         {

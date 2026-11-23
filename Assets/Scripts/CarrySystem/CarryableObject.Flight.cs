@@ -4,7 +4,7 @@ using UnityEngine;
 namespace CoopGame.CarrySystem
 {
     /// <summary>
-    /// Thrown-crate state for catching (2026-11-05). From the throw until the crate slows down on landing (or a
+    /// Thrown-crate state for catching. From the throw until the crate slows down on landing (or a
     /// carrier takes it, or <see cref="MaxFlightTime"/> passes) the crate is "in flight", and a player holding the
     /// lift key nearby may catch it (<see cref="CoopGame.Player.RagdollCharacter"/>). Server-written, every screen reads it.
     /// </summary>

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Co-op drawbridge (George 2026-11-19, idea 10): the bridge stands raised over a gap; two players each hold
+    /// Co-op drawbridge: the bridge stands raised over a gap; two players each hold
     /// Interact (E) at one of the two crank wheels to lower it. With only one crank turning nothing moves; when both
     /// let go before it is down, it slowly swings back up. Fully down, it latches and stays down. A solo session
     /// needs one crank (demo mode). The host decides; every screen swings the deck from the synced progress.
@@ -58,7 +58,7 @@ namespace CoopGame.Network
             for (int i = 0; i < _crankRest.Length; i++) if (_cranks[i] != null) _crankRest[i] = _cranks[i].localRotation;
         }
 
-        // ── Input (every machine, for its own player) ──
+        // Input (every machine, for its own player)
         private void Update()
         {
             if (!IsSpawned || !IsClient || _cranks == null) return;

@@ -6,13 +6,13 @@ using UnityEngine.UI;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// Gear with small stat bonuses (stats only for now, George 2026-11-09): one pair of gloves and one pair of
+    /// Gear with small stat bonuses (stats only for now): one pair of gloves and one pair of
     /// glasses can be worn. Bought with coins at the Lobby gear stall (E at <see cref="ShopStall"/>); owned
     /// and worn gear is saved in <see cref="SaveSystem"/>. Bonuses act on the owner's stamina, which the owner
     /// simulates (<see cref="PlayerExpeditionState"/> FixedUpdate multiplies them in).
     /// </summary>
     /// <summary>
-    /// An item row in a shop window (George 2026-11-21): no frame and no pink on mouse-over; the row turns pink
+    /// An item row in a shop window: no frame and no pink on mouse-over; the row turns pink
     /// only while it is the picked one.
     /// </summary>
     internal sealed class ShopRow
@@ -157,7 +157,7 @@ namespace CoopGame.Network
             UITheme.StyleCuteText(_wallet);
             ((RectTransform)_wallet.transform).sizeDelta = new Vector2(500f, 40f);
             ((RectTransform)_wallet.transform).anchoredPosition = new Vector2(0f, 290f);
-            // George 2026-11-21: click a row to pick it, then the bottom button buys / wears / takes it off; ออก closes.
+            // Click a row to pick it, then the bottom button buys / wears / takes it off; ออก closes.
             for (int i = 0; i < Items.Length; i++)
             {
                 int index = i;
@@ -195,7 +195,7 @@ namespace CoopGame.Network
             _nextRefresh = 0;
         }
 
-        /// <summary>Opened by the gear stall in the Lobby (George 2026-11-20); its own window, no longer beside the hat shop.</summary>
+        /// <summary>Opened by the gear stall in the Lobby; its own window, no longer beside the hat shop.</summary>
         public static void SetOpen(bool open)
         {
             if (_root == null) return;

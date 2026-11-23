@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Builds the runtime UI sprites from the user's design kit (Assets/Art/UI/Source, copied unmodified
+/// Builds the runtime UI sprites from the design kit (Assets/Art/UI/Source, copied unmodified
 /// from the kit folder). Each source is cropped to its alpha bounds, area-downscaled to UI size,
 /// written to Assets/Art/UI/Resources/UIKit/ (so UITheme can Resources.Load it) and imported as a
 /// 2D/UI sprite with 9-slice borders where the art is a panel, button or bar.
@@ -54,7 +54,7 @@ public static class UIKitImporter
         new Entry("BG Blur.png",                "BackdropBlur",      0.55f, Vector4.zero, 1024),
     };
 
-    // Second kit (Canva pages 64-74, 2026-10-31): beige cards, wooden plank title, glossy buttons, lobby
+    // Second kit (Canva pages 64-74): beige cards, wooden plank title, glossy buttons, lobby
     // player list. Source paths are full asset paths; built by Tools/UI Kit/Rebuild Cute Sprites.
     private const string CuteDir = "Assets/ThirdParty/UI เพิ่ม/";
     private static readonly Entry[] CuteEntries =

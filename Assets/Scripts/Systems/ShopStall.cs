@@ -5,7 +5,7 @@ using UnityEngine;
 namespace CoopGame.Network
 {
     /// <summary>
-    /// A shop stall in the Lobby (George 2026-11-20, replaces the K key): walk up to the counter and press
+    /// A shop stall in the Lobby: walk up to the counter and press
     /// Interact (E) to open its window. Gear stall opens <see cref="GearShop"/>, outfit stall opens the hat shop
     /// (<see cref="Cosmetics"/>). Local only: each player opens their own window; buying still goes through the host RPCs.
     /// Walking away closes the window. Display items listed in <see cref="_spin"/> turn slowly and bob.
@@ -43,7 +43,7 @@ namespace CoopGame.Network
                 sign.outlineWidth = .22f;
                 sign.outlineColor = new Color32(59, 38, 24, 255);
             }
-            // George 2026-11-21: text only, no plate behind it; a dark outline + soft drop shadow keep it readable on the stall.
+            // Text only, no plate behind it; a dark outline + soft drop shadow keep it readable on the stall.
             _prompt = MakeText("Prompt", transform, "", 3f, Color.white);
             var mat = _prompt.fontMaterial; // own instance, the shared font asset is untouched
             mat.EnableKeyword(ShaderUtilities.Keyword_Underlay);

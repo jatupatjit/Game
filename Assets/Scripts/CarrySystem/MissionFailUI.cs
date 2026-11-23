@@ -124,7 +124,7 @@ namespace CoopGame.CarrySystem
             _status.text = "กำลังกลับ Lobby...";
         }
 
-        /// <summary>Cute kit result card (George's mockup 2026-11-02), matching MissionCompleteUI: red plank title,
+        /// <summary>Cute kit result card (mockup), matching MissionCompleteUI: red plank title,
         /// beige card with cargo HP / time / coins, "ลองใหม่" and "กลับ Lobby" on the bottom edge.</summary>
         private void BuildUI()
         {

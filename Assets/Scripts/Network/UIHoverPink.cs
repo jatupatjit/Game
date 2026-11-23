@@ -3,7 +3,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// White kit button that turns pink while the mouse is over it or it is pressed (George 2026-11-17: "white boxes,
+/// White kit button that turns pink while the mouse is over it or it is pressed ("white boxes,
 /// pink only when the mouse points at them, like the Settings page"). Added by <see cref="UITheme.StyleButton"/> to
 /// White / WhiteShort buttons and switched off for every other style, so a button styled Pink on purpose
 /// (a selected Settings tab) stays pink. Purely local UI.

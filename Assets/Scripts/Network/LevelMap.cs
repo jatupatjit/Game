@@ -49,7 +49,7 @@ namespace CoopGame.Network
             SaveSystem.SetBestStars(level, stars);
         }
 
-        // Play order (George 2026-11-06: Level02 Sky Kingdom is the first level). Scenes not listed follow in build order.
+        // Play order (Level02 Sky Kingdom is the first level). Scenes not listed follow in build order.
         private static readonly string[] PlayOrder = { Training, "Level02 George", "Level02", "Level01" };
 
         /// <summary>Name shown on the map for a scene.</summary>
@@ -183,7 +183,7 @@ namespace CoopGame.Network
                     starImage.sprite = MissionCompleteUI.StarSprite();
                     starImage.color = s < stars ? Color.white : new Color(.3f, .3f, .3f, .35f);
                 }
-                // Whoever picks a level starts it for everyone (George 2026-11-09: no vote).
+                // Whoever picks a level starts it for everyone (no vote).
                 bool inSession = manager != null && manager.IsListening;
                 string label = !unlocked ? "ล็อก" : "ไปด่านนี้";
                 var go = UITheme.MakeButton(node.transform, "Go", label, unlocked && inSession ? UIButtonStyle.Pink : UIButtonStyle.White, new Vector2(220f, 72f), 26);

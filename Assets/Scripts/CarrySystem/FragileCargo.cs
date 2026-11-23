@@ -278,7 +278,7 @@ namespace CoopGame.CarrySystem
             if (firstCarrier) _isThrown = false;
         }
 
-        // George 2026-11-09: setting the crate down off a hay bale costs 5 HP; hay bales and checkpoint pads are safe spots.
+        // Setting the crate down off a hay bale costs 5 HP; hay bales and checkpoint pads are safe spots.
         protected override void OnPlacementCompleted()
         {
             base.OnPlacementCompleted();
@@ -352,8 +352,8 @@ namespace CoopGame.CarrySystem
             if (rotatingHazard != null && rotatingHazard.OwnsColliderContact(other)) return;
             // Hay bales cushion the crate: no impact or scrape damage on them.
             if (HayCushion.IsCushion(other)) return;
-            // George 2026-11-11: bumping into a checkpoint (e.g. the horse cart's bed, rails and wheels) never hurts the crate.
-            // George 2026-11-23: only while the safe-pad switch is on (CargoSnapPad.SnapLockEnabled, off for now).
+            // Bumping into a checkpoint (e.g. the horse cart's bed, rails and wheels) never hurts the crate.
+            // Only while the safe-pad switch is on (CargoSnapPad.SnapLockEnabled, off for now).
             if (CargoSnapPad.SnapLockEnabled && other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
             // Capstan lift deck, repair pad and explicit snap pads are safe cargo spots too (same switch).
             if (CargoSnapPad.SnapLockEnabled && (other.GetComponentInParent<CoopGame.Network.CoopCapstanLift>() != null ||
