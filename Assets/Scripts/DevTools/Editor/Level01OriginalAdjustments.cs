@@ -25,7 +25,7 @@ public static class Level01OriginalAdjustments
 {
     private const string ScenePath = "Assets/Scenes/Level01.unity";
     private const string RootName = "Level01_Additions";
-    private const string RecordPath = "Assets/Scripts/Editor/Level01OriginalAdjustments.record.json";
+    private const string RecordPath = "Assets/Scripts/DevTools/Editor/Level01OriginalAdjustments.record.json";
     private const string MeshFolder = "Assets/Environment/Level01/Adjusted";
     private const string LogPath = "E:/Unity/Verification/level01-original-changes/adjust-log.txt";
 
