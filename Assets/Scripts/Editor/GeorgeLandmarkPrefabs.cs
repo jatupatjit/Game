@@ -5,7 +5,7 @@ using UnityEngine;
 namespace CoopGame.EditorTools
 {
     /// <summary>
-    /// His windmill, windmill blades and lighthouse FBX as moving decor prefabs.
+    /// Windmill (with its blades) and lighthouse FBX as moving decor prefabs.
     /// Windmill: blades on the hub at the front of the cap, spinning (DecorMotion, local only, same speed on every screen).
     /// Lighthouse: a glowing lamp with two light beams turning at the top. Pivots sit at the centre of the base on the ground.
     /// Menu: Tools/Expedition/Build George Landmark Prefabs.
