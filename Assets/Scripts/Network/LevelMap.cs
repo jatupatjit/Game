@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using CoopGame.CarrySystem;
 using Unity.Netcode;
 using UnityEngine;
@@ -49,15 +49,16 @@ namespace CoopGame.Network
             SaveSystem.SetBestStars(level, stars);
         }
 
-        // Play order (Level02 Sky Kingdom is the first level). Scenes not listed follow in build order.
-        private static readonly string[] PlayOrder = { Training, "Level02 George", "Level02", "Level01" };
+        // Play order (Level01, the castle sky level, is the first level). Scenes not listed follow in build order.
+        private static readonly string[] PlayOrder = { Training, "Level01", "Level02 George", "Level02", "Level01 Old" };
 
         /// <summary>Name shown on the map for a scene.</summary>
         public static string DisplayName(string scene) => scene switch
         {
             Training => "ฝึกซ้อม",
-            "Level02 George" or "Level02" => "ด่าน 1\nอาณาจักรลอยฟ้า",
-            "Level01" => "ด่าน 2\nปราสาท",
+            "Level01" => "ด่าน 1\nปราสาทลอยฟ้า",
+            "Level02 George" or "Level02" => "ด่าน 2\nอาณาจักรลอยฟ้า",
+            "Level01 Old" => "ด่าน 3\nปราสาท (เก่า)",
             _ => scene
         };
 

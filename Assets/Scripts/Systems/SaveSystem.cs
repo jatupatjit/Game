@@ -72,7 +72,7 @@ namespace CoopGame.Network
             _data.hatsOwned = PlayerPrefs.GetInt("hats_owned", 0);
             _data.hatEquipped = PlayerPrefs.GetInt("hat_equipped", 0);
             _data.hatColor = PlayerPrefs.GetInt("hat_color", 0);
-            foreach (string level in new[] { "Tutorial", "Level01", "Level02", "Level02 George" })
+            foreach (string level in new[] { "Tutorial", "Level01", "Level01 Old", "Level02", "Level02 George" })
             {
                 int stars = PlayerPrefs.GetInt("stars_" + level, 0);
                 if (stars > 0) _data.stars.Add(new LevelStars { level = level, stars = stars });

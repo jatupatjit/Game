@@ -49,10 +49,10 @@ namespace CoopGame.CarrySystem
 
         private void UpdateSessionProfile(bool networked)
         {
-            // This assistance is specific to Level01; Level02 keeps its existing balance.
+            // This assistance is specific to the old castle level (Level01 Old); Level02 keeps its existing balance.
             if (!networked || IsServer)
             {
-                bool solo = gameObject.scene.name == "Level01" &&
+                bool solo = gameObject.scene.name == "Level01 Old" &&
                     (!networked || CoopGame.Network.SessionPlayers.Count(NetworkManager) == 1);
                 if (_soloAssist.Value != solo) _soloAssist.Value = solo;
             }

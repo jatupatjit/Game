@@ -16,7 +16,7 @@ namespace CoopGame.EditorTools
     /// </summary>
     public static class Level03CastleBuilder
     {
-        private const string ScenePath = "Assets/Scenes/Level03 Castle.unity";
+        private const string ScenePath = "Assets/Scenes/Level01.unity";
         private const string CastleModel = "Assets/Models/Environment/Castle/castle.fbx";
         private const string GatePrefab = "Assets/Prefabs/Traps/Coop/Coop_HoldButtonDoor.prefab";
         private const string TripStones = "Assets/Prefabs/Traps/Obstacles/Obstacle_TripStones_Cluster.prefab";
