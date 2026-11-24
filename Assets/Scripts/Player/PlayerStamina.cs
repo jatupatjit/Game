@@ -31,7 +31,7 @@ namespace CoopGame.Player
         [Tooltip("Extra drain penalty multiplier per kg above base mass")]
         [SerializeField] private float _massDrainMultiplier = 0.05f;
         [Tooltip("Extra multiplier on carry drain when carrying alone (co-op carry never drains)")]
-        [SerializeField, Min(1f)] private float _soloDrainBoost = 1.5f;
+        [SerializeField, Min(1f)] private float _soloDrainBoost = 3.5f;
 
         [Header("Regeneration")]
         [Tooltip("Stamina recovery rate per second when resting")]
