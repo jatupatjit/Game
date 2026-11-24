@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using CoopGame.CarrySystem;
 using CoopGame.Traps;
 using TMPro;
@@ -24,6 +24,8 @@ namespace CoopGame.Weather
         [SerializeField, Min(0f)] private float _firstDelay = 45f;
         [Tooltip("One event slot every this many seconds")]
         [SerializeField, Min(10f)] private float _period = 75f;
+        [Tooltip("Show the weather banner (countdown before an event and time left during it). Off for now.")]
+        [SerializeField] private bool _showBanner = false;
         [Tooltip("Warning banner before an event starts")]
         [SerializeField, Min(0f)] private float _warning = 5f;
         [Tooltip("Share of slots that stay clear (0 = an event every slot)")]
@@ -309,10 +311,13 @@ namespace CoopGame.Weather
 
         // ---------------- Banner ----------------
 
+        /// <summary>Banner on/off for this level (inspector toggle; can also be flipped at runtime).</summary>
+        public bool ShowBanner { get => _showBanner; set => _showBanner = value; }
+
         private void UpdateBanner()
         {
             WeatherKind show = WeatherState.Active != WeatherKind.None ? WeatherState.Active : WeatherState.Coming;
-            if (show == WeatherKind.None) { if (_bannerRoot != null) _bannerRoot.SetActive(false); return; }
+            if (show == WeatherKind.None || !ShowBanner) { if (_bannerRoot != null) _bannerRoot.SetActive(false); return; }
             if (_bannerRoot == null) BuildBanner();
             _bannerRoot.SetActive(true);
             bool coming = WeatherState.Active == WeatherKind.None;
