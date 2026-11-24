@@ -164,8 +164,12 @@ namespace CoopGame.Network
 
         private static string CreditsText()
         {
-            return "DON'T DROP IT!\n\n" +
-                   "ทีมทำเกม\nGeorge\ntibet151\n\n" +
+            return "ทีมทำเกม\n" +
+                   "จิรภัทร ช่อผูก 66044275 (Game Design / SUB-Programmer)\n" +
+                   "จตุพัฒน์ จิตแก้ว 66032295 (Programer)\n" +
+                   "แสงชัย ชัยงาม 66032308 (Game design / Sound)\n" +
+                   "ชานนท์ หอมสำอาง 66063134 (3D model / 2D art)\n" +
+                   "กานตรัตน์ ถาดทอง 65034933 (3D Model / 2D Art)\n\n" +
                    "ฟอนต์ Mitr (SIL Open Font License)\nท่าทางตัวละคร KayKit, Mixamo";
         }
 
