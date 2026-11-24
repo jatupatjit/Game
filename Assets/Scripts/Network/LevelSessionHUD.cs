@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -22,7 +22,7 @@ namespace CoopGame.Network
         [SerializeField] private Text _modeLabel;
         [SerializeField] private Text _playerCountText;
         [SerializeField] private Text _playerNamesText;
-        [SerializeField, Min(0.1f)] private float _refreshInterval = 0.5f;
+        [SerializeField, Min(0.1f)] private float _refreshInterval = 0.2f;
 
         private const float CardWidth = 340f, RowHeight = 54f, IconSize = 48f;
         private const int NameFontSize = 21;
@@ -38,6 +38,8 @@ namespace CoopGame.Network
             public GameObject Root;
             public Image Face, Card;
             public Text Name;
+            public RectTransform StaminaFill;
+            public Image StaminaFillImage;
             public UITooltip Tooltip;
         }
 
@@ -100,12 +102,38 @@ namespace CoopGame.Network
 
             var row = new Row { Root = go };
             row.Face = Icon(go.transform, "Face");
-            row.Name = UITheme.MakeText(go.transform, "Name", "", NameFontSize, UITextRole.Primary);
+            // Name with that player's stamina bar under it.
+            var col = new GameObject("NameCol", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            col.transform.SetParent(go.transform, false);
+            var colLayout = col.GetComponent<VerticalLayoutGroup>();
+            colLayout.spacing = 3f;
+            colLayout.childAlignment = TextAnchor.MiddleLeft;
+            colLayout.childControlWidth = colLayout.childControlHeight = true;
+            colLayout.childForceExpandWidth = true;
+            colLayout.childForceExpandHeight = false;
+            var colElement = col.GetComponent<LayoutElement>();
+            colElement.flexibleWidth = 1f;
+            colElement.preferredHeight = RowHeight;
+            row.Name = UITheme.MakeText(col.transform, "Name", "", NameFontSize, UITextRole.Primary);
             row.Name.horizontalOverflow = HorizontalWrapMode.Overflow;
             UITheme.SetWeight(row.Name, UITheme.FontSemiBold);
             var nameElement = row.Name.gameObject.AddComponent<LayoutElement>();
-            nameElement.flexibleWidth = 1f;
-            nameElement.preferredHeight = RowHeight;
+            nameElement.preferredHeight = 26f;
+            var bar = new GameObject("StaminaBar", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            bar.transform.SetParent(col.transform, false);
+            bar.GetComponent<LayoutElement>().preferredHeight = 9f;
+            var barImage = bar.GetComponent<Image>();
+            barImage.sprite = UITheme.FillSprite; barImage.type = Image.Type.Sliced;
+            barImage.color = new Color(0f, 0f, 0f, .35f);
+            barImage.raycastTarget = false;
+            var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fill.transform.SetParent(bar.transform, false);
+            row.StaminaFill = (RectTransform)fill.transform;
+            row.StaminaFill.anchorMin = Vector2.zero; row.StaminaFill.anchorMax = Vector2.one;
+            row.StaminaFill.offsetMin = row.StaminaFill.offsetMax = Vector2.zero;
+            row.StaminaFillImage = fill.GetComponent<Image>();
+            row.StaminaFillImage.sprite = UITheme.FillSprite; row.StaminaFillImage.type = Image.Type.Sliced;
+            row.StaminaFillImage.raycastTarget = false;
             row.Card = Icon(go.transform, "CardIcon");
             row.Card.raycastTarget = true; // hover target
             row.Tooltip = row.Card.gameObject.AddComponent<UITooltip>();
@@ -160,7 +188,11 @@ namespace CoopGame.Network
                 PlayerExpeditionState player = players[i];
                 byte card = player.Card.Value;
                 if (!row.Root.activeSelf) row.Root.SetActive(true);
-                UITheme.StyleIcon(row.Face, UITheme.FaceForClient(player.OwnerClientId));
+                var appearance = player.GetComponent<CoopGame.Player.PlayerAppearance>();
+                UITheme.StyleIcon(row.Face, appearance != null ? UITheme.FaceForColor(appearance.CurrentBodyColor) : UITheme.FaceForClient(player.OwnerClientId));
+                float stamina = player.StaminaPercent.Value / 100f;
+                row.StaminaFill.anchorMax = new Vector2(Mathf.Max(.001f, stamina), 1f);
+                row.StaminaFillImage.color = stamina > .5f ? new Color(.45f, .85f, .45f) : stamina > .2f ? new Color(1f, .78f, .3f) : new Color(1f, .4f, .35f);
                 string name = player.DisplayName.Value.ToString();
                 if (string.IsNullOrEmpty(name)) name = $"Player {player.OwnerClientId + 1}";
                 if (player.IsOwner) name += " (You)";

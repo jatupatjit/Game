@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -118,6 +118,28 @@ public static class UITheme
     public static readonly string[] AllFaces = { "FaceGrey", "FacePurple", "FaceBlue", "FaceTeal", "FaceGreen", "FaceLime", "FaceBrown", "FaceCrimson" };
 
     /// <summary>Round face icon matching the player's body colour (same rule as NetworkPlayer, so all peers agree).</summary>
+    // Main colour of each kit face (AllFaces order), to pick the face closest to a player's body colour.
+    private static readonly Color[] FaceColors =
+    {
+        new(.62f, .62f, .64f), new(.62f, .42f, .86f), new(.3f, .55f, .95f), new(.2f, .76f, .76f),
+        new(.36f, .78f, .38f), new(.72f, .9f, .3f), new(.62f, .42f, .26f), new(.88f, .24f, .32f),
+    };
+
+    /// <summary>Kit face whose colour is closest to <paramref name="body"/> (by hue; grey for washed-out colours).</summary>
+    public static Sprite FaceForColor(Color body)
+    {
+        Color.RGBToHSV(body, out float h, out float s, out float v);
+        int best = 0; float bestD = float.MaxValue;
+        for (int i = 0; i < FaceColors.Length; i++)
+        {
+            Color.RGBToHSV(FaceColors[i], out float fh, out float fs, out float fv);
+            float dh = Mathf.Abs(h - fh); dh = Mathf.Min(dh, 1f - dh);
+            float d = s < .15f ? (i == 0 ? 0f : 1f) : dh * 4f + Mathf.Abs(s - fs) * .5f + Mathf.Abs(v - fv) * .5f + (i == 0 ? 1f : 0f);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return Kit(AllFaces[best]);
+    }
+
     public static Sprite FaceForClient(ulong ownerClientId) => Kit(PlayerFaces[(int)(ownerClientId % (ulong)PlayerFaces.Length)]);
 
     /// <summary>Card icon: the illustration area of the card's art; 0 (no card yet) = a plain card back.</summary>

@@ -94,6 +94,9 @@ namespace CoopGame.CarrySystem
 
         // State tracking
         private bool _isThrown = false;
+        // Full-physics players' ragdoll limbs live outside the player object; they are players too, never damage.
+        private static int s_limbLayer => s_limbLayerCache >= -1 ? s_limbLayerCache : (s_limbLayerCache = LayerMask.NameToLayer(CoopGame.Player.RagdollCharacter.LimbLayerName));
+        private static int s_limbLayerCache = -2;
         private float _lastImpactTime = -10f;
         private float _lastDragDamageTime = -10f;
         private float _damageEnabledAtFixedTime;
@@ -275,6 +278,15 @@ namespace CoopGame.CarrySystem
                 ? now + Mathf.Min(0.15f, grace)
                 : now;
             _scrapeStartedAtFixedTime = -1f;
+            // Caught in the air (thrown, or flying after a knock): the grab yanks the crate to a stop against the
+            // catcher's body and hands, which must never count as a hit.
+            bool caught = _isThrown || (_rigidbody != null && _rigidbody.linearVelocity.sqrMagnitude > 4f);
+            if (caught)
+            {
+                _pickupGraceEndsAtFixedTime = Mathf.Max(_pickupGraceEndsAtFixedTime, now + .7f);
+                _pickupFallbackGraceEndsAtFixedTime = now + .7f;
+                _queuedDamage = 0;
+            }
             if (firstCarrier) _isThrown = false;
         }
 
@@ -344,7 +356,7 @@ namespace CoopGame.CarrySystem
 
             // Player impact is never cargo damage, including untagged child limbs.
             Collider other = collision.collider;
-            if (other == null || other.GetComponentInParent<CoopGame.Player.NetworkPlayer>() != null ||
+            if (other == null || other.gameObject.layer == s_limbLayer || other.GetComponentInParent<CoopGame.Player.NetworkPlayer>() != null ||
                 other.CompareTag("Player") || other.transform.root.CompareTag("Player")) return;
             var routeHazard = other.GetComponentInParent<CoopGame.Network.NetworkRouteHazard>();
             if (routeHazard != null && routeHazard.OwnsColliderContact(other)) return;

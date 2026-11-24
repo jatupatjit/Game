@@ -1,4 +1,4 @@
-using CoopGame.CarrySystem;
+﻿using CoopGame.CarrySystem;
 using CoopGame.Player;
 using Unity.Netcode;
 using UnityEngine;
@@ -74,17 +74,36 @@ namespace CoopGame.Network
             if (pad != null && pad.IsActive)
             {
                 Transform t = pad.PlayerPoint;
-                Vector3 offset = slot switch { 1 => new Vector3(1.8f, 0f, 0f), 2 => new Vector3(-1.8f, 0f, 0f), 3 => new Vector3(0f, 0f, -1.8f), _ => Vector3.zero };
-                position = t.TransformPoint(offset);
-                // The player's pivot sits about a metre above its feet (the level start spawns at ground + 1.05).
-                // A pad's respawn point placed on the ground would embed the capsule in the island and drop the
-                // player straight through it, so never respawn lower than that height above the pad surface.
-                position.y = Mathf.Max(position.y, pad.transform.position.y + PlayerPivotHeight);
+                // Each player has a spot around the pad's respawn point. A spot with no ground under it (off the
+                // island edge) or inside something solid is skipped for the next free one, so nobody respawns
+                // under the map or stuck inside props.
+                position = SpotFor(pad, t, slot);
+                for (int i = 0; i < 4 && !SpotIsSafe(position); i++) position = SpotFor(pad, t, (slot + 1 + i) % 4);
+                if (!SpotIsSafe(position)) position = SpotFor(pad, t, 0);
                 rotation = t.rotation;
                 return true;
             }
             position = default; rotation = default;
             return false;
+        }
+
+        private static Vector3 SpotFor(CheckpointPad pad, Transform t, int slot)
+        {
+            Vector3 offset = slot switch { 1 => new Vector3(1.8f, 0f, 0f), 2 => new Vector3(-1.8f, 0f, 0f), 3 => new Vector3(0f, 0f, -1.8f), _ => Vector3.zero };
+            Vector3 position = t.TransformPoint(offset);
+            // The player's pivot sits about a metre above its feet (the level start spawns at ground + 1.05).
+            // A pad's respawn point placed on the ground would embed the capsule in the island and drop the
+            // player straight through it, so never respawn lower than that height above the pad surface.
+            position.y = Mathf.Max(position.y, pad.transform.position.y + PlayerPivotHeight);
+            return position;
+        }
+
+        private static bool SpotIsSafe(Vector3 position)
+        {
+            if (!Physics.Raycast(position + Vector3.up * .5f, Vector3.down, 4f, ~0, QueryTriggerInteraction.Ignore)) return false;
+            foreach (var c in Physics.OverlapCapsule(position - Vector3.up * .55f, position + Vector3.up * .6f, .35f, ~0, QueryTriggerInteraction.Ignore))
+                if (c.attachedRigidbody == null || c.attachedRigidbody.isKinematic) return false; // props, carts, walls (players/crates move)
+            return true;
         }
 
         /// <summary>Server: the cargo fell below the kill plane and is being put back on the last pad.</summary>

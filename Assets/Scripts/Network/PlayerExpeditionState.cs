@@ -1,4 +1,4 @@
-using CoopGame.CarrySystem;
+﻿using CoopGame.CarrySystem;
 using CoopGame.Player;
 using Unity.Collections;
 using Unity.Netcode;
@@ -18,6 +18,8 @@ namespace CoopGame.Network
         public readonly NetworkVariable<byte> Hat = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<byte> HatColor = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         public readonly NetworkVariable<byte> Card = new(0);
+        /// <summary>Owner's stamina 0..100 for the team list (owner-simulated stamina, shown to everyone).</summary>
+        public readonly NetworkVariable<byte> StaminaPercent = new(100, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         /// <summary>Room difficulty (GameRoom), copied by the server into every player so every machine can read it.</summary>
         public readonly NetworkVariable<byte> RoomDifficulty = new(0);
         /// <summary>Saved player level (PlayerProgress), written by the owner; shown on the scoreboard.</summary>
@@ -368,6 +370,12 @@ namespace CoopGame.Network
         private void FixedUpdate()
         {
             if (!IsOwner) return;
+            if (_stamina != null)
+            {
+                byte pct = (byte)Mathf.RoundToInt(_stamina.NormalizedStamina * 100f);
+                if (Mathf.Abs(pct - StaminaPercent.Value) >= 2 || (pct == 100 && StaminaPercent.Value != 100) || (pct == 0 && StaminaPercent.Value != 0))
+                    StaminaPercent.Value = pct;
+            }
             if (_restoreStamina)
             {
                 _restoreStamina = false;
