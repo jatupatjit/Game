@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -353,8 +353,7 @@ namespace CoopGame.CarrySystem
             // Hay bales cushion the crate: no impact or scrape damage on them.
             if (HayCushion.IsCushion(other)) return;
             // Bumping into a checkpoint (e.g. the horse cart's bed, rails and wheels) never hurts the crate.
-            // Only while the safe-pad switch is on (CargoSnapPad.SnapLockEnabled, off for now).
-            if (CargoSnapPad.SnapLockEnabled && other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
+            if (other.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return;
             // Capstan lift deck, repair pad and explicit snap pads are safe cargo spots too (same switch).
             if (CargoSnapPad.SnapLockEnabled && (other.GetComponentInParent<CoopGame.Network.CoopCapstanLift>() != null ||
                 other.GetComponentInParent<CoopGame.Network.RepairStation>() != null ||

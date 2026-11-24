@@ -1,4 +1,4 @@
-using Unity.Netcode;
+﻿using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -13,6 +13,8 @@ namespace CoopGame.Network
     [DisallowMultipleComponent]
     public sealed class CapstanLiftView : MonoBehaviour
     {
+        [Tooltip("Show the small lift-camera window while turning the capstan. Off for now.")]
+        [SerializeField] private bool _showWindow = false;
         [SerializeField] private CoopCapstanLift _lift;
         [Tooltip("Camera placed at the viewing angle; it renders into a texture only while the view is shown.")]
         [SerializeField] private Camera _camera;
@@ -57,7 +59,7 @@ namespace CoopGame.Network
         {
             if (_lift == null || _camera == null) return;
             if (LocalPlayerNearRing()) _lastNear = Time.unscaledTime;
-            bool show = Time.unscaledTime - _lastNear <= _hideDelay;
+            bool show = _showWindow && Time.unscaledTime - _lastNear <= _hideDelay;
 
             if (show && _group == null) Build();
             if (_group == null) return;
