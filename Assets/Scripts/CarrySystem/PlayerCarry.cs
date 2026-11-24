@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Unity.Netcode;
 using UnityEngine;
 using CoopGame.Player;
@@ -149,6 +149,17 @@ namespace CoopGame.CarrySystem
         private const float ServerContactSlack = .15f;
         private float _currentHoldHeight = 1.05f;
         private int _liftSteps;
+        private bool _liftStarted;
+
+        private static bool RestsOnHay(CarryableObject cargo)
+        {
+            var body = cargo.GetComponent<Rigidbody>();
+            Vector3 p = body != null ? body.worldCenterOfMass : cargo.transform.position;
+            var hits = Physics.RaycastAll(p, Vector3.down, 2f, ~0, QueryTriggerInteraction.Ignore);
+            foreach (var h in hits)
+                if (h.rigidbody != body && HayCushion.IsCushion(h.collider)) return true;
+            return false;
+        }
         private bool _grabPending;
         private bool _releasePending;
         private byte _pendingToggleMask;
@@ -769,11 +780,18 @@ namespace CoopGame.CarrySystem
             // Hold-pose carry: the mouse wheel raises or lowers the held cargo in steps; each grab starts level.
             if (IsCarrying && _currentCarryable != null && !_currentCarryable.IsSoloDragging)
             {
+                // Picked up off a hay bale: start at the top of the lift range so it clears the bale straight away.
+                if (!_liftStarted)
+                {
+                    _liftStarted = true;
+                    if (RestsOnHay(_currentCarryable)) _liftSteps = CarryableObject.HoldRaiseSteps;
+                }
                 if (_inputReader != null && _inputReader.ScrollStep != 0)
                     _liftSteps = Mathf.Clamp(_liftSteps + _inputReader.ScrollStep, -CarryableObject.HoldLowerSteps, CarryableObject.HoldRaiseSteps);
                 return CarryableObject.NeutralHoldHeight + _liftSteps * CarryableObject.HoldStepHeight;
             }
             _liftSteps = 0;
+            _liftStarted = false;
             if (_cameraController == null) return _normalLiftHeight;
             float pitch = _cameraController.Pitch;
             // The default third-person camera looks slightly down. Treat that

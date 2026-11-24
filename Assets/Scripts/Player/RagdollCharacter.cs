@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using CoopGame.CarrySystem;
 using Unity.Netcode;
 using UnityEngine;
@@ -291,6 +291,7 @@ namespace CoopGame.Player
             IsSpawned && _carriedCargo.Value.TryGet(out NetworkObject o) ? o.GetComponent<CarryableObject>() : null;
         public bool IsKnockedDown => Time.time < _knockdownUntil;
         public bool IsGrounded { get; private set; }
+        private float _groundTraction = 1f;
         public bool IsClimbing => _climbing;
         public bool HoldingCargo => _carry != null;
         /// <summary>Holding a crate, or a lift is on its way to the server: Wallclimb must not take a wall meanwhile.</summary>
@@ -587,6 +588,7 @@ namespace CoopGame.Player
             IsGrounded = Physics.SphereCast(_bodies[Hips].position + Vector3.up * .1f, .18f, Vector3.down, out RaycastHit ground,
                 _standHeight + .45f, Physics.DefaultRaycastLayers & ~(1 << _limbLayer), QueryTriggerInteraction.Ignore)
                 && Time.time >= _airborneUntil;
+            _groundTraction = IsGrounded ? SlipperyGround.TractionAt(ground.collider) : 1f;
             if (IsGrounded) _airJumpsUsed = 0;
             DetectHardLanding(hipsVel.y);
 
@@ -662,7 +664,7 @@ namespace CoopGame.Player
                 // Carrying, no input: brake firmly so the body stops where the key was let go instead of coasting.
                 if (carryHold && coasting) hold = -flatVel * CarryBrake;
                 Vector3 slip = HeavySoloSlip(moving, bodyFacing, ref gain, ref hold);
-                if (IsGrounded) gain *= CoopGame.Weather.WeatherState.Traction; // rain event: slippery feet
+                if (IsGrounded) gain *= CoopGame.Weather.WeatherState.Traction * _groundTraction; // rain event / slippery ground
                 accel += Vector3.ClampMagnitude((desired - flatVel) * 6f + hold, gain) + CarryLeash(facing) + carryPush + slip;
                 for (int i = 0; i < BoneCount; i++) _bodies[i].AddForce(accel, ForceMode.Acceleration);
                 KeepUpperBodyOutOfCargo();
