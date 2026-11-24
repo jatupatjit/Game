@@ -153,11 +153,14 @@ namespace CoopGame.CarrySystem
 
         private static bool RestsOnHay(CarryableObject cargo)
         {
-            var body = cargo.GetComponent<Rigidbody>();
-            Vector3 p = body != null ? body.worldCenterOfMass : cargo.transform.position;
-            var hits = Physics.RaycastAll(p, Vector3.down, 2f, ~0, QueryTriggerInteraction.Ignore);
-            foreach (var h in hits)
-                if (h.rigidbody != body && HayCushion.IsCushion(h.collider)) return true;
+            // Near any hay pad (beside or above its top bale): the crate was just on the hay.
+            Vector3 p = cargo.transform.position;
+            foreach (var hay in HayCushion.Active)
+            {
+                if (hay == null || hay.TopBale == null) continue;
+                Vector3 d = p - hay.TopBale.position;
+                if (Mathf.Abs(d.y) < 2.2f && new Vector2(d.x, d.z).sqrMagnitude < 2.6f * 2.6f) return true;
+            }
             return false;
         }
         private bool _grabPending;
