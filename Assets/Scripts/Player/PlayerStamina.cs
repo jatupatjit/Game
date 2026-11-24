@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 namespace CoopGame.Player
@@ -30,6 +30,8 @@ namespace CoopGame.Player
 
         [Tooltip("Extra drain penalty multiplier per kg above base mass")]
         [SerializeField] private float _massDrainMultiplier = 0.05f;
+        [Tooltip("Extra multiplier on carry drain when carrying alone (co-op carry never drains)")]
+        [SerializeField, Min(1f)] private float _soloDrainBoost = 1.5f;
 
         [Header("Regeneration")]
         [Tooltip("Stamina recovery rate per second when resting")]
@@ -152,7 +154,7 @@ namespace CoopGame.Player
             float massExcess = Mathf.Max(0f, objectMass - _baseMass);
             float massScale = 1.0f + (massExcess * _massDrainMultiplier);
 
-            float totalDrain = baseRate * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Mathf.Clamp01(sessionDrainMultiplier) * Time.deltaTime;
+            float totalDrain = baseRate * _soloDrainBoost * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Mathf.Clamp01(sessionDrainMultiplier) * Time.deltaTime;
 
             ApplyDrain(totalDrain);
         }
