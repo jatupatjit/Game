@@ -151,7 +151,7 @@ namespace CoopGame.CarrySystem
         private int _liftSteps;
         private bool _liftStarted;
 
-        private static bool RestsOnHay(CarryableObject cargo)
+        public static bool RestsOnHay(CarryableObject cargo)
         {
             // Near any hay pad (beside or above its top bale): the crate was just on the hay.
             Vector3 p = cargo.transform.position;
@@ -793,8 +793,8 @@ namespace CoopGame.CarrySystem
                     _liftSteps = Mathf.Clamp(_liftSteps + _inputReader.ScrollStep, -CarryableObject.HoldLowerSteps, CarryableObject.HoldRaiseSteps);
                 return CarryableObject.NeutralHoldHeight + _liftSteps * CarryableObject.HoldStepHeight;
             }
-            _liftSteps = 0;
-            _liftStarted = false;
+            // Keep the chosen lift while a grab is still settling (hands not both closed yet); reset only once let go.
+            if (_currentCarryable == null) { _liftSteps = 0; _liftStarted = false; }
             if (_cameraController == null) return _normalLiftHeight;
             float pitch = _cameraController.Pitch;
             // The default third-person camera looks slightly down. Treat that
@@ -2101,6 +2101,9 @@ namespace CoopGame.CarrySystem
         {
             EnsureVisualHandsCreated();
             _currentCarryable = carryable;
+            // Picked up off a hay bale: go straight to the top of the lift range.
+            _liftStarted = true;
+            _liftSteps = RestsOnHay(carryable) ? CarryableObject.HoldRaiseSteps : 0;
             CoopGame.Network.GameplayFeedback.Play(CoopGame.Network.GameplayFeedback.Cue.Lift, carryable.transform.position);
             _assignedSocketIndex = socketIndex;
             _attachedAt = Time.time;

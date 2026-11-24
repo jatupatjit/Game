@@ -1710,7 +1710,8 @@ namespace CoopGame.Player
             _dropRequested = false;
             _carryLocalL = localL;
             _carryLocalR = localR;
-            _liftSteps = 0;
+            // Picked up off a hay bale: start at the top of the lift range (no scrolling needed).
+            _liftSteps = PlayerCarry.RestsOnHay(cargo) ? CarryableObject.HoldRaiseSteps : 0;
             if (_ignoredAfterCarry != cargo) IgnoreCargo(_ignoredAfterCarry, false);
             _ignoredAfterCarry = null;
             IgnoreCargo(cargo, true);

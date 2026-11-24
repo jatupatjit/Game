@@ -282,7 +282,7 @@ namespace CoopGame.CarrySystem
         protected override void OnPlacementCompleted()
         {
             base.OnPlacementCompleted();
-            if (!_isDestroyed && !IsSecured && _placeDamage > 0 && !PlacedOnCushion() && !(CargoSnapPad.SnapLockEnabled && PlacedOnCheckpoint())) ApplyDamageServer(_placeDamage, "Placed off hay");
+            if (!_isDestroyed && !IsSecured && _placeDamage > 0 && !PlacedOnCushion() && !PlacedOnCheckpoint()) ApplyDamageServer(_placeDamage, "Placed off hay");
         }
 
         private bool PlacedOnCheckpoint()

@@ -600,6 +600,7 @@ namespace CoopGame.CarrySystem
                 if (HayCushion.IsCushion(floor)) return true;
                 Rigidbody body = floor.attachedRigidbody;
                 if (body != null && body.TryGetComponent<CargoCart>(out _)) return true;
+                if (floor.GetComponentInParent<CoopGame.Network.CheckpointPad>() != null) return true; // checkpoint cart bed: always safe
                 if (!CargoSnapPad.SnapLockEnabled) continue; // lift, checkpoint, repair and snap pads cost HP while the switch is off
                 if (CoopGame.Network.CoopCapstanLift.IsPlatformBody(body)) return true;
                 if (floor.GetComponentInParent<CoopGame.Network.CoopCapstanLift>() != null ||
