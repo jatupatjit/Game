@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace CoopGame.CarrySystem
 {
@@ -61,7 +61,8 @@ namespace CoopGame.CarrySystem
             for (int i = 0; i < count && crate == null; i++)
             {
                 var body = s_hits[i].attachedRigidbody;
-                if (body != null && body.GetComponent<FragileCargo>() != null) crate = body;
+                // A crate still in someone's hands is not resting on the hay (it only hovers near it).
+                if (body != null && body.TryGetComponent(out FragileCargo cargo) && !cargo.IsCarried) crate = body;
             }
             System.Array.Clear(s_hits, 0, count);
 

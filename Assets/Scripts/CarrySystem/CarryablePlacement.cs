@@ -1,4 +1,4 @@
-using Unity.Netcode;
+﻿using Unity.Netcode;
 using UnityEngine;
 using CoopGame.Obstacles;
 
@@ -80,7 +80,14 @@ namespace CoopGame.CarrySystem
             // The carrier setting it down stands against the cargo; their own body must not
             // block the spot (their collision with it stays ignored until they step apart).
             _placingCarrierColliders = _activeCarriers.TryGetValue(carrierId, out var placer) ? placer.PlayerColliders : null;
-            if (!TryPlacementTarget(out Vector3 target)) { _placingCarrierColliders = _placingExtraColliders = null; return false; }
+            if (!TryPlacementTarget(out Vector3 target) && !TryLenientPlacementTarget(out target))
+            {
+                // Nowhere tidy to set it: put it down anyway, right where it is, and let it settle without damage.
+                _placingCarrierColliders = _placingExtraColliders = null;
+                DetachCarrier(carrierId);
+                _supportProtectionEnd = Mathf.Max(_supportProtectionEnd, Time.fixedTime + .6f);
+                return true;
+            }
             DetachCarrier(carrierId);
             _placementTarget = target;
             _snappedToPad = _snapFound;
@@ -223,6 +230,41 @@ namespace CoopGame.CarrySystem
             target.y += highest + .025f - boxBottom;
             if (target.y > _rigidbody.position.y + .1f || _rigidbody.position.y - target.y > 1.5f) return false;
             return PlacementClear(target - _rigidbody.position);
+        }
+
+        // Fallback when the strict check fails (bumpy ground, slope, ledge, step up): one ray under the centre, any
+        // walkable floor up to 45 degrees, a little higher or lower than the crate. The crate glides there and then
+        // physics settles it, so it can be set down almost anywhere.
+        private bool TryLenientPlacementTarget(out Vector3 target)
+        {
+            target = _rigidbody.position;
+            _snapFound = false;
+            Bounds box = SolidBoxYawFrame(out Quaternion yaw);
+            if (box.size.sqrMagnitude < .001f) return false;
+            Vector3 boxCenter = _rigidbody.position + yaw * box.center;
+            float boxBottom = boxCenter.y - box.extents.y;
+            Vector3 origin = new(boxCenter.x, boxBottom + .7f, boxCenter.z);
+            int count = Physics.RaycastNonAlloc(origin, Vector3.down, _placeHits, 2.6f, PlacementMask, QueryTriggerInteraction.Ignore);
+            RaycastHit nearest = default;
+            float distance = float.PositiveInfinity;
+            for (int i = 0; i < count; i++)
+                if (!Own(_placeHits[i].collider) && !IsPlacingCarrier(_placeHits[i].collider) && _placeHits[i].distance < distance)
+                { nearest = _placeHits[i]; distance = nearest.distance; }
+            Collider floor = nearest.collider;
+            if (floor == null || nearest.normal.y < .7f ||
+                floor.GetComponentInParent<CoopGame.Network.NetworkRouteHazard>() != null ||
+                floor.GetComponentInParent<CoopGame.Network.RotatingLogHazard>() != null ||
+                floor.GetComponentInParent<CoopGame.Player.NetworkPlayer>() != null) return false;
+            target.y += nearest.point.y + .06f - boxBottom;
+            if (target.y > _rigidbody.position.y + .6f) return false;
+            for (int lift = 0; lift < 4; lift++, target.y += .12f)
+            {
+                if (!PlacementClear(target - _rigidbody.position)) continue;
+                _placementFloors[0] = floor;
+                _placementFloorCount = 1;
+                return true;
+            }
+            return false;
         }
 
         private bool TrySeeSawPlankTarget(Bounds bounds, out Vector3 target)
