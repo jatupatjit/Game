@@ -52,6 +52,8 @@ namespace CoopGame.Network
         // Play order (Level01, the castle sky level, is the first level). Scenes not listed follow in build order.
         private static readonly string[] PlayOrder = { Training, "Level01", "Level02 George", "Level02", "Level01 Old" };
 
+        private static bool AlwaysOpen(string scene) => scene == "Level02 George" || scene == "Level02";
+
         /// <summary>Name shown on the map for a scene.</summary>
         public static string DisplayName(string scene) => scene switch
         {
@@ -160,7 +162,8 @@ namespace CoopGame.Network
                 // The training ground has no delivery: always open, and it does not gate the next level.
                 bool training = name == Training;
                 int stars = BestStars(name);
-                bool unlocked = training || previousStars > 0;
+                // Level 2 (Sky Kingdom) is always open; others unlock once the level before has a star (or were played).
+                bool unlocked = training || previousStars > 0 || stars > 0 || AlwaysOpen(name);
                 if (!training) previousStars = stars;
                 var node = new GameObject(name, typeof(RectTransform), typeof(Image));
                 node.transform.SetParent(_list, false);
