@@ -1715,12 +1715,26 @@ namespace CoopGame.Player
             if (_ignoredAfterCarry != cargo) IgnoreCargo(_ignoredAfterCarry, false);
             _ignoredAfterCarry = null;
             IgnoreCargo(cargo, true);
+            SetCargoSnappy(cargo, true);
             var cargoBody = cargo.GetComponent<Rigidbody>();
             AttachCarryHand(0, cargoBody, cargo.transform.TransformPoint(localL));
             AttachCarryHand(1, cargoBody, cargo.transform.TransformPoint(localR));
         }
 
         /// <summary>Owner: the server let go of the crate for this player (placed, thrown, dropped, delivered).</summary>
+        // Joined player (client) carrying: the crate is simulated on the host and shown through its NetworkTransform,
+        // whose interpolation buffer adds a delay on top of the ping. While this player holds it, show the newest
+        // snapshot instead, so the crate (and the hands gripping it) lag behind the body less.
+        private bool _cargoInterpolationWas;
+        private void SetCargoSnappy(CarryableObject cargo, bool on)
+        {
+            if (cargo == null || HasAuthority) return;
+            var nt = cargo.GetComponent<Unity.Netcode.Components.NetworkTransform>();
+            if (nt == null) return;
+            if (on) { _cargoInterpolationWas = nt.Interpolate; nt.Interpolate = false; }
+            else nt.Interpolate = _cargoInterpolationWas;
+        }
+
         private void OnCarryEnded()
         {
             for (int h = 0; h < 2; h++)
@@ -1732,6 +1746,7 @@ namespace CoopGame.Player
             if (_carry != null) { _ignoredAfterCarry = _carry; _ignoredAfterCarrySince = Time.time; }
             if (_carry != null && _throwCostPending && _stamina != null) _stamina.ConsumeStamina(_throwStaminaCost);
             _throwCostPending = false;
+            SetCargoSnappy(_carry, false);
             _carry = null;
             _carryPressedAt = -1f;
             _carryTapReleased = false;
