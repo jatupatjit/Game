@@ -118,7 +118,9 @@ namespace CoopGame.Network
         public int BeginRestart()
         {
             RestartCount++;
-            int hp = Mathf.Clamp(Mathf.Max(_savedHp.Value, _restartMinHp), 1, 100);
+            // Restart HP floor by room difficulty (easy 75, normal 60, hard 50); never below the scene's minimum.
+            int floor = GameRoom.Difficulty switch { 0 => 75, 1 => 60, _ => 50 };
+            int hp = Mathf.Clamp(Mathf.Max(_savedHp.Value, Mathf.Max(floor, _restartMinHp)), 1, 100);
             LastRestartHp = hp;
             if (LevelRunState.Instance != null) LevelRunState.Instance.PostNotice(LevelNotice.CargoRestart);
             if (IsSpawned) RestartPlayersRpc();

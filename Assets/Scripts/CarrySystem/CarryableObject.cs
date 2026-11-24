@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using CoopGame.Player;
@@ -162,8 +162,11 @@ namespace CoopGame.CarrySystem
         private const float DragTractionScale = 4f;
         private const float DragSpeedMultiplier = .4f;
         public bool IsSoloDragging => _requiresTwoCarriers && CurrentCarrierCount == 1;
+        // Walking while carrying felt slow in playtests: a little faster for every crate (solo and co-op).
+        private const float CarrySpeedBoost = 1.2f;
+
         public float GetSpeedMultiplier() => IsSoloDragging ? DragSpeedMultiplier :
-            CoopGame.Network.DevCheats.EffectiveCarriers(CurrentCarrierCount) >= 2 ? _coopSpeedMultiplier : SoloAssistActive ? .85f : _soloSpeedMultiplier;
+            CarrySpeedBoost * (CoopGame.Network.DevCheats.EffectiveCarriers(CurrentCarrierCount) >= 2 ? _coopSpeedMultiplier : SoloAssistActive ? .85f : _soloSpeedMultiplier);
 
         protected virtual void Awake()
         {

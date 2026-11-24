@@ -30,8 +30,9 @@ namespace CoopGame.Player
 
         [Tooltip("Extra drain penalty multiplier per kg above base mass")]
         [SerializeField] private float _massDrainMultiplier = 0.05f;
-        [Tooltip("Extra multiplier on carry drain when carrying alone (co-op carry never drains)")]
-        [SerializeField, Min(1f)] private float _soloDrainBoost = 3.5f;
+        [Tooltip("Carry drain multiplier by how many players are in the room (index 0 = 1 player ... 3 = 4+ players). " +
+                 "Carrying together (2+ on the crate) never drains.")]
+        [SerializeField] private float[] _roomDrainBoost = { 6f, 3f, 1.8f, 1f };
 
         [Header("Regeneration")]
         [Tooltip("Stamina recovery rate per second when resting")]
@@ -154,9 +155,20 @@ namespace CoopGame.Player
             float massExcess = Mathf.Max(0f, objectMass - _baseMass);
             float massScale = 1.0f + (massExcess * _massDrainMultiplier);
 
-            float totalDrain = baseRate * _soloDrainBoost * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Mathf.Clamp01(sessionDrainMultiplier) * Time.deltaTime;
+            float totalDrain = baseRate * RoomDrainBoost() * massScale * Mathf.Clamp(CarryDrainMultiplier, .1f, 1f) * Mathf.Clamp01(sessionDrainMultiplier) * Time.deltaTime;
 
             ApplyDrain(totalDrain);
+        }
+
+        // Fewer players in the room = carrying alone drains much faster (1 player fastest, 4 players slowest).
+        private float RoomDrainBoost()
+        {
+            if (_roomDrainBoost == null || _roomDrainBoost.Length == 0) return 1f;
+            // Player objects are replicated, so every peer (the stamina owner included) can count them.
+            int players = 0;
+            foreach (var p in CoopGame.Network.PlayerExpeditionState.Everyone) if (p != null && p.IsSpawned) players++;
+            players = Mathf.Max(1, players);
+            return _roomDrainBoost[Mathf.Clamp(players - 1, 0, _roomDrainBoost.Length - 1)];
         }
 
         /// <summary>
