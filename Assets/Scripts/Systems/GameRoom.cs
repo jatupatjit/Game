@@ -137,6 +137,14 @@ namespace CoopGame.Network
             if (p != null) p.EffectRpc(kind, at);
         }
 
+        /// <summary>Server: tell every machine this player was blamed for crate damage (BlamePopup).</summary>
+        public static void ServerBlame(ulong client, int damage)
+        {
+            if (!IsServer || !MischiefSettings.Current.BlamePopups) return;
+            var p = AnySpawned();
+            if (p != null) p.BlameRpc(client, damage);
+        }
+
         /// <summary>Every machine: the effect itself (called from <see cref="PlayerExpeditionState.EffectRpc"/>).</summary>
         public static void PlayEffect(byte kind, Vector3 at)
         {

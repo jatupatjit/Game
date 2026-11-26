@@ -197,6 +197,10 @@ namespace CoopGame.Network
         [Rpc(SendTo.Everyone)]
         public void EffectRpc(byte kind, Vector3 at) => GameRoom.PlayEffect(kind, at);
 
+        /// <summary>Host to everyone: a player was blamed for crate damage (BlamePopup banner + head mark).</summary>
+        [Rpc(SendTo.Everyone)]
+        public void BlameRpc(ulong client, int damage) => BlamePopup.Show(client, damage);
+
         /// <summary>Any player to host: choose the room difficulty (no vote: the pick stands).</summary>
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
         public void ChooseDifficultyRpc(byte difficulty)

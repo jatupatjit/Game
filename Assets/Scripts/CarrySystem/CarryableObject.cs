@@ -437,7 +437,10 @@ namespace CoopGame.CarrySystem
             // by one person keeps the spring support below, so its far end can rest on the ground.
             if (!soloDrag)
             {
+                // Rule A1: carriers pulling opposite ways yank the crate free (CarryableObject.Tug.cs).
+                if (UpdateTugOfWar()) return;
                 DriveHeldPose(isNetworked);
+                ShakeForTug();
                 return;
             }
 
@@ -967,6 +970,8 @@ namespace CoopGame.CarrySystem
                 }
 
                 SetCarrierCollisionIgnore(data.PlayerColliders, false);
+                if (data.PlayerTransform != null) LastDetachedCarrierPosition = data.PlayerTransform.position;
+                LastDetachedCarrierId = clientId;
 
                 _occupiedSockets.Remove(data.SocketIndex);
                 _activeCarriers.Remove(clientId);
@@ -990,14 +995,26 @@ namespace CoopGame.CarrySystem
         {
             ClearSnapLock();
             var carrierIds = new List<ulong>(_activeCarriers.Keys);
-            foreach (var id in carrierIds)
+            DetachingAll = true;
+            try
             {
-                PlayerCarry carry = _activeCarriers.TryGetValue(id, out CarrierInfo carrier) ? carrier.Carry : null;
-                DetachCarrier(id);
-                // Cached attachment references work offline and during disconnect teardown.
-                if (carry != null) carry.ForcedDropFromCargo(this);
+                foreach (var id in carrierIds)
+                {
+                    PlayerCarry carry = _activeCarriers.TryGetValue(id, out CarrierInfo carrier) ? carrier.Carry : null;
+                    DetachCarrier(id);
+                    // Cached attachment references work offline and during disconnect teardown.
+                    if (carry != null) carry.ForcedDropFromCargo(this);
+                }
             }
+            finally { DetachingAll = false; }
         }
+
+        /// <summary>True while <see cref="DetachAllCarriers"/> lets everyone go (not one carrier letting go).</summary>
+        protected bool DetachingAll { get; private set; }
+        /// <summary>Where the carrier that last let go stood (server, set just before <see cref="OnCarrierDetached"/>).</summary>
+        protected Vector3 LastDetachedCarrierPosition { get; private set; }
+        /// <summary>Client id of the carrier that last let go (server).</summary>
+        protected ulong LastDetachedCarrierId { get; private set; }
 
         /// <summary>
         /// Detaches the carrier and applies launch velocity and angular tumbling impulse.

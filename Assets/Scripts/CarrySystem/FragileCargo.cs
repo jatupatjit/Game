@@ -94,6 +94,7 @@ namespace CoopGame.CarrySystem
 
         // State tracking
         private bool _isThrown = false;
+        private bool _throwingNow;
         // Full-physics players' ragdoll limbs live outside the player object; they are players too, never damage.
         private static int s_limbLayer => s_limbLayerCache >= -1 ? s_limbLayerCache : (s_limbLayerCache = LayerMask.NameToLayer(CoopGame.Player.RagdollCharacter.LimbLayerName));
         private static int s_limbLayerCache = -2;
@@ -294,7 +295,7 @@ namespace CoopGame.CarrySystem
         protected override void OnPlacementCompleted()
         {
             base.OnPlacementCompleted();
-            if (!_isDestroyed && !IsSecured && _placeDamage > 0 && !PlacedOnCushion() && !PlacedOnCheckpoint()) ApplyDamageServer(_placeDamage, "Placed off hay");
+            if (!_isDestroyed && !IsSecured && PlaceDamage > 0 && !PlacedOnCushion() && !PlacedOnCheckpoint()) ApplyDamageServer(PlaceDamage, "Placed off hay");
         }
 
         private bool PlacedOnCheckpoint()
@@ -311,10 +312,58 @@ namespace CoopGame.CarrySystem
             if (CurrentCarrierCount == 0 && _exhaustedDropDamage > 0) ApplyDamageServer(_exhaustedDropDamage, "Dropped (out of stamina)");
         }
 
+        // Rule B (MischiefSettings, Hard only): tighter damage numbers. Off = the serialized values as before.
+        private float DamageCooldown => CoopGame.Network.MischiefSettings.HardPhysicsActive ? CoopGame.Network.MischiefSettings.Current.HardDamageCooldown : _damageCooldownSeconds;
+        private float MinImpactVelocity => CoopGame.Network.MischiefSettings.HardPhysicsActive ? CoopGame.Network.MischiefSettings.Current.HardMinImpactVelocity : _minImpactVelocity;
+        private int PlaceDamage => CoopGame.Network.MischiefSettings.HardPhysicsActive ? CoopGame.Network.MischiefSettings.Current.HardPlaceDamage : _placeDamage;
+
+        /// <summary>Rule A1: the tug yanked the crate out of the carriers' hands: the hit now, then a short grace so
+        /// its landing does not count twice.</summary>
+        protected override void OnTugJolt(int damage)
+        {
+            if (_isDestroyed || IsSecured || damage <= 0) return;
+            _nextDamageAllowedAtFixedTime = 0f;
+            _queuedDamage = 0;
+            ApplyQueuedDamage(damage, "Tug of war");
+            _damageEnabledAtFixedTime = Mathf.Max(_damageEnabledAtFixedTime, Time.fixedTime + 1.6f);
+            _nextDamageAllowedAtFixedTime = Mathf.Max(_nextDamageAllowedAtFixedTime, Time.fixedTime + 1.6f);
+        }
+
+        /// <summary>Rule B1 (Hard): one of two carriers lets go mid-carry; the crate pitches down on the side that
+        /// let go and hits the ground, slipping out of the other carrier's hands too.</summary>
+        private void SuddenDropServer()
+        {
+            var rules = CoopGame.Network.MischiefSettings.Current;
+            Vector3 toward = LastDetachedCarrierPosition - transform.position;
+            toward.y = 0f;
+            toward = toward.sqrMagnitude > 1e-4f ? toward.normalized : -transform.forward;
+            ulong releaser = LastDetachedCarrierId;
+            DetachAllCarriers();
+            CoopGame.Network.LevelResults.ServerBlameNext(2f, releaser); // the one who let go, not the one still holding
+            if (_rigidbody != null)
+            {
+                _rigidbody.useGravity = true;
+                _rigidbody.linearVelocity = toward * 1.5f + Vector3.down * 2f;
+                _rigidbody.angularVelocity = Vector3.Cross(Vector3.up, toward) * 6f;
+            }
+            _nextDamageAllowedAtFixedTime = 0f;
+            _queuedDamage = 0;
+            ApplyQueuedDamage(rules.HardSuddenDropDamage, "Sudden drop (a carrier let go)");
+            _damageEnabledAtFixedTime = Mathf.Max(_damageEnabledAtFixedTime, Time.fixedTime + 1.2f);
+            CoopGame.Network.GameRoom.ServerFeed("ปล่อยมือกะทันหัน! ลังทิ่มพื้น", new Color(1f, .5f, .35f));
+        }
+
         protected override void OnCarrierDetached(int remainingCarriers)
         {
             base.OnCarrierDetached(remainingCarriers);
             if (_isDestroyed || IsSecured || _isThrown) return;
+            // Rule B1 (Hard): letting go while a team-mate still holds the crate drops it on its nose.
+            if (remainingCarriers >= 1 && !DetachingAll && !IsPlacing && !_throwingNow && CoopGame.Network.MischiefSettings.HardPhysicsActive &&
+                (!IsSpawned || IsServer))
+            {
+                SuddenDropServer();
+                return;
+            }
             // When 1 of 2+ co-op carriers releases the crate, give the remaining carrier a short
             // settle window so the sudden load shift onto one end does not register as a drop impact.
             if (remainingCarriers >= 1)
@@ -330,7 +379,9 @@ namespace CoopGame.CarrySystem
         {
             if (_isDestroyed || IsSecured ||
                 (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer)) return;
-            base.ThrowObject(clientId, linearVelocity, angularVelocity);
+            _throwingNow = true; // a throw lets go on purpose: never a rule-B sudden drop
+            try { base.ThrowObject(clientId, linearVelocity, angularVelocity); }
+            finally { _throwingNow = false; }
 
             // Mark cargo as thrown: next hard impact deals -20 HP
             _isThrown = true;
@@ -439,7 +490,7 @@ namespace CoopGame.CarrySystem
                 }
             }
 
-            if (strongestImpactCollider != null && strongestImpactSpeed >= _minImpactVelocity &&
+            if (strongestImpactCollider != null && strongestImpactSpeed >= MinImpactVelocity &&
                 now >= _lastImpactTime + _impactInvulnerabilityDuration)
             {
                 _lastImpactTime = now;
@@ -536,7 +587,7 @@ namespace CoopGame.CarrySystem
             int previousHP = CurrentHP.Value;
             int newHP = Mathf.Max(0, CurrentHP.Value - damageAmount);
             if (newHP == CurrentHP.Value) return;
-            _nextDamageAllowedAtFixedTime = Time.fixedTime + _damageCooldownSeconds;
+            _nextDamageAllowedAtFixedTime = Time.fixedTime + DamageCooldown;
 
             // A level with checkpoints never dead-ends: HP 0 sends cargo and team back to the last active pad
             // with the HP remembered there (CheckpointManager), instead of Mission Fail.

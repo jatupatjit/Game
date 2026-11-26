@@ -293,6 +293,10 @@ namespace CoopGame.Network
                 string name = player.DisplayName.Value.ToString();
                 if (string.IsNullOrEmpty(name)) name = $"Player {player.OwnerClientId + 1}";
                 if (player.IsOwner) name += " (You)";
+                // Rule A3: crate damage blamed on this player this level, in red after the name.
+                int blamed = player.Stats.Value.CrateDamage;
+                if (blamed > 0 && MischiefSettings.Current.BlamePopups) name += $"  <color=#FF6B5E>-{blamed}</color>";
+                row.Name.supportRichText = true;
                 row.Name.text = name;
                 UITheme.StyleIcon(row.Card, UITheme.CardIcon(card));
                 row.Card.raycastTarget = true;

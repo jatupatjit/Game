@@ -59,6 +59,9 @@ namespace CoopGame.Player
         public bool CarryPressed { get; private set; }
         public bool CarryReleased { get; private set; }
 
+        /// <summary>R this frame: shove the nearest team-mate (rule A2, MischiefSettings.Shove).</summary>
+        public bool ShovePressed { get; private set; }
+
         /// <summary>
         /// True if ANY grab input is currently pressed (Left Hand, Right Hand, or 'E').
         /// </summary>
@@ -111,6 +114,7 @@ namespace CoopGame.Player
             InteractPressed = false;
             CarryPressed = false;
             CarryReleased = false;
+            ShovePressed = false;
             ScrollStep = 0;
             // 1. If game is paused, suppress ALL gameplay inputs completely
             if (CoopGame.Network.LobbyCharacterCustomizationUI.IsVisible || CoopGame.Network.PauseMenu.IsPaused || CoopGame.CarrySystem.MissionFailUI.IsVisible || (CoopGame.Network.ExpeditionHUD.BlocksGameplayInput || CoopGame.Network.SpectateMode.BlocksInput))
@@ -182,6 +186,9 @@ namespace CoopGame.Player
                 CarryReleased = !held && CarryHeld;
                 CarryHeld = held;
             }
+
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            ShovePressed = !pointerOverUI && keyboard != null && keyboard.rKey.wasPressedThisFrame;
 
             // Mouse wheel this frame: +1 up, -1 down, 0 none (raises/lowers held cargo).
             float scroll = !pointerOverUI && UnityEngine.InputSystem.Mouse.current != null

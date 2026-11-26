@@ -106,11 +106,36 @@ namespace CoopGame.Network
             _instance._nextFlush = 0f;
         }
 
+        // Rule A (MischiefSettings): a shove or a tug-of-war names who is to blame for the crate's next hit,
+        // instead of whoever held it last.
+        private readonly List<ulong> _blameOverride = new();
+        private float _blameOverrideUntil = -1f;
+
+        /// <summary>Host: blame the crate's next damage within <paramref name="seconds"/> on these players.</summary>
+        public static void ServerBlameNext(float seconds, params ulong[] clients)
+        {
+            if (_instance == null || clients == null || clients.Length == 0) return;
+            _instance._blameOverride.Clear();
+            _instance._blameOverride.AddRange(clients);
+            _instance._blameOverrideUntil = Time.time + seconds;
+        }
+
         private void OnCargoDamaged(FragileCargo cargo, int damage)
         {
             if (!IsServer() || _frozen || cargo == null) return;
             bool any = false;
             string who = null;
+            if (Time.time <= _blameOverrideUntil && _blameOverride.Count > 0)
+            {
+                foreach (ulong id in _blameOverride)
+                {
+                    Blame(id, damage); any = true;
+                    string name = GameRoom.NameOfClient(id);
+                    who = who == null ? name : who + " + " + name;
+                }
+                _blameOverrideUntil = -1f;
+            }
+            if (!any)
             foreach (var player in PlayerExpeditionState.Everyone)
                 if (player != null && cargo.HasCarrier(player.OwnerClientId))
                 {
@@ -137,6 +162,7 @@ namespace CoopGame.Network
             s.CrateDamage += damage;
             _live[id] = s;
             _nextFlush = 0f;
+            GameRoom.ServerBlame(id, damage);
         }
 
         // Host: throws and catches of the level crate (from its in-flight flag) for the scoreboard and feed.

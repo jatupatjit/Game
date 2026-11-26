@@ -513,6 +513,7 @@ namespace CoopGame.Player
             bool helpedTeammate = UpdateHelpUp(canAct); // F next to a downed team-mate helps them up (Assist.cs)
 
             UpdateCatchInput(canAct);
+            UpdateShove(canAct); // R next to a team-mate (Shove.cs, MischiefSettings)
             UpdateThrownCrateHit();
             PublishThrowMark(); // last frame's aim/throw state, for team-mates' landing ring
             if (_carry != null)
