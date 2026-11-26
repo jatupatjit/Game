@@ -33,6 +33,14 @@ namespace CoopGame.CarrySystem
         private const float HoldMaxSpeed = 12f;
         private const float HoldMaxAngularSpeed = 10f;
 
+        // Caught out of the air: for a short moment the crate is pulled firmly into the hold pose (no ease-in), so it
+        // locks into the catcher's hands instead of drifting down to the ground first.
+        private const float CatchSnapSeconds = .35f, CatchSnapGain = .6f;
+        private float _catchSnapUntil = -1f;
+
+        /// <summary>Server: the crate was just caught; snap it into the hands.</summary>
+        public void SnapIntoHands() => _catchSnapUntil = Time.fixedTime + CatchSnapSeconds;
+
         /// <summary>Middle of this carrier's active grips in cargo-local space (scaled).</summary>
         private Vector3 GripMidLocal(CarrierInfo carrier, Vector3 objectScale)
         {
@@ -114,6 +122,8 @@ namespace CoopGame.CarrySystem
 
             // Ease in after a grab so a resting crate is lifted, not snapped, into the hands.
             float settle = Mathf.SmoothStep(.15f, 1f, Mathf.Clamp01((Time.fixedTime - earliestAttach) / HoldSettleSeconds));
+            bool snapping = Time.fixedTime < _catchSnapUntil;
+            if (snapping) settle = 1f;
             float gain = HoldTrackGain * settle;
             float dt = Time.fixedDeltaTime;
 
@@ -129,7 +139,9 @@ namespace CoopGame.CarrySystem
             intent *= 5f * GetSpeedMultiplier();
 
             Vector3 error = targetPosition - _rigidbody.position;
-            Vector3 correction = new Vector3(error.x * HoldGroundGain, error.y * HoldTrackGain, error.z * HoldGroundGain);
+            Vector3 correction = snapping
+                ? error * CatchSnapGain
+                : new Vector3(error.x * HoldGroundGain, error.y * HoldTrackGain, error.z * HoldGroundGain);
             if (count == 1)
             {
                 // A solo carrier strafing (A/D) keeps the cargo centred in front: close the sideways error as

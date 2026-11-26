@@ -1706,7 +1706,7 @@ namespace CoopGame.Player
         }
 
         /// <summary>Owner: the server attached this player to the crate (or refused).</summary>
-        private void OnCarryStarted(CarryableObject cargo, Vector3 localL, Vector3 localR, bool ok)
+        private void OnCarryStarted(CarryableObject cargo, Vector3 localL, Vector3 localR, bool ok, bool caught = false)
         {
             _carryRequestPending = false;
             if (!ok || cargo == null || _physicsRoot == null) return;
@@ -1717,7 +1717,8 @@ namespace CoopGame.Player
             // Picked up off a hay bale: start at the top of the lift range (no scrolling needed).
             bool fromHay = _liftRequestedOnHay == cargo || PlayerCarry.RestsOnHay(cargo);
             _liftRequestedOnHay = null;
-            _liftSteps = fromHay ? CarryableObject.HoldRaiseSteps : 0;
+            // Caught out of the air: straight to the top lift step too (same height as scrolling up all the way).
+            _liftSteps = fromHay || caught ? CarryableObject.HoldRaiseSteps : 0;
             if (_ignoredAfterCarry != cargo) IgnoreCargo(_ignoredAfterCarry, false);
             _ignoredAfterCarry = null;
             IgnoreCargo(cargo, true);
@@ -1977,15 +1978,17 @@ namespace CoopGame.Player
 
         private void ServerStartCarry(CarryableObject cargo, Vector3 localL, Vector3 localR)
         {
+            bool caught = cargo != null && cargo.InFlight;
             UprightTumblingCargo(cargo, ref localL, ref localR);
             bool ok = cargo != null && _serverCarry == null &&
                       (cargo.transform.position - transform.position).sqrMagnitude < 4f * 4f && // plausible reach
                       cargo.TryAttachCarrier(CarrierId, transform, null, localL, localR, out _);
             if (ok) _serverCarry = cargo;
+            if (ok && caught) cargo.SnapIntoHands(); // pulled straight into the catcher's hold pose
             if (ok && IsSpawned) CueRpc(CoopGame.Network.GameplayFeedback.Cue.Lift, cargo.transform.position);
             if (ok && IsSpawned) _carriedCargo.Value = cargo.NetworkObject;
-            if (IsLocal) OnCarryStarted(cargo, localL, localR, ok);
-            else CarryStartedRpc(cargo != null ? cargo.NetworkObject : default(NetworkObjectReference), localL, localR, ok);
+            if (IsLocal) OnCarryStarted(cargo, localL, localR, ok, ok && caught);
+            else CarryStartedRpc(cargo != null ? cargo.NetworkObject : default(NetworkObjectReference), localL, localR, ok, ok && caught);
         }
 
         /// <summary>
@@ -2063,9 +2066,9 @@ namespace CoopGame.Player
         }
 
         [Rpc(SendTo.Owner)]
-        private void CarryStartedRpc(NetworkObjectReference cargoRef, Vector3 localL, Vector3 localR, bool ok)
+        private void CarryStartedRpc(NetworkObjectReference cargoRef, Vector3 localL, Vector3 localR, bool ok, bool caught)
         {
-            OnCarryStarted(cargoRef.TryGet(out NetworkObject o) ? o.GetComponent<CarryableObject>() : null, localL, localR, ok);
+            OnCarryStarted(cargoRef.TryGet(out NetworkObject o) ? o.GetComponent<CarryableObject>() : null, localL, localR, ok, caught);
         }
 
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
