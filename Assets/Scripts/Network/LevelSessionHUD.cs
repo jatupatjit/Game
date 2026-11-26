@@ -24,8 +24,8 @@ namespace CoopGame.Network
         [SerializeField] private Text _playerNamesText;
         [SerializeField, Min(0.1f)] private float _refreshInterval = 0.2f;
 
-        private const float CardWidth = 340f, RowHeight = 54f, IconSize = 48f;
-        private const int NameFontSize = 21;
+        private const float CardWidth = 340f, RowHeight = 52f, IconSize = 46f;
+        private const int NameFontSize = 20;
 
         private RectTransform _panel;
         private RectTransform _rows;
@@ -78,21 +78,22 @@ namespace CoopGame.Network
                 _panel.anchoredPosition = new Vector2(20f, -20f);
                 panelGo.GetComponent<Image>().raycastTarget = false;
             }
-            UITheme.StylePanel(_panel.GetComponent<Image>());
+            // Same dark chip as the other in-level HUD boxes (objective, run info, inventory).
+            UITheme.StyleShape(_panel.GetComponent<Image>(), UITheme.SmallSprite, UITheme.SolidPanel);
             foreach (Transform child in _panel) child.gameObject.SetActive(false); // old header/count/names
 
             var rows = new GameObject("PlayerRows", typeof(RectTransform), typeof(VerticalLayoutGroup));
             rows.transform.SetParent(_panel, false);
             _rows = (RectTransform)rows.transform;
             var layout = rows.GetComponent<VerticalLayoutGroup>();
-            layout.spacing = 6f;
+            layout.spacing = 8f;
             layout.childControlWidth = layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
 
             UITheme.CompactCard(_panel, CardWidth);
             var cardLayout = _panel.GetComponent<VerticalLayoutGroup>();
-            if (cardLayout != null) cardLayout.padding = new RectOffset(18, 18, 16, 16);
+            if (cardLayout != null) cardLayout.padding = new RectOffset(14, 14, 12, 12);
         }
 
         private Row CreateRow()
@@ -112,8 +113,9 @@ namespace CoopGame.Network
             var col = new GameObject("NameCol", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
             col.transform.SetParent(go.transform, false);
             var colLayout = col.GetComponent<VerticalLayoutGroup>();
-            colLayout.spacing = 3f;
+            colLayout.spacing = 2f;
             colLayout.childAlignment = TextAnchor.MiddleLeft;
+            colLayout.padding = new RectOffset(0, 0, 2, 2);
             colLayout.childControlWidth = colLayout.childControlHeight = true;
             colLayout.childForceExpandWidth = true;
             colLayout.childForceExpandHeight = false;
@@ -124,7 +126,10 @@ namespace CoopGame.Network
             row.Name.horizontalOverflow = HorizontalWrapMode.Overflow;
             UITheme.SetWeight(row.Name, UITheme.FontSemiBold);
             var nameElement = row.Name.gameObject.AddComponent<LayoutElement>();
-            nameElement.preferredHeight = 26f;
+            nameElement.preferredHeight = 24f;
+            var nameWrap = row.Name.gameObject.AddComponent<UnityEngine.UI.Shadow>();
+            nameWrap.effectColor = new Color(0f, 0f, 0f, .5f);
+            nameWrap.effectDistance = new Vector2(1f, -1f);
             BuildStaminaBar(col.transform, row);
             row.Card = Icon(go.transform, "CardIcon");
             row.Card.raycastTarget = true; // hover target
@@ -176,8 +181,9 @@ namespace CoopGame.Network
             icon.GetComponent<LayoutElement>().ignoreLayout = true;
             var iconRect = (RectTransform)icon.transform;
             iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, .5f);
-            iconRect.anchoredPosition = new Vector2(w.left * BarScale * .5f, 3f * BarScale);
-            iconRect.sizeDelta = new Vector2(61f, 58f) * BarScale; // big bar: 76 x 72 at scale 1.25
+            // Kept within the bar's height (the big bar's 76 x 72 icon scaled down stuck up into the name).
+            iconRect.anchoredPosition = new Vector2(w.left * BarScale * .5f, 1f);
+            iconRect.sizeDelta = new Vector2(30f, 28f);
             UITheme.StyleIcon(icon.GetComponent<Image>(), UITheme.IconCarrier);
             icon.GetComponent<Image>().raycastTarget = false;
         }
