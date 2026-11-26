@@ -399,6 +399,8 @@ namespace CoopGame.Player
         private readonly ConfigurableJoint[] _carryHand = new ConfigurableJoint[2];
         private CarryableObject _ignoredAfterCarry;
         private float _ignoredAfterCarrySince;
+        private const float IgnoreAfterCarryMaxSeconds = .5f;
+        private CarryableObject _liftRequestedOnHay;
         private bool _carryRequestPending, _dropRequested, _throwCostPending;
         private float _carryRequestTimeout;
         private int _liftSteps;
@@ -1669,6 +1671,8 @@ namespace CoopGame.Player
             Vector3 localR = cargo.transform.InverseTransformPoint(right);
             _carryRequestPending = true;
             _carryRequestTimeout = Time.time + 2f; // an unanswered request never blocks lifting for good
+            // Remember the hay now: on a joined player the crate may already be rising when the answer arrives.
+            _liftRequestedOnHay = PlayerCarry.RestsOnHay(cargo) ? cargo : null;
             if (HasAuthority) ServerStartCarry(cargo, localL, localR);
             else StartCarryRpc(cargo.NetworkObject, localL, localR);
         }
@@ -1711,7 +1715,9 @@ namespace CoopGame.Player
             _carryLocalL = localL;
             _carryLocalR = localR;
             // Picked up off a hay bale: start at the top of the lift range (no scrolling needed).
-            _liftSteps = PlayerCarry.RestsOnHay(cargo) ? CarryableObject.HoldRaiseSteps : 0;
+            bool fromHay = _liftRequestedOnHay == cargo || PlayerCarry.RestsOnHay(cargo);
+            _liftRequestedOnHay = null;
+            _liftSteps = fromHay ? CarryableObject.HoldRaiseSteps : 0;
             if (_ignoredAfterCarry != cargo) IgnoreCargo(_ignoredAfterCarry, false);
             _ignoredAfterCarry = null;
             IgnoreCargo(cargo, true);
@@ -1858,13 +1864,25 @@ namespace CoopGame.Player
             // collisions only came back once nothing overlapped. Restore them right after the fall
             // starts so physics pushes the body out instead.
             bool fallen = IsKnockedDown && Time.time > _ignoredAfterCarrySince + .12f;
-            if (!fallen)
+            // Walking on into the crate right after setting it down kept a limb overlapping it, so collisions never
+            // came back and the player walked through it. Test the real overlap (not bounding boxes), and give up
+            // waiting after a short grace: physics then pushes the body out.
+            bool waitedEnough = Time.time > _ignoredAfterCarrySince + IgnoreAfterCarryMaxSeconds;
+            if (!fallen && !waitedEnough)
             foreach (var cargoCollider in _ignoredAfterCarry.GetComponentsInChildren<Collider>())
             {
+                if (cargoCollider == null || !cargoCollider.enabled || cargoCollider.isTrigger) continue;
                 Bounds cargoBounds = cargoCollider.bounds;
                 cargoBounds.Expand(.05f);
+                bool exact = !(cargoCollider is MeshCollider mesh) || mesh.convex;
                 foreach (var own in _colliders)
-                    if (own != null && own.bounds.Intersects(cargoBounds)) return;
+                {
+                    if (own == null || !own.bounds.Intersects(cargoBounds)) continue;
+                    if (!exact) return;
+                    if (Physics.ComputePenetration(own, own.transform.position, own.transform.rotation,
+                            cargoCollider, cargoCollider.transform.position, cargoCollider.transform.rotation, out _, out _))
+                        return;
+                }
             }
             IgnoreCargo(_ignoredAfterCarry, false);
             _ignoredAfterCarry = null;
