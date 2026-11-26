@@ -29,12 +29,16 @@ namespace CoopGame.Network
         [SerializeField] private TextMesh _label;
 
         private readonly NetworkVariable<bool> _used = new(false);
+        // 0..20: how long the crate has rested on the pad (for the filling ring on every screen).
+        private readonly NetworkVariable<byte> _restProgress = new(0);
         private Rigidbody _cargoBody;
         private float _restTimer;
         private float _fullNoticeUntil;
         private int _shown = -1;
 
         public bool IsUsed => IsSpawned && _used.Value;
+        /// <summary>0..1 share of the rest time the crate has sat on the pad (0 when used or empty).</summary>
+        public float RestProgress => IsSpawned ? _restProgress.Value / 20f : 0f;
 
         public static readonly System.Collections.Generic.List<RepairStation> Active = new();
         public Transform PadTransform => _pad != null ? _pad : transform;
@@ -68,15 +72,22 @@ namespace CoopGame.Network
 
         private void ServerTick()
         {
-            if (!CargoResting()) { _restTimer = 0f; return; }
+            if (!CargoResting()) { _restTimer = 0f; SetProgress(0f); return; }
             _restTimer += Time.fixedDeltaTime;
+            SetProgress(_cargo.CurrentHP.Value >= _cargo.MaxHP ? 0f : _restTimer / _restSeconds);
             if (_restTimer < _restSeconds) return;
             if (_cargo.CurrentHP.Value >= _cargo.MaxHP)
             {
                 if (Time.time >= _fullNoticeUntil) { _fullNoticeUntil = Time.time + 4f; FullNoticeRpc(); }
                 return;
             }
-            if (_cargo.HealServer(_healAmount) > 0) _used.Value = true;
+            if (_cargo.HealServer(_healAmount) > 0) { _used.Value = true; SetProgress(0f); }
+        }
+
+        private void SetProgress(float value)
+        {
+            byte b = (byte)Mathf.RoundToInt(Mathf.Clamp01(value) * 20f);
+            if (_restProgress.Value != b) _restProgress.Value = b;
         }
 
         [Rpc(SendTo.Everyone)]
