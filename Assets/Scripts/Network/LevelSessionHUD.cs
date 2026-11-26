@@ -275,7 +275,14 @@ namespace CoopGame.Network
                 byte card = player.Card.Value;
                 if (!row.Root.activeSelf) row.Root.SetActive(true);
                 var appearance = player.GetComponent<CoopGame.Player.PlayerAppearance>();
-                UITheme.StyleIcon(row.Face, appearance != null ? UITheme.FaceForColor(appearance.CurrentBodyColor) : UITheme.FaceForClient(player.OwnerClientId));
+                // Same as the Lobby room list: the white kit face tinted with the exact body colour (the 8 coloured
+                // faces only roughly match; mint came out blue).
+                if (appearance != null)
+                {
+                    UITheme.StyleIcon(row.Face, UITheme.Kit("FaceGrey"));
+                    row.Face.color = Color.Lerp(appearance.CurrentBodyColor, Color.white, .15f);
+                }
+                else UITheme.StyleIcon(row.Face, UITheme.FaceForClient(player.OwnerClientId));
                 float stamina = Mathf.Clamp01(player.StaminaPercent.Value / 100f);
                 row.Target = stamina;
                 if (row.Client != player.OwnerClientId)
