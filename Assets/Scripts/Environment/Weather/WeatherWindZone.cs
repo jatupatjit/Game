@@ -28,6 +28,8 @@ namespace CoopGame.Weather
         [SerializeField, Min(1f)] private float _gustPeriod = 3.5f;
         [Tooltip("Weakest part of a gust, as a share of full strength")]
         [SerializeField, Range(0f, 1f)] private float _gustLow = .45f;
+        [Tooltip("Blow all the time in gusts, not only during the Wind weather event (e.g. the bridge, George 2026-11-27)")]
+        [SerializeField] private bool _alwaysOn;
 
         private BoxCollider _box;
         private ParticleSystem _streaks;
@@ -51,10 +53,11 @@ namespace CoopGame.Weather
 
         private void FixedUpdate()
         {
-            if (WeatherState.Active != WeatherKind.Wind || WeatherState.Strength <= 0f) { Gust = 0f; return; }
+            bool windEvent = WeatherState.Active == WeatherKind.Wind && WeatherState.Strength > 0f;
+            if (!windEvent && !_alwaysOn) { Gust = 0f; return; }
             float phase = (float)(TrapClock.Now % _gustPeriod) / _gustPeriod;
             float wave = .5f + .5f * Mathf.Sin(phase * Mathf.PI * 2f);
-            Gust = WeatherState.Strength * Mathf.Lerp(_gustLow, 1f, wave * wave);
+            Gust = (windEvent ? Mathf.Max(WeatherState.Strength, _alwaysOn ? 1f : 0f) : 1f) * Mathf.Lerp(_gustLow, 1f, wave * wave);
 
             Vector3 scale = transform.lossyScale;
             Vector3 half = Vector3.Scale(_box.size * .5f, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
@@ -86,12 +89,13 @@ namespace CoopGame.Weather
         {
             if (_streaks == null) return;
             var emission = _streaks.emission;
-            float rate = WeatherState.Active == WeatherKind.Wind ? 6f + 24f * Gust
+            bool blowing = WeatherState.Active == WeatherKind.Wind || _alwaysOn;
+            float rate = blowing ? 6f + 24f * Gust
                 : WeatherState.Coming == WeatherKind.Wind ? 4f : 1f;
             Vector3 size = Vector3.Scale(_box.size, transform.lossyScale);
             emission.rateOverTime = rate * Mathf.Clamp(size.x * size.y * size.z / 300f, .5f, 4f);
             var main = _streaks.main;
-            main.startSpeed = WeatherState.Active == WeatherKind.Wind ? 10f + 8f * Gust : 4f;
+            main.startSpeed = blowing ? 10f + 8f * Gust : 4f;
         }
 
         private void BuildStreaks()

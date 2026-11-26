@@ -73,7 +73,21 @@ namespace CoopGame.Network
         /// <summary>The moving wooden deck (cargo snap placement centre, yaw and follow body).</summary>
         public Rigidbody Platform => _platform;
 
-        private void OnEnable() { if (!Active.Contains(this)) Active.Add(this); }
+        private void OnEnable()
+        {
+            if (!Active.Contains(this)) Active.Add(this);
+            HideStatusSign();
+        }
+
+        /// <summary>No signboards with text in levels (George): the status post, plate and text are hidden; the moving
+        /// platform and the ring lights show the state.</summary>
+        private void HideStatusSign()
+        {
+            if (_statusText == null) return;
+            foreach (Transform t in GetComponentsInChildren<Transform>(true))
+                if (t.name == "StatusPost" || t.name == "StatusPlate" || t.name == "StatusText") t.gameObject.SetActive(false);
+            _statusText = null;
+        }
         private void OnDisable() => Active.Remove(this);
 
         /// <summary>True when the body is the platform of any capstan lift.</summary>
