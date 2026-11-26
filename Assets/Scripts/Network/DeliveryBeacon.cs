@@ -23,6 +23,7 @@ namespace CoopGame.Network
         private static readonly Color Cream = new(1f, .97f, .78f, 1f);
         private static readonly Color Amber = new(.78f, .40f, .06f, 1f);
 
+        private const bool ShowDropFrame = false;
         private LevelMission _mission;
         private Transform _compass, _dropArrow, _frame;
         private Renderer _compassRenderer, _dropArrowRenderer, _frameRenderer;
@@ -332,7 +333,9 @@ namespace CoopGame.Network
             _reveal = Mathf.MoveTowards(_reveal, carried ? 1f : 0f, Time.deltaTime * (carried ? 3.5f : 2.5f));
             bool lit = show && _reveal > .001f;
             if (_dropArrow.gameObject.activeSelf != lit) _dropArrow.gameObject.SetActive(lit);
-            if (_frame.gameObject.activeSelf != lit) _frame.gameObject.SetActive(lit);
+            // The gold box frame on the drop spot is off (George 2026-11-27: "remove the square in the middle"); the
+            // checkpoint outline and the down arrow mark the spot.
+            if (_frame.gameObject.activeSelf != (lit && ShowDropFrame)) _frame.gameObject.SetActive(lit && ShowDropFrame);
             if (!lit) ShowCheckpointOutline(false, 1f);
 
             Bounds cb = show ? CrateBounds(cargo) : default;
