@@ -500,6 +500,14 @@ namespace CoopGame.EditorTools.Traps
                 }
                 Box("RopeL", root.transform, new Vector3(-1.1f, .7f, 7f), new Vector3(.06f, .06f, 15f), _wood, default, false);
                 Box("RopeR", root.transform, new Vector3(1.1f, .7f, 7f), new Vector3(.06f, .06f, 15f), _wood, default, false);
+                // Posts on the Near/Far stones that the hand ropes are tied to (George 2026-11-27: ropes hung in the air).
+                foreach (float x in new[] { -1.1f, 1.1f })
+                    foreach (float z in new[] { -.5f, 14.5f })
+                    {
+                        string id = (x < 0 ? "L" : "R") + (z < 0 ? "Near" : "Far");
+                        Box("RopePost_" + id, root.transform, new Vector3(x, .35f, z), new Vector3(.18f, .9f, .18f), _wood);
+                        Box("RopePostCap_" + id, root.transform, new Vector3(x, .83f, z), new Vector3(.24f, .08f, .24f), _wood, default, false);
+                    }
                 yield return Save(root, ObstacleFolder);
             }
             // B8 Falling rocks: rocks drop from above onto a 4 x 10 m path at random spots.

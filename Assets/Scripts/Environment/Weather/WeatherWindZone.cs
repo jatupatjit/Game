@@ -30,6 +30,10 @@ namespace CoopGame.Weather
         [SerializeField, Range(0f, 1f)] private float _gustLow = .45f;
         [Tooltip("Blow all the time in gusts, not only during the Wind weather event (e.g. the bridge, George 2026-11-27)")]
         [SerializeField] private bool _alwaysOn;
+        [Tooltip("Always-on only: seconds of gusts before a calm (0 = never calm)")]
+        [SerializeField, Min(0f)] private float _blowSeconds;
+        [Tooltip("Always-on only: calm seconds between blows, picked between x and y each time (same on every machine)")]
+        [SerializeField] private Vector2 _calmSeconds = new(8f, 10f);
 
         private BoxCollider _box;
         private ParticleSystem _streaks;
@@ -57,7 +61,9 @@ namespace CoopGame.Weather
             if (!windEvent && !_alwaysOn) { Gust = 0f; return; }
             float phase = (float)(TrapClock.Now % _gustPeriod) / _gustPeriod;
             float wave = .5f + .5f * Mathf.Sin(phase * Mathf.PI * 2f);
-            Gust = (windEvent ? Mathf.Max(WeatherState.Strength, _alwaysOn ? 1f : 0f) : 1f) * Mathf.Lerp(_gustLow, 1f, wave * wave);
+            float strength = windEvent ? Mathf.Max(WeatherState.Strength, _alwaysOn ? 1f : 0f) : AlwaysOnStrength();
+            Gust = strength * Mathf.Lerp(_gustLow, 1f, wave * wave);
+            if (Gust <= 0f) return;
 
             Vector3 scale = transform.lossyScale;
             Vector3 half = Vector3.Scale(_box.size * .5f, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
@@ -85,11 +91,43 @@ namespace CoopGame.Weather
             System.Array.Clear(s_hits, 0, count);
         }
 
+        /// <summary>Always-on wind with calms: gusts for <see cref="_blowSeconds"/>, then a calm of 8-10 s, from the
+        /// server clock so every machine agrees. Each slot is blow + mid-calm long and the blow starts up to
+        /// half of (max - min) s late in its slot, so the calm between two blows stays between min and max.
+        /// Fades in and out over 0.6 s so the push never snaps on.</summary>
+        private float AlwaysOnStrength()
+        {
+            if (_blowSeconds <= 0f) return 1f;
+            float calmMin = Mathf.Max(0f, Mathf.Min(_calmSeconds.x, _calmSeconds.y));
+            float calmMax = Mathf.Max(_calmSeconds.x, _calmSeconds.y);
+            float jitter = calmMax - calmMin;
+            double slot = _blowSeconds + calmMin + jitter * .5f;
+            double t = TrapClock.Now;
+            long n = (long)System.Math.Floor(t / slot);
+            float into = (float)(t - n * slot) - Hash01(n) * jitter * .5f; // calm = min + j/2 - o(n) + o(n+1), o in [0, j/2]
+            if (into < 0f || into >= _blowSeconds) return 0f;
+            const float fade = .6f;
+            return Mathf.Clamp01(Mathf.Min(into, _blowSeconds - into) / fade);
+        }
+
+        private static float Hash01(long n)
+        {
+            unchecked
+            {
+                uint h = (uint)(n * 2654435761L) ^ 0x9E3779B9u;
+                h ^= h >> 15; h *= 0x85EBCA6Bu; h ^= h >> 13;
+                return (h & 0xFFFFFF) / 16777215f;
+            }
+        }
+
+        /// <summary>True while an always-on zone is resting between blows.</summary>
+        public bool Calm => _alwaysOn && _blowSeconds > 0f && Gust <= 0f && WeatherState.Active != WeatherKind.Wind;
+
         private void Update()
         {
             if (_streaks == null) return;
             var emission = _streaks.emission;
-            bool blowing = WeatherState.Active == WeatherKind.Wind || _alwaysOn;
+            bool blowing = WeatherState.Active == WeatherKind.Wind || (_alwaysOn && Gust > 0f); // calm: a few idle streaks only
             float rate = blowing ? 6f + 24f * Gust
                 : WeatherState.Coming == WeatherKind.Wind ? 4f : 1f;
             Vector3 size = Vector3.Scale(_box.size, transform.lossyScale);
