@@ -508,6 +508,16 @@ namespace CoopGame.EditorTools.Traps
                         Box("RopePost_" + id, root.transform, new Vector3(x, .35f, z), new Vector3(.18f, .9f, .18f), _wood);
                         Box("RopePostCap_" + id, root.transform, new Vector3(x, .83f, z), new Vector3(.24f, .08f, .24f), _wood, default, false);
                     }
+                // Windsocks on two posts: they stream out while a WeatherWindZone over the bridge blows, hang in a calm.
+                var cloth = AssetDatabase.LoadAssetAtPath<Material>("Assets/Prefabs/Traps/Obstacles/WindFlagCloth.mat");
+                foreach (var (fx, fz, id) in new[] { (-1.1f, -.5f, "LNear"), (1.1f, 14.5f, "RFar") })
+                {
+                    var flag = Node("WindFlag_" + id, root.transform, new Vector3(fx, .87f, fz));
+                    Box("Pole", flag.transform, new Vector3(0, .42f, 0), new Vector3(.05f, .84f, .05f), _wood, default, false);
+                    var pivot = Node("ClothPivot", flag.transform, new Vector3(0, .8f, 0));
+                    Box("Cloth", pivot.transform, new Vector3(.32f, -.1f, 0), new Vector3(.64f, .32f, .02f), cloth != null ? cloth : _ember, default, false);
+                    Set(flag.AddComponent<CoopGame.Weather.WindFlag>(), ("_cloth", pivot.transform));
+                }
                 yield return Save(root, ObstacleFolder);
             }
             // B8 Falling rocks: rocks drop from above onto a 4 x 10 m path at random spots.
