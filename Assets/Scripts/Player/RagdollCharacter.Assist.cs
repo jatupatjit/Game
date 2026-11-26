@@ -15,6 +15,10 @@ namespace CoopGame.Player
     /// </summary>
     public sealed partial class RagdollCharacter
     {
+        /// <summary>Help-up switched off for now (George 2026-11-26: not used). The down state is still published;
+        /// set true to bring F-to-help back.</summary>
+        public static bool HelpUpEnabled = false;
+
         [Header("Help up (team-mate taps F)")]
         [Tooltip("How close (m, hips to hips) a team-mate must be to help this player up.")]
         [SerializeField, Min(.5f)] private float _helpReach = 1.8f;
@@ -50,7 +54,7 @@ namespace CoopGame.Player
             }
             if (_helpHoldsF && !_input.CarryHeld && !_input.CarryReleased) _helpHoldsF = false;
 
-            RagdollCharacter target = canAct && down == 0 && _carry == null && (_wallclimb == null || !_wallclimb.IsClimbing)
+            RagdollCharacter target = HelpUpEnabled && canAct && down == 0 && _carry == null && (_wallclimb == null || !_wallclimb.IsClimbing)
                 ? FindDownedTeammate() : null;
             LocalHelpTarget = target;
             if (target != null && _input.CarryPressed && Time.time >= _nextHelpAt)
@@ -86,7 +90,7 @@ namespace CoopGame.Player
         private void HelpUpRequestRpc(RpcParams rpc = default)
         {
             ulong helper = rpc.Receive.SenderClientId;
-            if (helper == OwnerClientId || _downNet.Value == 0 || Time.time < _serverNextHelpAt) return;
+            if (!HelpUpEnabled || helper == OwnerClientId || _downNet.Value == 0 || Time.time < _serverNextHelpAt) return;
             var manager = NetworkManager;
             if (manager == null || !manager.ConnectedClients.TryGetValue(helper, out var client) || client.PlayerObject == null) return;
             var helperBody = client.PlayerObject.GetComponent<RagdollCharacter>();
@@ -213,7 +217,7 @@ namespace CoopGame.Player
             rect.offsetMin = new Vector2(left, 0f); rect.offsetMax = new Vector2(-right, 0f);
         }
 
-        private static bool Hidden() => PauseMenu.IsPaused || PhotoMode.IsOn || TitleScreen.IsVisible || MissionFailUI.IsVisible ||
+        private static bool Hidden() => !RagdollCharacter.HelpUpEnabled || PauseMenu.IsPaused || PhotoMode.IsOn || TitleScreen.IsVisible || MissionFailUI.IsVisible ||
             LevelMap.IsOpen || UIPanels.ShopOpen || SpectateMode.IsOn || ExpeditionHUD.BlocksGameplayInput;
 
         private void LateUpdate()
