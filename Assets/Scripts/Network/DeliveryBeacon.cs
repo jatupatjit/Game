@@ -27,6 +27,12 @@ namespace CoopGame.Network
         private Transform _compass, _dropArrow, _frame;
         private Renderer _compassRenderer, _dropArrowRenderer, _frameRenderer;
         private MaterialPropertyBlock _block;
+        // Gold outline round the whole next checkpoint (cart / pad) while the crate is carried: inverted-hull copies of
+        // its meshes with the crate outline shader (extruded along mesh normals, like CatchGlow).
+        private readonly List<GameObject> _cpOutline = new();
+        private Material _outlineMaterial;
+        private bool _cpOutlineShown;
+        private const float CpOutlineWidth = 5f;
 
         private Object _targetKey;
         private Vector3 _spot;
@@ -122,8 +128,59 @@ namespace CoopGame.Network
                 rotation = _deliveryRotation;
                 _dropArrowHeight = 2.8f;
             }
+            BuildCheckpointOutline(next);
             _frame.GetComponentInChildren<MeshFilter>().sharedMesh = BuildFrameMesh(size.x, .35f, size.y, .07f);
             _frame.SetPositionAndRotation(_spot + Vector3.up * .03f, rotation);
+        }
+
+        private void BuildCheckpointOutline(CheckpointPad pad)
+        {
+            foreach (var go in _cpOutline) if (go != null) Destroy(go);
+            _cpOutline.Clear();
+            _cpOutlineShown = false;
+            if (pad == null) return;
+            if (_outlineMaterial == null)
+            {
+                var template = Resources.Load<Material>("CarryableOutline");
+                if (template == null) return;
+                _outlineMaterial = new Material(template) { name = "CheckpointOutline", hideFlags = HideFlags.DontSave };
+                _outlineMaterial.SetFloat("_UseMeshNormal", 1f); // level meshes have no baked smooth normals in UV2
+                _outlineMaterial.SetFloat("_OutlineWidth", CpOutlineWidth);
+                _outlineMaterial.SetFloat("_ZTest", (float)UnityEngine.Rendering.CompareFunction.LessEqual);
+            }
+            foreach (var source in pad.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (!source.enabled) continue;
+                var filter = source.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null) continue;
+                var copy = new GameObject("Outline_CP", typeof(MeshFilter), typeof(MeshRenderer));
+                copy.transform.SetParent(source.transform, false);
+                copy.GetComponent<MeshFilter>().sharedMesh = filter.sharedMesh;
+                var r = copy.GetComponent<MeshRenderer>();
+                var mats = new Material[filter.sharedMesh.subMeshCount];
+                for (int i = 0; i < mats.Length; i++) mats[i] = _outlineMaterial;
+                r.sharedMaterials = mats;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                copy.SetActive(false);
+                _cpOutline.Add(copy);
+            }
+        }
+
+        private void ShowCheckpointOutline(bool on, float glow)
+        {
+            if (_cpOutlineShown != on)
+            {
+                _cpOutlineShown = on;
+                foreach (var go in _cpOutline) if (go != null) go.SetActive(on);
+            }
+            if (on && _outlineMaterial != null)
+                _outlineMaterial.SetColor("_OutlineColor", new Color(Gold.r * glow, Gold.g * glow, Gold.b * glow, 1f));
+        }
+
+        private void OnDestroy()
+        {
+            if (_outlineMaterial != null) Destroy(_outlineMaterial);
         }
 
         private Transform MakeRenderer(string name, Mesh mesh, Material material, out Renderer renderer)
@@ -276,6 +333,7 @@ namespace CoopGame.Network
             bool lit = show && _reveal > .001f;
             if (_dropArrow.gameObject.activeSelf != lit) _dropArrow.gameObject.SetActive(lit);
             if (_frame.gameObject.activeSelf != lit) _frame.gameObject.SetActive(lit);
+            if (!lit) ShowCheckpointOutline(false, 1f);
 
             Bounds cb = show ? CrateBounds(cargo) : default;
             Vector3 toGoal = show ? Flat(_spot - cb.center) : Vector3.zero;
@@ -302,6 +360,7 @@ namespace CoopGame.Network
             float frameGlow = near ? Mathf.Lerp(.75f, 1.3f, pulse) : Mathf.Lerp(.8f, 1.05f, pulse);
             _frame.localScale = Vector3.one * (pop * (near ? Mathf.Lerp(1f, 1.05f, pulse) : 1f));
             Tint(_frameRenderer, frameGlow);
+            ShowCheckpointOutline(true, frameGlow);
 
             float drop = Mathf.Sin(t * (near ? 6f : 3f)) * (near ? .3f : .2f);
             _dropArrow.SetPositionAndRotation(_spot + Vector3.up * (_dropArrowHeight + drop), Quaternion.Euler(0f, t * (near ? 140f : 70f), 0f));

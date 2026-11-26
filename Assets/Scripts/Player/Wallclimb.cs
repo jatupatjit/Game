@@ -412,8 +412,8 @@ public class Wallclimb : NetworkBehaviour
         }
 
         // Clear "require fresh press" as soon as the button is physically released
-        bool leftHeld  = (_inputReader != null) && (_inputReader.GrabLeftHeld  || _inputReader.InteractHeld);
-        bool rightHeld = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
+        bool leftHeld  = (_inputReader != null) && _inputReader.GrabLeftHeld;
+        bool rightHeld = (_inputReader != null) && _inputReader.GrabRightHeld;
         if (_leftRequireFreshPress  && !leftHeld)  _leftRequireFreshPress  = false;
         if (_rightRequireFreshPress && !rightHeld) _rightRequireFreshPress = false;
 
@@ -438,8 +438,8 @@ public class Wallclimb : NetworkBehaviour
         _isAimingAtWall = (_canGrabLeft || _canGrabRight || _leftHandGripping || _rightHandGripping);
 
         // 3. Read cached player inputs
-        bool leftClick = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
-        bool rightClick = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
+        bool leftClick = (_inputReader != null) && _inputReader.GrabLeftHeld;
+        bool rightClick = (_inputReader != null) && _inputReader.GrabRightHeld;
         bool carryingItem = (_playerCarry != null && _playerCarry.IsCarrying) || (_fullBody != null && _fullBody.BlocksClimbing);
 
         if (carryingItem || _slipCooldownTimer > 0f)
@@ -1086,8 +1086,8 @@ public class Wallclimb : NetworkBehaviour
         // If carrying an item, PlayerCarry controls the hands — do not interfere
         if (_playerCarry != null && _playerCarry.IsCarrying) return;
 
-        bool leftHeld = (_inputReader != null) && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
-        bool rightHeld = (_inputReader != null) && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
+        bool leftHeld = (_inputReader != null) && _inputReader.GrabLeftHeld;
+        bool rightHeld = (_inputReader != null) && _inputReader.GrabRightHeld;
 
         Vector3 chestPos = transform.position + Vector3.up * _chestHeight;
         GetAimDirections(out Vector3 aimDirL, out Vector3 aimDirR);
@@ -1326,8 +1326,8 @@ public class Wallclimb : NetworkBehaviour
         _rightAimHit = default;
         _leftGripCollider = null;
         _rightGripCollider = null;
-        _leftRequireFreshPress = _inputReader != null && (_inputReader.GrabLeftHeld || _inputReader.InteractHeld);
-        _rightRequireFreshPress = _inputReader != null && (_inputReader.GrabRightHeld || _inputReader.InteractHeld);
+        _leftRequireFreshPress = _inputReader != null && _inputReader.GrabLeftHeld;
+        _rightRequireFreshPress = _inputReader != null && _inputReader.GrabRightHeld;
         HideMarkers();
     }
 
