@@ -547,7 +547,7 @@ namespace CoopGame.Player
             if (!_fullRagdoll) return;
             if (HasAuthority) ServerWatchCarry();
             RegisterSpawned();
-            if (!IsLocal) { UpdateRemoteProxy(); return; }
+            if (!IsLocal) { UpdateRemoteProxy(); ServerAutoCatch(); return; }
             if (!EnsureBones()) return;
             if (_physicsRoot == null) BuildPhysics();
 
@@ -1907,7 +1907,7 @@ namespace CoopGame.Player
             }
             if (!any) return false;
             Vector3 center = bounds.center;
-            Vector3 toPlayer = Flat(_bodies[Hips].position - center);
+            Vector3 toPlayer = Flat(HipsPosition - center);
             if (toPlayer.sqrMagnitude < 1e-4f) toPlayer = -transform.forward;
             Vector3 axisA = Flat(cargo.transform.right).normalized, axisB = Flat(cargo.transform.forward).normalized;
             if (axisA.sqrMagnitude < .5f) axisA = Vector3.right;
@@ -1977,6 +1977,7 @@ namespace CoopGame.Player
 
         private void ServerStartCarry(CarryableObject cargo, Vector3 localL, Vector3 localR)
         {
+            UprightTumblingCargo(cargo, ref localL, ref localR);
             bool ok = cargo != null && _serverCarry == null &&
                       (cargo.transform.position - transform.position).sqrMagnitude < 4f * 4f && // plausible reach
                       cargo.TryAttachCarrier(CarrierId, transform, null, localL, localR, out _);
@@ -1985,6 +1986,29 @@ namespace CoopGame.Player
             if (ok && IsSpawned) _carriedCargo.Value = cargo.NetworkObject;
             if (IsLocal) OnCarryStarted(cargo, localL, localR, ok);
             else CarryStartedRpc(cargo != null ? cargo.NetworkObject : default(NetworkObjectReference), localL, localR, ok);
+        }
+
+        /// <summary>
+        /// Server: a crate caught while tumbling (on its side after a throw or a knock) is stood upright (same heading)
+        /// before the hands take it, and the grip is worked out again on the upright crate. The hold pose keeps the
+        /// crate level, so a grip taken on a tilted crate ended up on its top or bottom face: the pose then pushed the
+        /// crate into the ground, where it stuck and lost 5 HP for scraping every second.
+        /// </summary>
+        private void UprightTumblingCargo(CarryableObject cargo, ref Vector3 localL, ref Vector3 localR)
+        {
+            if (cargo == null || cargo.IsCarried) return;
+            var body = cargo.GetComponent<Rigidbody>();
+            if (body == null || Vector3.Angle(cargo.transform.up, Vector3.up) < 25f) return;
+            Vector3 heading = Flat(cargo.transform.forward);
+            if (heading.sqrMagnitude < .01f) heading = Flat(cargo.transform.up); // lying on its front or back
+            Quaternion upright = heading.sqrMagnitude > .01f ? Quaternion.LookRotation(heading.normalized) : Quaternion.identity;
+            body.rotation = upright;
+            cargo.transform.rotation = upright;
+            body.angularVelocity = Vector3.zero;
+            Physics.SyncTransforms();
+            if (!ComputeGrip(cargo, out Vector3 left, out Vector3 right)) return;
+            localL = cargo.transform.InverseTransformPoint(left);
+            localR = cargo.transform.InverseTransformPoint(right);
         }
 
         private void ServerCarryInput(Vector3 direction, Vector3 heading, float height, Vector3 position, Vector3 velocity)
@@ -2005,6 +2029,8 @@ namespace CoopGame.Player
         {
             if (_serverCarry == null) return;
             if (IsSpawned) CueRpc(CoopGame.Network.GameplayFeedback.Cue.Throw, _serverCarry.transform.position);
+            _serverLastThrown = _serverCarry;
+            _serverLastThrownAt = Time.time;
             _serverCarry.ThrowObject(CarrierId, Vector3.ClampMagnitude(velocity, CarryableObject.BaseThrowLimit), Random.insideUnitSphere * 2f);
             ServerWatchCarry();
         }

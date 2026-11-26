@@ -141,6 +141,39 @@ namespace CoopGame.Player
             if (IsSpawned && _catchReadyNet.Value != ready) _catchReadyNet.Value = ready;
         }
 
+        // Server: the last crate this player threw (a joined player's own throw must not be caught straight back).
+        private CarryableObject _serverLastThrown;
+        private float _serverLastThrownAt;
+
+        /// <summary>
+        /// Server, FixedUpdate, for a joined player who is holding F: catch a thrown crate here as soon as it comes in
+        /// reach. Their own catch request arrives one network delay late, by which time a short throw has often already
+        /// hit the ground (-20 HP) next to them. The owner's own request still works and is refused once this catch
+        /// has happened (the server only allows one carry).
+        /// </summary>
+        private void ServerAutoCatch()
+        {
+            if (!IsServer || !IsSpawned || IsLocal || !_catchReadyNet.Value || _serverCarry != null || IsKnockedDown) return;
+            if (!EnsureBones() || _bones[Hips] == null) return;
+            Vector3 chest = _bones[Hips].position + Vector3.up * .3f;
+            int limb = LayerMask.NameToLayer(LimbLayerName); // _limbLayer is only set up on the owner
+            int count = Physics.OverlapSphereNonAlloc(chest, _catchRadius, _catchNear, limb >= 0 ? ~(1 << limb) : ~0, QueryTriggerInteraction.Ignore);
+            CarryableObject cargo = null;
+            float best = float.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                var c = _catchNear[i].GetComponentInParent<CarryableObject>();
+                if (c == null || !c.InFlight || !c.CanBeCarried) continue;
+                if (c == _serverLastThrown && Time.time - _serverLastThrownAt < OwnThrowCatchDelay) continue;
+                float d = (_catchNear[i].ClosestPoint(chest) - chest).sqrMagnitude;
+                if (d >= best) continue;
+                best = d;
+                cargo = c;
+            }
+            if (cargo == null || !ComputeGrip(cargo, out Vector3 left, out Vector3 right)) return;
+            ServerStartCarry(cargo, cargo.transform.InverseTransformPoint(left), cargo.transform.InverseTransformPoint(right));
+        }
+
         /// <summary>A thrown crate (still in flight, free to take) within catching range of the chest.</summary>
         private bool FindCatchableCargo(out CarryableObject cargo)
         {

@@ -199,7 +199,12 @@ namespace CoopGame.Network
             if (!_snapshotPending) return;
             _snapshotPending = false;
             try { SaveSnapshot(); }
-            catch (Exception error) { _error = error.Message; }
+            catch (Exception error)
+            {
+                // The snapshot itself failed, so the error would never reach snapshot.json: write it beside it.
+                _error = error.Message;
+                try { File.WriteAllText(Path.Combine(_directory, "snapshot_error.txt"), error.ToString()); } catch (IOException) { }
+            }
         }
 
         private void Execute(string command)
@@ -403,6 +408,14 @@ namespace CoopGame.Network
             return true;
         }
 
+        // A level object with an unassigned reference (e.g. a switch gate without its button) must not stop the
+        // whole snapshot: the mechanism list is diagnostic only.
+        private static MechanismSnapshot[] SafeMechanisms(Func<MechanismSnapshot[]> read)
+        {
+            try { return read(); }
+            catch (Exception) { return Array.Empty<MechanismSnapshot>(); }
+        }
+
         private void SaveSnapshot()
         {
             var manager = NetworkManager.Singleton;
@@ -441,7 +454,7 @@ namespace CoopGame.Network
                 moveInput = player != null ? player.GetComponent<PlayerInputReader>().MoveInput : Vector2.zero,
                 grounded = player != null && player.GetComponent<PlayerMovement>().IsGrounded,
                 climbing = player != null && player.GetComponent<Wallclimb>().IsClimbing,
-                mechanisms = FindObjectsByType<ClimbSwitchGate>().Select(g => new MechanismSnapshot {
+                mechanisms = SafeMechanisms(() => FindObjectsByType<ClimbSwitchGate>().Select(g => new MechanismSnapshot {
                     name=g.name, position=g.transform.position, euler=g.transform.eulerAngles, open=g.IsOpen, near=g.IsLocalNear,
                     button=((Transform)typeof(ClimbSwitchGate).GetField("_button", privateInstance).GetValue(g)).position
                 }).Concat(FindObjectsByType<NetworkRouteHazard>().Select(g => new MechanismSnapshot {
@@ -463,7 +476,7 @@ namespace CoopGame.Network
                     name=g.name,position=g.transform.position,open=g.IsDeployed,progress=g.ProgressPercent,required=g.RequiredPadCount,
                     primary=((BoxCollider)typeof(CoopRelayBridge).GetField("_leftPad",privateInstance).GetValue(g)).bounds.center,
                     secondary=((BoxCollider)typeof(CoopRelayBridge).GetField("_rightPad",privateInstance).GetValue(g)).bounds.center
-                })).ToArray(),
+                })).ToArray()),
                 connected = manager.IsConnectedClient, scene = SceneManager.GetActiveScene().name,
                 error = _error, command = _lastCommand,
                 cameraOwned = camera != null && camera == PlayerCameraController.LocalInstance && camera.PlayerCamera != null && camera.PlayerCamera.isActiveAndEnabled,

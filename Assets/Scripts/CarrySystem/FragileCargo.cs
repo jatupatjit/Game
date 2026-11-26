@@ -403,6 +403,7 @@ namespace CoopGame.CarrySystem
             float strongestImpactSpeed = 0f;
             Collider strongestImpactCollider = null;
             float scrapeSpeed = 0f;
+            Collider scrapeCollider = null;
             float colliderBottom = GetSolidColliderBottom();
 
             for (int i = 0; i < contactCount; i++)
@@ -433,6 +434,7 @@ namespace CoopGame.CarrySystem
                     if (surfaceBody != null && surfaceBody != _rigidbody)
                         relativeVelocity -= surfaceBody.GetPointVelocity(sample.Point);
                     float tangentialSpeed = Vector3.ProjectOnPlane(relativeVelocity, sample.Normal).magnitude;
+                    if (tangentialSpeed > scrapeSpeed) scrapeCollider = sample.Other;
                     scrapeSpeed = Mathf.Max(scrapeSpeed, tangentialSpeed);
                 }
             }
@@ -458,7 +460,7 @@ namespace CoopGame.CarrySystem
                 now < _nextDamageAllowedAtFixedTime || now < _lastDragDamageTime + _dragDamageInterval) return;
 
             _lastDragDamageTime = now;
-            ApplyQueuedDamage(_dragDamage, $"Surface dragging (Speed: {scrapeSpeed:F1} m/s)");
+            ApplyQueuedDamage(_dragDamage, $"Surface dragging (Speed: {scrapeSpeed:F1} m/s on '{(scrapeCollider != null ? scrapeCollider.name : "?")}', carriers {CurrentCarrierCount}, v {(_rigidbody != null ? _rigidbody.linearVelocity : Vector3.zero)})");
         }
 
         private bool IsPickupSettlingContact(Collider other, float now)
