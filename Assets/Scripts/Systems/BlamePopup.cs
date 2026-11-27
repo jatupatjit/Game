@@ -62,7 +62,7 @@ namespace CoopGame.Network
             _banner.anchorMin = _banner.anchorMax = new Vector2(.5f, 1f);
             _banner.pivot = new Vector2(.5f, 1f);
             _banner.anchoredPosition = new Vector2(0f, -150f);
-            _banner.sizeDelta = new Vector2(640f, 92f);
+            _banner.sizeDelta = new Vector2(420f, 56f);
             var bg = banner.GetComponent<Image>();
             UITheme.StyleShape(bg, UITheme.SmallSprite, new Color(.32f, .06f, .07f, .92f));
             bg.raycastTarget = false;
@@ -74,20 +74,20 @@ namespace CoopGame.Network
             faceRect.SetParent(_banner, false);
             faceRect.anchorMin = faceRect.anchorMax = new Vector2(0f, .5f);
             faceRect.pivot = new Vector2(0f, .5f);
-            faceRect.anchoredPosition = new Vector2(14f, 0f);
-            faceRect.sizeDelta = new Vector2(70f, 70f);
+            faceRect.anchoredPosition = new Vector2(9f, 0f);
+            faceRect.sizeDelta = new Vector2(42f, 42f);
             _bannerFace = face.GetComponent<Image>();
             _bannerFace.preserveAspect = true;
             _bannerFace.raycastTarget = false;
 
-            _bannerText = UITheme.MakeText(_banner, "Text", "", 34, UITextRole.Primary, TextAnchor.MiddleLeft);
+            _bannerText = UITheme.MakeText(_banner, "Text", "", 22, UITextRole.Primary, TextAnchor.MiddleLeft);
             _bannerText.horizontalOverflow = HorizontalWrapMode.Overflow;
             _bannerText.raycastTarget = false;
             UITheme.SetWeight(_bannerText, UITheme.FontBold);
             UITheme.AddOutline(_bannerText);
             var textRect = (RectTransform)_bannerText.transform;
             textRect.anchorMin = Vector2.zero; textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(98f, 0f); textRect.offsetMax = new Vector2(-18f, 0f);
+            textRect.offsetMin = new Vector2(60f, 0f); textRect.offsetMax = new Vector2(-12f, 0f);
         }
 
         /// <summary>Every machine: the host blamed this player for <paramref name="damage"/> crate HP.</summary>
@@ -108,8 +108,8 @@ namespace CoopGame.Network
             _bannerBorn = now;
             _bannerText.text = $"{_bannerNames} ทำลังพัง <color=#FF6B5E>-{_bannerDamage} HP</color>";
             _bannerText.supportRichText = true;
-            float width = Mathf.Clamp(_bannerText.preferredWidth + 130f, 360f, 1100f);
-            _banner.sizeDelta = new Vector2(width, 92f);
+            float width = Mathf.Clamp(_bannerText.preferredWidth + 80f, 240f, 760f);
+            _banner.sizeDelta = new Vector2(width, 56f);
             StyleFace(_bannerFace, client);
             GameplayFeedback.Play(GameplayFeedback.Cue.BodyThud, Camera.main != null ? Camera.main.transform.position : Vector3.zero, .7f);
 
@@ -122,7 +122,7 @@ namespace CoopGame.Network
                 rect.anchorMin = rect.anchorMax = Vector2.zero;
                 rect.pivot = new Vector2(.5f, 0f);
                 rect.sizeDelta = new Vector2(220f, 60f);
-                var label = UITheme.MakeText(rect, "Text", "", 40, UITextRole.Primary, TextAnchor.LowerCenter);
+                var label = UITheme.MakeText(rect, "Text", "", 28, UITextRole.Primary, TextAnchor.LowerCenter);
                 label.horizontalOverflow = HorizontalWrapMode.Overflow;
                 label.raycastTarget = false;
                 label.color = new Color(1f, .3f, .25f);
@@ -179,8 +179,8 @@ namespace CoopGame.Network
             float age = now - _bannerBorn;
             float alpha = age < BannerSeconds ? 1f : 1f - Mathf.Clamp01((age - BannerSeconds) / .5f);
             _bannerGroup.alpha = alpha;
-            float pop = age < .15f ? Mathf.Lerp(1.35f, 1f, age / .15f) : 1f;
-            float shake = age < .35f ? Mathf.Sin(age * 70f) * 10f * (1f - age / .35f) : 0f;
+            float pop = age < .15f ? Mathf.Lerp(1.2f, 1f, age / .15f) : 1f;
+            float shake = age < .35f ? Mathf.Sin(age * 70f) * 6f * (1f - age / .35f) : 0f;
             _banner.localScale = Vector3.one * pop;
             _banner.anchoredPosition = new Vector2(shake, -150f);
 
