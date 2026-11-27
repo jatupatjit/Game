@@ -47553,7 +47553,7 @@ MonoBehaviour:
   _portalVisual: {fileID: 1508920089}
   _closedBarrier: {fileID: 1088630526}
   _statusText: {fileID: 234561025}
-  _destinationSceneName: Level01
+  _destinationSceneName: Lobby
   _entryDelaySeconds: 0.5
   _coopPartialWaitSeconds: 5
 --- !u!114 &699799438
@@ -74219,7 +74219,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
   GlobalObjectIdHash: 2933271574
   InScenePlacedSourceGlobalObjectIdHash: 0
-  m_InScenePlacedDisabledByDefault: 0
+  m_InScenePlacedDisabledByDefault: 1
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
@@ -109716,7 +109716,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
   GlobalObjectIdHash: 3211283456
   InScenePlacedSourceGlobalObjectIdHash: 603644516
-  m_InScenePlacedDisabledByDefault: 0
+  m_InScenePlacedDisabledByDefault: 1
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
