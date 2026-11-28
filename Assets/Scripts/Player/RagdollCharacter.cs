@@ -166,6 +166,8 @@ namespace CoopGame.Player
         [SerializeField, Range(0f, 1f)] private float _freeReachHandAim = .8f;
         [Tooltip("Most the reaching hand may bend away from the forearm (degrees); more pinches the glove at the wrist.")]
         [SerializeField, Range(0f, 90f)] private float _freeReachMaxWristBend = 20f;
+        [Tooltip("Physics limit on the hand's roll about the forearm (degrees, 0 = free).")]
+        [SerializeField, Range(0f, 90f)] private float _wristTwistLimit = 25f;
         private readonly bool[] _freeReach = new bool[2];
 
         [Header("Relaxed Arms")]
@@ -1238,7 +1240,10 @@ namespace CoopGame.Player
         private void UpdateArms(float pitch, Quaternion facing, bool physics)
         {
             Vector3 right = facing * Vector3.right;
-            if (_carry != null && _hasHoldPose) FaceUpperBodyForward(facing);
+            // Reaching with a grab held (nothing carried) also keeps the chest facing forward: the run clip's chest
+            // twist otherwise rolled the raised arms and twisted the gloves.
+            bool reachingFree = physics && _carry == null && _input != null && !IsKnockedDown && (_input.GrabLeftHeld || _input.GrabRightHeld);
+            if ((_carry != null || reachingFree) && _hasHoldPose) FaceUpperBodyForward(facing);
             for (int h = 0; h < 2; h++)
             {
                 int upper = h == 0 ? ArmL : ArmR;
@@ -1285,10 +1290,29 @@ namespace CoopGame.Player
                             Vector3 limited = Vector3.RotateTowards(fore, fingers, _freeReachMaxWristBend * Mathf.Deg2Rad, 0f);
                             _target[handBone] = Quaternion.FromToRotation(fingers, limited) * _target[handBone];
                         }
+                        RemoveWristTwist(upper + 1, handBone);
                     }
                 }
             }
             _target[Head] = Quaternion.AngleAxis(Mathf.Clamp(pitch, -40f, 40f) * .4f, right) * _target[Head];
+        }
+
+        /// <summary>
+        /// Keeps the hand's bend from the forearm but drops its roll about the forearm (relative to the rest pose),
+        /// so a reaching glove never looks wrung at the wrist.
+        /// </summary>
+        private void RemoveWristTwist(int lower, int hand)
+        {
+            Quaternion straight = _target[lower] * (Quaternion.Inverse(_restLocal[lower]) * _restLocal[hand]);
+            Quaternion delta = _target[hand] * Quaternion.Inverse(straight);
+            Vector3 axis = (_target[lower] * _boneAxis[lower]).normalized;
+            Vector3 v = new Vector3(delta.x, delta.y, delta.z);
+            Vector3 p = Vector3.Dot(v, axis) * axis;
+            var twist = new Quaternion(p.x, p.y, p.z, delta.w);
+            float m = Mathf.Sqrt(twist.x * twist.x + twist.y * twist.y + twist.z * twist.z + twist.w * twist.w);
+            if (m < 1e-6f) return;
+            twist = new Quaternion(twist.x / m, twist.y / m, twist.z / m, twist.w / m);
+            _target[hand] = delta * Quaternion.Inverse(twist) * straight;
         }
 
         /// <summary>
@@ -2520,6 +2544,14 @@ namespace CoopGame.Player
                 joint.connectedAnchor = parent.transform.InverseTransformPoint(_bodies[i].position);
                 joint.xMotion = joint.yMotion = joint.zMotion = ConfigurableJointMotion.Locked;
                 joint.angularXMotion = joint.angularYMotion = joint.angularZMotion = ConfigurableJointMotion.Free;
+                if ((i == HandL || i == HandR) && _wristTwistLimit > 0f)
+                {
+                    // The hand bone's local Y runs along the forearm (the joint's secondary axis), so angular Y is the
+                    // wrist's roll. Running with raised arms, the soft drive let the hand spin up to ~60 deg about the
+                    // forearm and the glove looked wrung; the limit holds that roll near the rest pose.
+                    joint.angularYMotion = ConfigurableJointMotion.Limited;
+                    joint.angularYLimit = new SoftJointLimit { limit = _wristTwistLimit };
+                }
                 joint.rotationDriveMode = RotationDriveMode.Slerp;
                 joint.enableCollision = false;
                 joint.projectionMode = JointProjectionMode.PositionAndRotation;
