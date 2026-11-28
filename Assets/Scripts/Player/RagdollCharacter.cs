@@ -168,6 +168,8 @@ namespace CoopGame.Player
         [SerializeField, Range(0f, 90f)] private float _freeReachMaxWristBend = 20f;
         [Tooltip("Physics limit on the hand's roll about the forearm (degrees, 0 = free).")]
         [SerializeField, Range(0f, 90f)] private float _wristTwistLimit = 25f;
+        [Tooltip("A free reach (grab held, nothing in front) keeps the hand at least this part of the arm's length from the shoulder.")]
+        [SerializeField, Range(0f, 1f)] private float _freeReachMinExtend = .8f;
         private readonly bool[] _freeReach = new bool[2];
 
         [Header("Relaxed Arms")]
@@ -1249,7 +1251,7 @@ namespace CoopGame.Player
                 int upper = h == 0 ? ArmL : ArmR;
                 float side = h == 0 ? -1f : 1f;
                 Vector3 shoulder = physics ? _bodies[upper].position : _fk[upper];
-                bool hasTarget = ArmTarget(h, shoulder, out Vector3 target, out Vector3 pole, facing);
+                bool hasTarget = ArmTarget(h, shoulder, out Vector3 target, out Vector3 pole, facing, pitch);
                 if (!hasTarget)
                 {
                     // Hanging on the wall, a free arm hangs relaxed instead of playing the jump clip's flailing.
@@ -1295,6 +1297,27 @@ namespace CoopGame.Player
                 }
             }
             _target[Head] = Quaternion.AngleAxis(Mathf.Clamp(pitch, -40f, 40f) * .4f, right) * _target[Head];
+        }
+
+        /// <summary>
+        /// Free reach into the air: Wallclimb's target keeps the hand above root + 5 cm, written for a root at the feet;
+        /// this root stands at the hips, so looking down pulled the target back onto the shoulder (15 cm away, even
+        /// behind it while walking) and the folded arm shook. The hand now reaches at least most of the arm's length,
+        /// in front of the chest, along the camera's pitch (down = toward the ground in front).
+        /// </summary>
+        private Vector3 KeepReachOut(int h, Vector3 shoulder, Vector3 target, Quaternion facing, float pitch)
+        {
+            int upper = h == 0 ? ArmL : ArmR;
+            float reach = (_boneLength[upper] + _boneLength[upper + 1]) * _freeReachMinExtend;
+            Vector3 forward = facing * Vector3.forward, right = facing * Vector3.right;
+            Vector3 to = target - shoulder;
+            float ahead = Vector3.Dot(to, forward);
+            // Looking up keeps Wallclimb's overhead reach unless it is folded onto the shoulder.
+            if (to.magnitude >= reach && (ahead >= reach * .5f || pitch <= 0f)) return target;
+            Vector3 aim = Quaternion.AngleAxis(Mathf.Clamp(pitch, -80f, 75f), right) * forward;
+            if (ahead < reach * .5f) to += forward * (reach * .5f - ahead);
+            Vector3 dir = Vector3.Slerp(to.sqrMagnitude > 1e-6f ? to.normalized : aim, aim, .6f).normalized;
+            return shoulder + dir * Mathf.Max(reach, to.magnitude);
         }
 
         /// <summary>
@@ -1348,7 +1371,7 @@ namespace CoopGame.Player
         }
 
         /// <summary>Where a hand should be: on its crate grip, on its climbing hold, or reaching for one.</summary>
-        private bool ArmTarget(int h, Vector3 shoulder, out Vector3 target, out Vector3 pole, Quaternion facing)
+        private bool ArmTarget(int h, Vector3 shoulder, out Vector3 target, out Vector3 pole, Quaternion facing, float pitch)
         {
             pole = Vector3.zero;
             target = default;
@@ -1370,6 +1393,8 @@ namespace CoopGame.Player
                 // Reaching into the air: elbows mostly down and a little out. The climbing hint (out to the side and
                 // back) turned the forearms in across the chest, so the big hands crossed over each other.
                 pole = (facing * Vector3.right) * (h == 0 ? -.35f : .35f) - Vector3.up * .8f - facing * Vector3.forward * .2f;
+                bool onWall = h == 0 ? _wallclimb.CanGrabLeft : _wallclimb.CanGrabRight;
+                if (!onWall) target = KeepReachOut(h, shoulder, target, facing, pitch);
                 return true;
             }
             // Climbing elbows point out to the side and back from the wall. (Mostly-down made the elbow flip round

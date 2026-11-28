@@ -186,6 +186,9 @@ public class Wallclimb : NetworkBehaviour
         ? _isPullingUp 
         : ((_netClimbHandState.Value & (1 << 2)) != 0);
     public bool IsAimingAtWall => _isAimingAtWall;
+    /// <summary>The free hand's aim ray hits a grabbable surface (its reach target is on that surface).</summary>
+    public bool CanGrabLeft => _canGrabLeft;
+    public bool CanGrabRight => _canGrabRight;
 
     /// <summary>Owner: the wall spot this hand would take right now (not while it already holds one).</summary>
     public bool TryGetGrabPreview(bool left, out Vector3 point, out Vector3 normal)
