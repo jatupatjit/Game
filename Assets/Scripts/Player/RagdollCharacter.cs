@@ -170,6 +170,8 @@ namespace CoopGame.Player
         [SerializeField, Range(0f, 90f)] private float _wristTwistLimit = 25f;
         [Tooltip("A free reach (grab held, nothing in front) keeps the hand at least this part of the arm's length from the shoulder.")]
         [SerializeField, Range(0f, 1f)] private float _freeReachMinExtend = .8f;
+        [Tooltip("A free-reach hand stays this far (m) outside the head's collider, so raised arms pass beside the head, not through it.")]
+        [SerializeField, Range(0f, .4f)] private float _headClearance = .12f;
         private readonly bool[] _freeReach = new bool[2];
 
         [Header("Relaxed Arms")]
@@ -1321,6 +1323,31 @@ namespace CoopGame.Player
         }
 
         /// <summary>
+        /// Reaching up, the hands went straight above the shoulders, which sit under the big head: the forearms sank
+        /// into the head and only the gloves showed, floating. A free-reach target near the head is moved out to the
+        /// hand's own side so the arm passes beside the head.
+        /// </summary>
+        private Vector3 ClearOfHead(int h, Vector3 target, Quaternion facing)
+        {
+            Collider headCollider = _colliders[Head];
+            if (headCollider == null || _headClearance <= 0f) return target;
+            Bounds headBounds = headCollider.bounds;
+            Vector3 center = headBounds.center;
+            float radius = headBounds.extents.x * 1.15f + _headClearance;
+            Vector3 d = target - center;
+            float dy = Vector3.Dot(d, Vector3.up);
+            if (Mathf.Abs(dy) >= radius) return target;
+            float needed = Mathf.Sqrt(radius * radius - dy * dy);
+            Vector3 flat = d - Vector3.up * dy;
+            if (flat.magnitude >= needed) return target;
+            Vector3 side = (facing * Vector3.right) * (h == 0 ? -1f : 1f);
+            // Keep the reach's forward/back part; push outward along the hand's own side.
+            Vector3 along = Vector3.Project(flat, facing * Vector3.forward);
+            float outward = Mathf.Sqrt(Mathf.Max(0f, needed * needed - along.sqrMagnitude));
+            return center + Vector3.up * dy + along + side * outward;
+        }
+
+        /// <summary>
         /// Keeps the hand's bend from the forearm but drops its roll about the forearm (relative to the rest pose),
         /// so a reaching glove never looks wrung at the wrist.
         /// </summary>
@@ -1394,7 +1421,7 @@ namespace CoopGame.Player
                 // back) turned the forearms in across the chest, so the big hands crossed over each other.
                 pole = (facing * Vector3.right) * (h == 0 ? -.35f : .35f) - Vector3.up * .8f - facing * Vector3.forward * .2f;
                 bool onWall = h == 0 ? _wallclimb.CanGrabLeft : _wallclimb.CanGrabRight;
-                if (!onWall) target = KeepReachOut(h, shoulder, target, facing, pitch);
+                if (!onWall) target = ClearOfHead(h, KeepReachOut(h, shoulder, target, facing, pitch), facing);
                 return true;
             }
             // Climbing elbows point out to the side and back from the wall. (Mostly-down made the elbow flip round
