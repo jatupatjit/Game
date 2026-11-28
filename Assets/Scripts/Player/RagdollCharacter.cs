@@ -164,6 +164,8 @@ namespace CoopGame.Player
         [Header("Free Reach (grab buttons, nothing held)")]
         [Tooltip("How far a reaching hand is turned to point along the reach (0 = straight on from the forearm).")]
         [SerializeField, Range(0f, 1f)] private float _freeReachHandAim = .8f;
+        [Tooltip("Most the reaching hand may bend away from the forearm (degrees); more pinches the glove at the wrist.")]
+        [SerializeField, Range(0f, 90f)] private float _freeReachMaxWristBend = 20f;
         private readonly bool[] _freeReach = new bool[2];
 
         [Header("Relaxed Arms")]
@@ -1273,6 +1275,16 @@ namespace CoopGame.Player
                     {
                         Quaternion aim = Quaternion.FromToRotation(_target[handBone] * _getUpAxis[handBone], reach.normalized);
                         _target[handBone] = Quaternion.Slerp(Quaternion.identity, aim, _freeReachHandAim) * _target[handBone];
+                        // Walking with a grab held, the reach drifts off the forearm and the aim bent the wrist up to
+                        // ~50 deg, pinching the glove's wrist. Keep the hand within a small bend of the forearm.
+                        Vector3 fore = _target[upper + 1] * _boneAxis[upper + 1];
+                        Vector3 fingers = _target[handBone] * _getUpAxis[handBone];
+                        float bend = Vector3.Angle(fore, fingers);
+                        if (bend > _freeReachMaxWristBend)
+                        {
+                            Vector3 limited = Vector3.RotateTowards(fore, fingers, _freeReachMaxWristBend * Mathf.Deg2Rad, 0f);
+                            _target[handBone] = Quaternion.FromToRotation(fingers, limited) * _target[handBone];
+                        }
                     }
                 }
             }
