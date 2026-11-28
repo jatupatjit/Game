@@ -43,6 +43,21 @@ namespace CoopGame.Network
             IsVisible = true;
         }
 
+        /// <summary>
+        /// Back in the Lobby after leaving a game (pause menu "leave"): the title screen again, as on launch. Not forced,
+        /// so it still steps aside by itself if a session starts (auto-host test, team returning together).
+        /// </summary>
+        public static void ShowOnReturn()
+        {
+            var title = FindAnyObjectByType<TitleScreen>();
+            if (title == null) { title = new GameObject("TitleScreen").AddComponent<TitleScreen>(); DontDestroyOnLoad(title.gameObject); title.Build(); }
+            if (title._howTo != null) title._howTo.SetActive(false);
+            if (title._credits != null) title._credits.SetActive(false);
+            title._root.SetActive(true);
+            title._forced = false;
+            IsVisible = true;
+        }
+
         private void Build()
         {
             var canvas = gameObject.AddComponent<Canvas>();

@@ -346,6 +346,8 @@ namespace CoopGame.Network
 
             ShowPanel(HomeState);
             ShowLobby(instant: true);
+            // Lobby reloaded after leaving a game: start from the title screen again, not the room panel.
+            if (_skipMainMenu && !TitleScreen.IsVisible && !IsSessionActive()) TitleScreen.ShowOnReturn();
 
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible   = true;
