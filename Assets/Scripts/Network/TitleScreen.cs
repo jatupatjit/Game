@@ -90,7 +90,7 @@ namespace CoopGame.Network
             MenuButton("Quit", "ออกจากเกม", "Exit", 3, false, Application.Quit);
             CreditsSign();
 
-            _howTo = InfoPanel("HowToPlay", "วิธีเล่น", HowToText());
+            _howTo = HowToPanel();
             _credits = InfoPanel("Credits", "เครดิต", CreditsText());
             IsVisible = true;
         }
@@ -150,16 +150,102 @@ namespace CoopGame.Network
                 if (child.name != "Mascot" && child is RectTransform r) { r.anchorMin = r.anchorMax = new Vector2(.5f, .5f); r.anchoredPosition = Vector2.zero; }
         }
 
-        private static string HowToText()
+        private const string HowToGoal = "ช่วยกันขนลังไปส่งให้ถึงปลายทาง ลังมี HP ถ้าตกหรือชนแรงจะเสีย HP";
+
+        /// <summary>Rows of the how-to card, (action, key). Keys follow the settings menu bindings.</summary>
+        private static (string, string)[] HowToMoveRows()
         {
             string K(BindRole role) => GameSettings.KeyName(role);
-            return "ช่วยกันขนลังไปส่งให้ถึงปลายทาง ลังมี HP ถ้าตกหรือชนแรงจะเสีย HP\n\n" +
-                   "เดิน  " + K(BindRole.Forward) + " " + K(BindRole.Left) + " " + K(BindRole.Back) + " " + K(BindRole.Right) +
-                   "      กระโดด  " + K(BindRole.Jump) + "      วิ่ง  " + K(BindRole.Sprint) + "\n" +
-                   "ยก / วางลัง  " + K(BindRole.Carry) + "      ค้าง " + K(BindRole.Carry) + " = รับลังที่เพื่อนโยน\n" +
-                   "ค้าง " + K(BindRole.Throw) + " เล็ง ปล่อยเพื่อโยน      ปีน  คลิกซ้าย / คลิกขวา\n" +
-                   "ใช้ / กด  " + K(BindRole.Interact) + "      มุมกล้อง  " + K(BindRole.CameraView) + "\n" +
-                   "บอกเพื่อน  " + K(BindRole.PingHere) + " มานี่   " + K(BindRole.PingHelp) + " ช่วยยก   " + K(BindRole.PingWarn) + " ระวัง";
+            return new[]
+            {
+                ("เดิน", K(BindRole.Forward) + " " + K(BindRole.Left) + " " + K(BindRole.Back) + " " + K(BindRole.Right)),
+                ("วิ่ง", K(BindRole.Sprint)),
+                ("กระโดด", K(BindRole.Jump)),
+                ("ปีน", "คลิกซ้าย / คลิกขวา"),
+                ("มุมกล้อง", K(BindRole.CameraView)),
+            };
+        }
+
+        private static (string, string)[] HowToCrateRows()
+        {
+            string K(BindRole role) => GameSettings.KeyName(role);
+            return new[]
+            {
+                ("ยก / วางลัง", K(BindRole.Carry)),
+                ("รับลังที่เพื่อนโยน", "ค้าง " + K(BindRole.Carry)),
+                ("เล็ง / โยนลัง", "ค้าง " + K(BindRole.Throw) + " (ปล่อยเพื่อโยน)"),
+                ("ใช้ / กด", K(BindRole.Interact)),
+                ("บอกเพื่อน", K(BindRole.PingHere) + " มานี่ / " + K(BindRole.PingHelp) + " ช่วยยก / " + K(BindRole.PingWarn) + " ระวัง"),
+            };
+        }
+
+        /// <summary>How-to card: the goal on top, then two left-aligned columns (moving & camera / crate & team
+        /// calls), each row an action name and its key in an accent colour.</summary>
+        private GameObject HowToPanel()
+        {
+            var dim = new GameObject("HowToPlay", typeof(RectTransform), typeof(Image));
+            dim.transform.SetParent(_root.transform, false);
+            Stretch((RectTransform)dim.transform);
+            dim.GetComponent<Image>().color = UITheme.Overlay;
+            var card = new GameObject("Card", typeof(RectTransform), typeof(Image));
+            card.transform.SetParent(dim.transform, false);
+            ((RectTransform)card.transform).sizeDelta = new Vector2(1260f, 700f);
+            UITheme.StyleCuteCard(card.GetComponent<Image>(), true);
+            UITheme.MakeCutePlank(card.transform, "วิธีเล่น", 360f, 96f, 30f, 36);
+
+            var goal = Label(card.transform, "Goal", HowToGoal, 27, TextAnchor.MiddleCenter, new Vector2(0f, 205f), new Vector2(1160f, 60f));
+            UITheme.SetWeight(goal, UITheme.FontSemiBold);
+
+            var divider = new GameObject("Divider", typeof(RectTransform), typeof(Image));
+            divider.transform.SetParent(card.transform, false);
+            var dRect = (RectTransform)divider.transform;
+            dRect.sizeDelta = new Vector2(3f, 330f);
+            dRect.anchoredPosition = new Vector2(0f, -10f);
+            var dImage = divider.GetComponent<Image>();
+            dImage.color = new Color(UITheme.CuteInk.r, UITheme.CuteInk.g, UITheme.CuteInk.b, .25f);
+            dImage.raycastTarget = false;
+
+            Column(card.transform, "Move", "การเคลื่อนที่ & มุมกล้อง", HowToMoveRows(), -595f);
+            Column(card.transform, "Crate", "การจัดการลัง & สื่อสาร", HowToCrateRows(), 30f);
+
+            var close = UITheme.MakeButton(card.transform, "Close", "ปิด", UIButtonStyle.White, new Vector2(240f, 80f), 30);
+            ((RectTransform)close.transform).anchoredPosition = new Vector2(0f, -275f);
+            close.onClick.AddListener(() => dim.SetActive(false));
+            dim.SetActive(false);
+            return dim;
+        }
+
+        /// <summary>One column: a header, then rows of "action" (left) and "key" (accent colour) starting at left x.</summary>
+        private static void Column(Transform card, string name, string header, (string action, string key)[] rows, float left)
+        {
+            const float Width = 565f, ActionWidth = 205f, RowHeight = 54f, Top = 130f;
+            var head = Label(card, name + "Header", header, 26, TextAnchor.MiddleLeft, new Vector2(left + Width * .5f, Top), new Vector2(Width, 44f));
+            UITheme.SetWeight(head, UITheme.FontBold);
+            head.color = new Color(.93f, .45f, .25f);
+            for (int i = 0; i < rows.Length; i++)
+            {
+                float y = Top - 58f - i * RowHeight;
+                Label(card, name + "Action" + i, rows[i].action, 25, TextAnchor.MiddleLeft,
+                    new Vector2(left + ActionWidth * .5f, y), new Vector2(ActionWidth, RowHeight));
+                var key = Label(card, name + "Key" + i, rows[i].key, 25, TextAnchor.MiddleLeft,
+                    new Vector2(left + ActionWidth + (Width - ActionWidth) * .5f, y), new Vector2(Width - ActionWidth, RowHeight));
+                UITheme.SetWeight(key, UITheme.FontBold);
+                key.color = new Color(.85f, .3f, .45f);
+            }
+        }
+
+        private static Text Label(Transform parent, string name, string value, int size, TextAnchor anchor, Vector2 position, Vector2 box)
+        {
+            var text = UITheme.MakeText(parent, name, value, size, UITextRole.Primary, anchor);
+            UITheme.StyleCuteText(text);
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            text.raycastTarget = false;
+            var rect = (RectTransform)text.transform;
+            rect.anchorMin = rect.anchorMax = new Vector2(.5f, .5f);
+            rect.pivot = new Vector2(.5f, .5f);
+            rect.sizeDelta = box;
+            rect.anchoredPosition = position;
+            return text;
         }
 
         private static string CreditsText()

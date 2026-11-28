@@ -52,6 +52,12 @@ namespace CoopGame.Network
         [Header("Settings")]
         [SerializeField] private float _fadeSpeed            = 3.5f;
         [SerializeField] private float _statusUpdateInterval = 0.5f;
+        [Tooltip("George 2026-11-28: the \"DON'T DROP IT\" main panel repeated the title screen's buttons (play twice). " +
+                 "On: the lobby opens straight on the room panel (create / join by code) and Back returns to the title screen. " +
+                 "Off: the old main panel comes back.")]
+        [SerializeField] private bool _skipMainMenu = true;
+
+        private MenuState HomeState => _skipMainMenu ? MenuState.HostRoom : MenuState.Main;
 
         private enum MenuState { Main, HostRoom, Join, Settings, Connecting }
 
@@ -338,7 +344,7 @@ namespace CoopGame.Network
                 _roomCodeInput.characterLimit = 8;
             }
 
-            ShowPanel(MenuState.Main);
+            ShowPanel(HomeState);
             ShowLobby(instant: true);
 
             Cursor.lockState = CursorLockMode.None;
@@ -398,7 +404,13 @@ namespace CoopGame.Network
         private void OnHostRoomMenuClicked() => ShowPanel(MenuState.HostRoom);
         private void OnSettingsMenuClicked() => SettingsMenu.Open();
         private void OnJoinMenuClicked()     => ShowPanel(MenuState.Join);
-        private void OnBackToMainMenu()      => ShowPanel(MenuState.Main);
+        private void OnBackToMainMenu()
+        {
+            if (!_skipMainMenu) { ShowPanel(MenuState.Main); return; }
+            // No main panel any more: Back goes to the title screen, the room panel stays under it.
+            ShowPanel(MenuState.HostRoom);
+            TitleScreen.ShowAgain();
+        }
         private void OnBackToHostRoom()      => ShowPanel(MenuState.HostRoom);
         private void OnCancelConnecting()
         {
@@ -408,7 +420,7 @@ namespace CoopGame.Network
             {
                 mgr.LeaveLobby();
             }
-            ShowPanel(MenuState.Main);
+            ShowPanel(HomeState);
         }
 
         private void OnQuitGameClicked()
