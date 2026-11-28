@@ -28,6 +28,7 @@ namespace CoopGame.Network
         private CanvasGroup _bannerGroup;
         private Image _bannerFace;
         private Text _bannerText;
+        private TMPro.TMP_Text _bannerTmp;
         private float _bannerBorn = -10f;
         private string _bannerNames;
         private int _bannerDamage;
@@ -108,8 +109,7 @@ namespace CoopGame.Network
             _bannerBorn = now;
             _bannerText.text = $"{_bannerNames} ทำลังพัง <color=#FF6B5E>-{_bannerDamage} HP</color>";
             _bannerText.supportRichText = true;
-            float width = Mathf.Clamp(_bannerText.preferredWidth + 80f, 240f, 760f);
-            _banner.sizeDelta = new Vector2(width, 56f);
+            FitBanner();
             StyleFace(_bannerFace, client);
             GameplayFeedback.Play(GameplayFeedback.Cue.BodyThud, Camera.main != null ? Camera.main.transform.position : Vector3.zero, .7f);
 
@@ -138,6 +138,20 @@ namespace CoopGame.Network
             mark.Born = now;
             mark.Until = now + MischiefSettings.Current.BlameMarkSeconds;
             mark.Label.text = "-" + mark.Damage + " HP";
+        }
+
+        /// <summary>
+        /// Banner width from the text actually drawn. Thai text is drawn by a TMP mirror (ThaiTextMeshProBridge,
+        /// synced in LateUpdate) that runs ~20% wider than the hidden uGUI Text, so sizing from the uGUI width let
+        /// "-X HP" spill past the right edge. Re-fitted every frame while the banner shows.
+        /// </summary>
+        private void FitBanner()
+        {
+            if (_bannerTmp == null) _bannerTmp = _bannerText.GetComponentInChildren<TMPro.TMP_Text>(true);
+            float textWidth = _bannerText.preferredWidth;
+            if (_bannerTmp != null && _bannerTmp.isActiveAndEnabled) textWidth = Mathf.Max(textWidth, _bannerTmp.preferredWidth);
+            float width = Mathf.Clamp(textWidth + 84f, 240f, 760f);
+            if (Mathf.Abs(_banner.sizeDelta.x - width) > .5f) _banner.sizeDelta = new Vector2(width, 56f);
         }
 
         private static void StyleFace(Image image, ulong client)
@@ -179,6 +193,7 @@ namespace CoopGame.Network
             float age = now - _bannerBorn;
             float alpha = age < BannerSeconds ? 1f : 1f - Mathf.Clamp01((age - BannerSeconds) / .5f);
             _bannerGroup.alpha = alpha;
+            if (alpha > 0f) FitBanner();
             float pop = age < .15f ? Mathf.Lerp(1.2f, 1f, age / .15f) : 1f;
             float shake = age < .35f ? Mathf.Sin(age * 70f) * 6f * (1f - age / .35f) : 0f;
             _banner.localScale = Vector3.one * pop;
