@@ -2277,7 +2277,7 @@ namespace CoopGame.Player
             // Same colour as the body (PlayerAppearance tints it through a property block).
             _fpBlock ??= new MaterialPropertyBlock();
             foreach (var smr in _rig.Visual.GetComponentsInChildren<SkinnedMeshRenderer>())
-                if (smr != _fpHands && smr.sharedMesh == _fpSourceMesh) { smr.GetPropertyBlock(_fpBlock); _fpHands.SetPropertyBlock(_fpBlock); break; }
+                if (smr != _fpHands && smr.sharedMesh == _fpSourceMesh) { smr.GetPropertyBlock(_fpBlock); _fpHands.SetPropertyBlock(_fpBlock); PlayerAppearance.KeepGlovesWhite(_fpHands); break; }
         }
 
         /// <summary>

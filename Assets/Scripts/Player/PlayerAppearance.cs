@@ -261,6 +261,31 @@ namespace CoopGame.Player
             {
                 arms.SetArmColor(chosenColor);
             }
+
+            // Gloves stay white: their sub-mesh gets its own block with white,
+            // which wins over the body tint set on the whole renderer above.
+            for (int i = 0; i < renderers.Length; i++)
+                if (renderers[i] != null && renderers[i] != _faceRenderer) KeepGlovesWhite(renderers[i]);
+        }
+
+        private static MaterialPropertyBlock _gloveBlock;
+
+        /// <summary>Gives every Mat_Glove sub-mesh of <paramref name="r"/> plain white instead of the body colour.</summary>
+        public static void KeepGlovesWhite(Renderer r)
+        {
+            Material[] mats = r.sharedMaterials;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                Material m = mats[i];
+                if (m == null || !m.name.StartsWith("Mat_Glove")) continue;
+                _gloveBlock ??= new MaterialPropertyBlock();
+                _gloveBlock.Clear();
+                Color glove = Color.white;
+                _gloveBlock.SetColor(BaseColor, glove);
+                _gloveBlock.SetColor(LegacyColor, glove);
+                if (m.HasProperty(EmissionColor)) _gloveBlock.SetColor(EmissionColor, m.GetColor(EmissionColor));
+                r.SetPropertyBlock(_gloveBlock, i);
+            }
         }
     }
 }

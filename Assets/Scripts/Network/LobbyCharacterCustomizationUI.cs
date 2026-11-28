@@ -168,6 +168,7 @@ namespace CoopGame.Network
                 _frozenSources[i].GetPropertyBlock(_copyBlock);
                 _frozenCopies[i].SetPropertyBlock(_copyBlock);
                 _frozenCopies[i].sharedMaterials = _frozenSources[i].sharedMaterials;
+                CoopGame.Player.PlayerAppearance.KeepGlovesWhite(_frozenCopies[i]);
             }
         }
 
