@@ -102,7 +102,19 @@ namespace CoopGame.Network
             Transform background = transform.Find("Background");
             if (background != null && background.TryGetComponent(out Image backdrop))
             {
-                UITheme.StyleBackdrop(backdrop); // blurred level art from the kit
+                // Same art as the title screen (softened version) so the menus match; blurred kit art as fallback.
+                var menuArt = Resources.Load<Sprite>("UI/MainMenu/MenuBackground_Soft");
+                if (menuArt == null) UITheme.StyleBackdrop(backdrop);
+                else
+                {
+                    backdrop.sprite = menuArt;
+                    backdrop.type = Image.Type.Simple;
+                    backdrop.preserveAspect = false;
+                    backdrop.color = Color.white;
+                    if (!background.TryGetComponent(out AspectRatioFitter fitter)) fitter = background.gameObject.AddComponent<AspectRatioFitter>();
+                    fitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+                    fitter.aspectRatio = menuArt.rect.width / menuArt.rect.height;
+                }
             }
             Transform card = transform.Find("LobbyCard");
             if (card != null) UITheme.StylePanel(card.GetComponent<Image>());
