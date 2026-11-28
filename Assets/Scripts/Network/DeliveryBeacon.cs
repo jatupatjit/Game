@@ -90,6 +90,7 @@ namespace CoopGame.Network
             compassMaterial.SetFloat("_ZWrite", 0f);
             _compass = MakeRenderer("CrateCompass", BuildArrowMesh(CompassShape, new Vector2(0f, .05f), .16f), compassMaterial, out _compassRenderer);
             _compass.GetChild(0).localRotation = Quaternion.Euler(90f, 0f, 0f); // dart lies flat, tip along +Z
+            BuildDistanceLabel();
             _dropArrow = MakeRenderer("DropArrow", BuildArrowMesh(DownShape, new Vector2(0f, .62f), .3f), material, out _dropArrowRenderer);
             _frame = MakeRenderer("DropFrame", null, material, out _frameRenderer);
         }
@@ -182,6 +183,64 @@ namespace CoopGame.Network
         private void OnDestroy()
         {
             if (_outlineMaterial != null) Destroy(_outlineMaterial);
+        }
+
+        // Distance to the goal, floating just above the compass and facing the camera (George 2026-11-28: the
+        // distance moved from the top HUD onto the crate).
+        private Transform _distanceRoot;
+        private Canvas _distanceCanvas;
+        private UnityEngine.UI.Text _distanceText;
+        private int _shownDistance = -1;
+        private Camera _camera;
+
+        /// <summary>Text over the crate showing metres to the goal. For tests.</summary>
+        public string DistanceLabel => _distanceText != null && _distanceRoot.gameObject.activeSelf ? _distanceText.text : null;
+
+        private void BuildDistanceLabel()
+        {
+            var root = new GameObject("CrateDistance", typeof(RectTransform), typeof(Canvas));
+            root.transform.SetParent(transform, false);
+            _distanceRoot = root.transform;
+            _distanceCanvas = root.GetComponent<Canvas>();
+            _distanceCanvas.renderMode = RenderMode.WorldSpace;
+            _distanceCanvas.sortingOrder = 5;
+            var rect = (RectTransform)root.transform;
+            rect.sizeDelta = new Vector2(190f, 64f);
+            rect.localScale = Vector3.one * .0055f;
+            // Dark pill behind the number so it reads against bright sky and walls.
+            var pill = new GameObject("Pill", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+            pill.transform.SetParent(root.transform, false);
+            var pillRect = (RectTransform)pill.transform;
+            pillRect.anchorMin = Vector2.zero; pillRect.anchorMax = Vector2.one;
+            pillRect.offsetMin = pillRect.offsetMax = Vector2.zero;
+            var pillImage = pill.GetComponent<UnityEngine.UI.Image>();
+            UITheme.StyleShape(pillImage, UITheme.SmallSprite, new Color(.12f, .1f, .14f, .82f));
+            pillImage.raycastTarget = false;
+            _distanceText = UITheme.MakeText(root.transform, "Metres", "", 44, UITextRole.Accent, TextAnchor.MiddleCenter);
+            UITheme.SetWeight(_distanceText, UITheme.FontBold);
+            _distanceText.color = Gold;
+            _distanceText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            _distanceText.verticalOverflow = VerticalWrapMode.Overflow;
+            _distanceText.raycastTarget = false;
+            UITheme.AddOutline(_distanceText);
+            var textRect = (RectTransform)_distanceText.transform;
+            textRect.anchorMin = Vector2.zero; textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = textRect.offsetMax = Vector2.zero;
+            root.SetActive(false);
+        }
+
+        private void UpdateDistanceLabel(bool show, Vector3 above, float metres)
+        {
+            bool visible = show && !PauseMenu.IsPaused && !ExpeditionHUD.OverlayOpen;
+            if (_distanceRoot.gameObject.activeSelf != visible) _distanceRoot.gameObject.SetActive(visible);
+            if (!visible) return;
+            _distanceRoot.position = above;
+            if (_camera == null || !_camera.isActiveAndEnabled) _camera = Camera.main;
+            if (_camera != null) _distanceRoot.rotation = _camera.transform.rotation;
+            int m = Mathf.RoundToInt(metres);
+            if (m == _shownDistance) return;
+            _shownDistance = m;
+            _distanceText.text = m + " ม.";
         }
 
         private Transform MakeRenderer(string name, Mesh mesh, Material material, out Renderer renderer)
@@ -342,7 +401,8 @@ namespace CoopGame.Network
             Vector3 toGoal = show ? Flat(_spot - cb.center) : Vector3.zero;
             bool compass = show && toGoal.sqrMagnitude > 1.5f * 1.5f; // no direction to show once it sits on the goal
             if (_compass.gameObject.activeSelf != compass) _compass.gameObject.SetActive(compass);
-            if (!show) return;
+            if (!show) { UpdateDistanceLabel(false, default, 0f); return; }
+            UpdateDistanceLabel(compass, new Vector3(cb.center.x, cb.max.y + 1.25f + Mathf.Sin(Time.time * 3.5f) * .12f, cb.center.z), toGoal.magnitude);
 
             float t = Time.time;
             bool near = carried && toGoal.sqrMagnitude < NearDistance * NearDistance;

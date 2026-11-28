@@ -113,12 +113,12 @@ namespace CoopGame.Network
         private LevelRunState _run;
         private CheckpointManager _checkpoints;
         private GameObject _timerChip;
-        private Text _timerText, _sideText, _padText, _playText, _navText;
+        private Text _timerText, _sideText, _navText;
         private RectTransform _navArrow;
-        private GameObject _navRow;
+        private GameObject _navRow, _runDivider;
         private int _shownPlaySecond = -1, _shownNavDistance = -1;
         private string _playString = "", _navString = "", _navLabel;
-        private int _shownSecond = -1, _shownSide = -1, _shownPadDistance = -1, _shownPad = -2, _noticeSeq;
+        private int _shownSecond = -1, _shownSide = -1, _noticeSeq;
         private float _noticeUntil;
         private LevelNotice _notice;
 
@@ -425,7 +425,7 @@ namespace CoopGame.Network
             cache = prefix + (seconds / 60).ToString("00") + ":" + (seconds % 60).ToString("00");
         }
 
-        private string _timerString = "", _sideString = "", _padString = "";
+        private string _timerString = "", _sideString = "";
 
         /// <summary>Timer, side mission and checkpoint lines plus one-shot notices. Strings are rebuilt only when the shown value changes.</summary>
         private void RefreshRunInfo(ref string detail)
@@ -437,23 +437,15 @@ namespace CoopGame.Network
             if (!show) return;
             RefreshPlayTime();
             RefreshNavigator();
-            // nearest checkpoint line: the active pad number and the distance from the local player
-            var pad = _checkpoints != null ? _checkpoints.Current : null;
-            var local = _player != null ? _player.transform : null;
-            int padNumber = pad != null && pad.IsActive ? pad.Number : 0;
-            int distance = pad != null && local != null ? Mathf.RoundToInt(Vector3.Distance(local.position, pad.transform.position)) : -1;
-            if (_checkpoints != null && (padNumber != _shownPad || distance != _shownPadDistance))
-            {
-                _shownPad = padNumber; _shownPadDistance = distance;
-                _padString = padNumber == 0 ? "เช็คพอยต์: ยังไม่ได้เซฟ (วางลังบนแท่นทอง)" : "เช็คพอยต์ล่าสุด " + padNumber + "  ห่าง " + distance + " ม.";
-                _padText.text = _padString;
-            }
-            if (_padText.gameObject.activeSelf != (_checkpoints != null)) _padText.gameObject.SetActive(_checkpoints != null);
+            if (_runDivider.activeSelf != _navRow.activeSelf) _runDivider.SetActive(_navRow.activeSelf);
+            FitDrawnWidth(_timerText);
+            FitDrawnWidth(_navText);
+            FitDrawnWidth(_sideText);
             if (_run == null) return;
             int seconds = Mathf.FloorToInt(_run.ElapsedSeconds);
             if (seconds != _shownSecond)
             {
-                SetMmSs(ref _timerString, ref _shownSecond, seconds, "เวลา ");
+                SetMmSs(ref _timerString, ref _shownSecond, seconds, "");
                 _timerText.text = _timerString;
             }
             // side mission line: state -> text
@@ -489,8 +481,9 @@ namespace CoopGame.Network
             int seconds = manager != null && manager.IsListening ? Mathf.FloorToInt((float)manager.ServerTime.Time) : 0;
             if (seconds == _shownPlaySecond) return;
             SetMmSs(ref _playString, ref _shownPlaySecond, seconds, "เล่นมาแล้ว ");
-            _playText.text = _playString;
             PlayLabel = _playString;
+            // The row shows one time: the level timer in levels with a LevelRunState, else this play time.
+            if (_run == null) _timerText.text = _playString.Substring("เล่นมาแล้ว ".Length);
         }
 
         private void BuildNavigator(Transform parent)
@@ -502,18 +495,68 @@ namespace CoopGame.Network
             row.childControlWidth = row.childControlHeight = true;
             row.childForceExpandWidth = row.childForceExpandHeight = false;
             UITheme.SetPreferredHeight(_navRow, 34f);
-            var arrow = new GameObject("Arrow", typeof(RectTransform), typeof(Image));
-            arrow.transform.SetParent(_navRow.transform, false);
-            var image = arrow.GetComponent<Image>();
-            image.sprite = ArrowSprite();
-            image.color = UITheme.TextColor(UITextRole.Accent);
-            image.raycastTarget = false;
-            var size = arrow.AddComponent<LayoutElement>();
-            size.preferredWidth = size.preferredHeight = 30f;
-            _navArrow = (RectTransform)arrow.transform;
-            _navText = UITheme.MakeText(_navRow.transform, "Target", "", 19, UITextRole.Accent, TextAnchor.MiddleLeft);
+            _navArrow = (RectTransform)RunIcon(_navRow.transform, "Arrow", ArrowSprite(), UITheme.TextColor(UITextRole.Accent), 30f).transform;
+            _navText = UITheme.MakeText(_navRow.transform, "Target", "", 24, UITextRole.Accent, TextAnchor.MiddleLeft);
             UITheme.SetWeight(_navText, UITheme.FontBold);
             _navText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            _navText.gameObject.AddComponent<LayoutElement>();
+        }
+
+        private static GameObject RunIcon(Transform parent, string name, Sprite sprite, Color color, float size)
+        {
+            var icon = new GameObject(name, typeof(RectTransform), typeof(Image));
+            icon.transform.SetParent(parent, false);
+            var image = icon.GetComponent<Image>();
+            image.sprite = sprite;
+            image.color = color;
+            image.raycastTarget = false;
+            var layout = icon.AddComponent<LayoutElement>();
+            layout.preferredWidth = layout.preferredHeight = size;
+            return icon;
+        }
+
+        /// <summary>
+        /// Layout width of a label from the text actually drawn: Thai is drawn by a TMP mirror
+        /// (ThaiTextMeshProBridge) about 20% wider than the hidden uGUI Text the layout measures.
+        /// </summary>
+        private static void FitDrawnWidth(Text text)
+        {
+            if (text == null || !text.TryGetComponent(out LayoutElement layout)) return;
+            float width = text.preferredWidth;
+            var drawn = text.GetComponentInChildren<TMPro.TMP_Text>();
+            if (drawn != null && drawn.isActiveAndEnabled) width = Mathf.Max(width, drawn.preferredWidth);
+            width = Mathf.Ceil(width + 2f);
+            if (!Mathf.Approximately(layout.preferredWidth, width)) layout.preferredWidth = width;
+        }
+
+        private static Sprite s_clock;
+
+        /// <summary>White stopwatch (ring, two hands, crown button), drawn once.</summary>
+        private static Sprite ClockSprite()
+        {
+            if (s_clock != null) return s_clock;
+            const int n = 64;
+            var texture = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var pixels = new Color32[n * n];
+            Vector2 c = new Vector2(.5f, .45f);
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    Vector2 p = new Vector2((x + .5f) / n, (y + .5f) / n);
+                    Vector2 d = p - c;
+                    float r = d.magnitude;
+                    bool ring = r > .33f && r < .43f;
+                    bool hourHand = Mathf.Abs(d.x) < .035f && d.y > -.02f && d.y < .24f;           // 12 o'clock
+                    bool minuteHand = Mathf.Abs(d.y) < .035f && d.x > -.02f && d.x < .18f;         // 3 o'clock
+                    bool crown = Mathf.Abs(p.x - .5f) < .07f && p.y > .87f && p.y < .97f;
+                    bool stem = Mathf.Abs(p.x - .5f) < .03f && p.y > .85f && p.y < .9f;
+                    bool inside = ring || hourHand || minuteHand || crown || stem;
+                    pixels[y * n + x] = inside ? new Color32(255, 255, 255, 255) : new Color32(255, 255, 255, 0);
+                }
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            s_clock = Sprite.Create(texture, new Rect(0, 0, n, n), new Vector2(.5f, .5f), 100f);
+            return s_clock;
         }
 
         private static Sprite s_arrow;
@@ -580,7 +623,9 @@ namespace CoopGame.Network
             if (distance == _shownNavDistance && label == _navLabel) return;
             _shownNavDistance = distance; _navLabel = label;
             _navString = label + "  " + distance + " ม.";
-            _navText.text = _navString;
+            // The distance now floats over the crate (DeliveryBeacon); the row names the goal only, without the
+            // "go to" prefix (the arrow says it).
+            _navText.text = label.StartsWith("ไป") ? label.Substring(2) : label;
             NavLabel = _navString;
         }
 
@@ -682,29 +727,51 @@ namespace CoopGame.Network
             _detail.horizontalOverflow = HorizontalWrapMode.Wrap;
             _detailChip.SetActive(false);
 
-            // Run info (top-centre): level timer + side mission (levels with a LevelRunState), the last saved
-            // checkpoint, play time and an arrow to the next target.
+            // Run info (top-centre), George's pick 1C (2026-11-28): one capsule row  [clock] 00:55 | [arrow] goal,
+            // each part an icon + bold value. The time is the level timer when the level has a LevelRunState, else
+            // the play time (never both). The side mission (LevelRunState only) is a small line under the row.
+            // The distance to the goal is shown over the crate (DeliveryBeacon), not here.
             {
-                _timerChip = Box("RunInfo", transform, new Vector2(.5f, 1f), new Vector2(0, -22), new Vector2(480, 10), UITheme.SolidPanel, UITheme.SmallSprite);
+                _timerChip = Box("RunInfo", transform, new Vector2(.5f, 1f), new Vector2(0, -22), new Vector2(10, 10), UITheme.SolidPanel, UITheme.SmallSprite);
                 ((RectTransform)_timerChip.transform).pivot = new Vector2(.5f, 1f);
                 _timerChip.GetComponent<Image>().raycastTarget = false;
                 var runLayout = _timerChip.AddComponent<VerticalLayoutGroup>();
-                runLayout.padding = new RectOffset(16, 16, 8, 10);
-                runLayout.spacing = 2f; runLayout.childAlignment = TextAnchor.UpperCenter;
+                runLayout.padding = new RectOffset(18, 20, 6, 7);
+                runLayout.spacing = 0f; runLayout.childAlignment = TextAnchor.UpperCenter;
                 runLayout.childControlWidth = runLayout.childControlHeight = true;
-                runLayout.childForceExpandWidth = true; runLayout.childForceExpandHeight = false;
-                _timerChip.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-                _timerText = UITheme.MakeText(_timerChip.transform, "Timer", "เวลา 00:00", 30, UITextRole.Primary, TextAnchor.MiddleCenter);
+                runLayout.childForceExpandWidth = false; runLayout.childForceExpandHeight = false;
+                var runFit = _timerChip.AddComponent<ContentSizeFitter>();
+                runFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+                runFit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+                var row = new GameObject("Row", typeof(RectTransform));
+                row.transform.SetParent(_timerChip.transform, false);
+                var rowLayout = row.AddComponent<HorizontalLayoutGroup>();
+                rowLayout.spacing = 8f; rowLayout.childAlignment = TextAnchor.MiddleCenter;
+                rowLayout.childControlWidth = rowLayout.childControlHeight = true;
+                rowLayout.childForceExpandWidth = rowLayout.childForceExpandHeight = false;
+                UITheme.SetPreferredHeight(row, 40f);
+
+                RunIcon(row.transform, "Clock", ClockSprite(), UITheme.TextColor(UITextRole.Primary), 28f);
+                _timerText = UITheme.MakeText(row.transform, "Time", "00:00", 28, UITextRole.Primary, TextAnchor.MiddleLeft);
                 UITheme.SetWeight(_timerText, UITheme.FontBold);
-                UITheme.SetPreferredHeight(_timerText.gameObject, 38f);
-                _sideText = UITheme.MakeText(_timerChip.transform, "SideMission", "", 19, UITextRole.Accent, TextAnchor.MiddleCenter);
-                UITheme.SetPreferredHeight(_sideText.gameObject, 26f);
-                _padText = UITheme.MakeText(_timerChip.transform, "Checkpoint", "", 17, UITextRole.Secondary, TextAnchor.MiddleCenter);
-                UITheme.SetPreferredHeight(_padText.gameObject, 24f);
-                _playText = UITheme.MakeText(_timerChip.transform, "PlayTime", "", 17, UITextRole.Secondary, TextAnchor.MiddleCenter);
-                UITheme.SetPreferredHeight(_playText.gameObject, 24f);
-                BuildNavigator(_timerChip.transform);
-                _timerText.gameObject.SetActive(_run != null);
+                _timerText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                _timerText.gameObject.AddComponent<LayoutElement>();
+
+                _runDivider = new GameObject("Divider", typeof(RectTransform), typeof(Image));
+                _runDivider.transform.SetParent(row.transform, false);
+                var divider = _runDivider.GetComponent<Image>();
+                divider.color = new Color(1f, 1f, 1f, .28f);
+                divider.raycastTarget = false;
+                var dividerSize = _runDivider.AddComponent<LayoutElement>();
+                dividerSize.preferredWidth = 2f; dividerSize.preferredHeight = 26f;
+
+                BuildNavigator(row.transform);
+
+                _sideText = UITheme.MakeText(_timerChip.transform, "SideMission", "", 17, UITextRole.Accent, TextAnchor.MiddleCenter);
+                UITheme.SetPreferredHeight(_sideText.gameObject, 22f);
+                _sideText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                _sideText.gameObject.AddComponent<LayoutElement>();
                 _sideText.gameObject.SetActive(_run != null);
                 _timerChip.SetActive(false);
             }

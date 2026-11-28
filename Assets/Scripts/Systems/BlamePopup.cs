@@ -6,33 +6,47 @@ namespace CoopGame.Network
 {
     /// <summary>
     /// Blame pop-ups (rule A3, <see cref="MischiefSettings.BlamePopups"/>): when the host blames a player for crate
-    /// damage (<see cref="LevelResults"/>), every screen shows a banner at the top with that player's face and
-    /// "name ทำลังพัง -X HP", and a red "-X HP" mark floats over that player's head for a few seconds (more hits add up).
+    /// damage (<see cref="LevelResults"/>), a popup springs up over that player's head on every screen, like the
+    /// crate's own "-X" damage number: the player's face, "name ทำลังพัง" and a big red "-X HP". It pops in with a
+    /// shake, rises and fades out; more hits on the same player while it shows add up and restart it. A player
+    /// behind the camera gets the popup clamped to the screen edge, so everyone still sees who did it.
+    /// (Was a banner at the top of the screen; George 2026-11-28 asked for a popup like the crate's HP drop.)
     /// Called on every machine through <see cref="PlayerExpeditionState.BlameRpc"/>.
     /// </summary>
     public sealed class BlamePopup : MonoBehaviour
     {
-        private const float BannerSeconds = 2.6f;
+        private const float PopSeconds = .18f;
+        private const float RisePixels = 70f;
+        private const float FadeSeconds = .6f;
+        private const float EdgeMargin = 110f;
 
-        private sealed class Mark
+        private sealed class Popup
         {
             public ulong Client;
             public int Damage;
-            public float Until, Born;
+            public float Born, Until;
             public RectTransform Rect;
-            public Text Label;
+            public CanvasGroup Group;
+            public Image Face;
+            public Text Name, Amount;
         }
 
         private static BlamePopup _instance;
-        private RectTransform _root, _banner;
-        private CanvasGroup _bannerGroup;
-        private Image _bannerFace;
-        private Text _bannerText;
-        private TMPro.TMP_Text _bannerTmp;
-        private float _bannerBorn = -10f;
-        private string _bannerNames;
-        private int _bannerDamage;
-        private readonly List<Mark> _marks = new();
+        private RectTransform _root;
+        private readonly List<Popup> _popups = new();
+
+        /// <summary>Texts of the popups showing now ("name|-X HP"), for tests.</summary>
+        public static string[] Showing
+        {
+            get
+            {
+                if (_instance == null) return new string[0];
+                var list = new List<string>();
+                foreach (var p in _instance._popups)
+                    if (p.Rect != null && p.Rect.gameObject.activeSelf) list.Add(p.Name.text + "|" + p.Amount.text);
+                return list.ToArray();
+            }
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -56,39 +70,6 @@ namespace CoopGame.Network
             _root.SetParent(transform, false);
             _root.anchorMin = Vector2.zero; _root.anchorMax = Vector2.one;
             _root.offsetMin = _root.offsetMax = Vector2.zero;
-
-            var banner = new GameObject("Banner", typeof(RectTransform), typeof(Image), typeof(CanvasGroup));
-            _banner = (RectTransform)banner.transform;
-            _banner.SetParent(_root, false);
-            _banner.anchorMin = _banner.anchorMax = new Vector2(.5f, 1f);
-            _banner.pivot = new Vector2(.5f, 1f);
-            _banner.anchoredPosition = new Vector2(0f, -150f);
-            _banner.sizeDelta = new Vector2(420f, 56f);
-            var bg = banner.GetComponent<Image>();
-            UITheme.StyleShape(bg, UITheme.SmallSprite, new Color(.32f, .06f, .07f, .92f));
-            bg.raycastTarget = false;
-            _bannerGroup = banner.GetComponent<CanvasGroup>();
-            _bannerGroup.alpha = 0f;
-
-            var face = new GameObject("Face", typeof(RectTransform), typeof(Image));
-            var faceRect = (RectTransform)face.transform;
-            faceRect.SetParent(_banner, false);
-            faceRect.anchorMin = faceRect.anchorMax = new Vector2(0f, .5f);
-            faceRect.pivot = new Vector2(0f, .5f);
-            faceRect.anchoredPosition = new Vector2(9f, 0f);
-            faceRect.sizeDelta = new Vector2(42f, 42f);
-            _bannerFace = face.GetComponent<Image>();
-            _bannerFace.preserveAspect = true;
-            _bannerFace.raycastTarget = false;
-
-            _bannerText = UITheme.MakeText(_banner, "Text", "", 22, UITextRole.Primary, TextAnchor.MiddleLeft);
-            _bannerText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            _bannerText.raycastTarget = false;
-            UITheme.SetWeight(_bannerText, UITheme.FontBold);
-            UITheme.AddOutline(_bannerText);
-            var textRect = (RectTransform)_bannerText.transform;
-            textRect.anchorMin = Vector2.zero; textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(60f, 0f); textRect.offsetMax = new Vector2(-12f, 0f);
         }
 
         /// <summary>Every machine: the host blamed this player for <paramref name="damage"/> crate HP.</summary>
@@ -101,57 +82,66 @@ namespace CoopGame.Network
         private void Add(ulong client, int damage)
         {
             float now = Time.unscaledTime;
-            string name = GameRoom.NameOfClient(client);
-            // Two carriers blamed for the same hit share one banner.
-            if (now - _bannerBorn < .3f && _bannerNames != null && !_bannerNames.Contains(name)) _bannerNames += " + " + name;
-            else { _bannerNames = name; _bannerDamage = 0; }
-            _bannerDamage = Mathf.Max(_bannerDamage, damage);
-            _bannerBorn = now;
-            _bannerText.text = $"{_bannerNames} ทำลังพัง <color=#FF6B5E>-{_bannerDamage} HP</color>";
-            _bannerText.supportRichText = true;
-            FitBanner();
-            StyleFace(_bannerFace, client);
-            GameplayFeedback.Play(GameplayFeedback.Cue.BodyThud, Camera.main != null ? Camera.main.transform.position : Vector3.zero, .7f);
-
-            Mark mark = _marks.Find(m => m.Client == client && m.Rect != null);
-            if (mark == null)
+            Popup popup = _popups.Find(p => p.Client == client && p.Rect != null);
+            if (popup == null)
             {
-                var go = new GameObject("Mark", typeof(RectTransform));
-                var rect = (RectTransform)go.transform;
-                rect.SetParent(_root, false);
-                rect.anchorMin = rect.anchorMax = Vector2.zero;
-                rect.pivot = new Vector2(.5f, 0f);
-                rect.sizeDelta = new Vector2(220f, 60f);
-                var label = UITheme.MakeText(rect, "Text", "", 28, UITextRole.Primary, TextAnchor.LowerCenter);
-                label.horizontalOverflow = HorizontalWrapMode.Overflow;
-                label.raycastTarget = false;
-                label.color = new Color(1f, .3f, .25f);
-                UITheme.SetWeight(label, UITheme.FontBold);
-                UITheme.AddOutline(label);
-                var labelRect = (RectTransform)label.transform;
-                labelRect.anchorMin = Vector2.zero; labelRect.anchorMax = Vector2.one;
-                labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
-                mark = new Mark { Client = client, Rect = rect, Label = label };
-                _marks.Add(mark);
+                popup = MakePopup(client);
+                _popups.Add(popup);
             }
-            mark.Damage += damage;
-            mark.Born = now;
-            mark.Until = now + MischiefSettings.Current.BlameMarkSeconds;
-            mark.Label.text = "-" + mark.Damage + " HP";
+            popup.Damage += damage;
+            popup.Born = now;
+            popup.Until = now + Mathf.Max(2.4f, MischiefSettings.Current.BlameMarkSeconds);
+            popup.Name.text = GameRoom.NameOfClient(client) + " ทำลังพัง";
+            popup.Amount.text = "-" + popup.Damage + " HP";
+            StyleFace(popup.Face, client);
+            GameplayFeedback.Play(GameplayFeedback.Cue.BodyThud, Camera.main != null ? Camera.main.transform.position : Vector3.zero, .7f);
         }
 
-        /// <summary>
-        /// Banner width from the text actually drawn. Thai text is drawn by a TMP mirror (ThaiTextMeshProBridge,
-        /// synced in LateUpdate) that runs ~20% wider than the hidden uGUI Text, so sizing from the uGUI width let
-        /// "-X HP" spill past the right edge. Re-fitted every frame while the banner shows.
-        /// </summary>
-        private void FitBanner()
+        private Popup MakePopup(ulong client)
         {
-            if (_bannerTmp == null) _bannerTmp = _bannerText.GetComponentInChildren<TMPro.TMP_Text>(true);
-            float textWidth = _bannerText.preferredWidth;
-            if (_bannerTmp != null && _bannerTmp.isActiveAndEnabled) textWidth = Mathf.Max(textWidth, _bannerTmp.preferredWidth);
-            float width = Mathf.Clamp(textWidth + 84f, 240f, 760f);
-            if (Mathf.Abs(_banner.sizeDelta.x - width) > .5f) _banner.sizeDelta = new Vector2(width, 56f);
+            var go = new GameObject("Blame " + client, typeof(RectTransform), typeof(CanvasGroup));
+            var rect = (RectTransform)go.transform;
+            rect.SetParent(_root, false);
+            rect.anchorMin = rect.anchorMax = Vector2.zero;
+            rect.pivot = new Vector2(.5f, 0f);
+            rect.sizeDelta = new Vector2(360f, 150f);
+            var group = go.GetComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            group.interactable = false;
+
+            // Bottom up: big red amount, the name line, the face on top.
+            var amount = Label(rect, "Amount", 46, new Color(1f, .3f, .25f), 0f, 58f);
+            var name = Label(rect, "Name", 24, Color.white, 56f, 34f);
+
+            var face = new GameObject("Face", typeof(RectTransform), typeof(Image));
+            var faceRect = (RectTransform)face.transform;
+            faceRect.SetParent(rect, false);
+            faceRect.anchorMin = faceRect.anchorMax = new Vector2(.5f, 0f);
+            faceRect.pivot = new Vector2(.5f, 0f);
+            faceRect.anchoredPosition = new Vector2(0f, 92f);
+            faceRect.sizeDelta = new Vector2(46f, 46f);
+            var faceImage = face.GetComponent<Image>();
+            faceImage.preserveAspect = true;
+            faceImage.raycastTarget = false;
+
+            return new Popup { Client = client, Rect = rect, Group = group, Face = faceImage, Name = name, Amount = amount };
+        }
+
+        private static Text Label(RectTransform parent, string name, int size, Color color, float bottom, float height)
+        {
+            var text = UITheme.MakeText(parent, name, "", size, UITextRole.Primary, TextAnchor.MiddleCenter);
+            UITheme.SetWeight(text, UITheme.FontBold);
+            UITheme.AddOutline(text);
+            text.color = color;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            text.raycastTarget = false;
+            var r = (RectTransform)text.transform;
+            r.anchorMin = new Vector2(0f, 0f); r.anchorMax = new Vector2(1f, 0f);
+            r.pivot = new Vector2(.5f, 0f);
+            r.anchoredPosition = new Vector2(0f, bottom);
+            r.sizeDelta = new Vector2(0f, height);
+            return text;
         }
 
         private static void StyleFace(Image image, ulong client)
@@ -189,39 +179,33 @@ namespace CoopGame.Network
             bool hide = PhotoMode.IsOn || TitleScreen.IsVisible;
             if (_root.gameObject.activeSelf == hide) _root.gameObject.SetActive(!hide);
 
-            // Banner: pops in big, settles, fades out.
-            float age = now - _bannerBorn;
-            float alpha = age < BannerSeconds ? 1f : 1f - Mathf.Clamp01((age - BannerSeconds) / .5f);
-            _bannerGroup.alpha = alpha;
-            if (alpha > 0f) FitBanner();
-            float pop = age < .15f ? Mathf.Lerp(1.2f, 1f, age / .15f) : 1f;
-            float shake = age < .35f ? Mathf.Sin(age * 70f) * 6f * (1f - age / .35f) : 0f;
-            _banner.localScale = Vector3.one * pop;
-            _banner.anchoredPosition = new Vector2(shake, -150f);
-
             Camera cam = Camera.main;
-            var canvasRect = (RectTransform)transform;
-            for (int i = _marks.Count - 1; i >= 0; i--)
+            Rect area = _root.rect;
+            float scale = area.width / Mathf.Max(1f, Screen.width);
+            for (int i = _popups.Count - 1; i >= 0; i--)
             {
-                Mark mark = _marks[i];
-                if (mark.Rect == null || now > mark.Until || !TryHead(mark.Client, out Vector3 head))
+                Popup popup = _popups[i];
+                if (popup.Rect == null || now > popup.Until || !TryHead(popup.Client, out Vector3 head) || cam == null)
                 {
-                    if (mark.Rect != null) Destroy(mark.Rect.gameObject);
-                    _marks.RemoveAt(i);
+                    if (popup.Rect != null) Destroy(popup.Rect.gameObject);
+                    _popups.RemoveAt(i);
                     continue;
                 }
-                Vector3 screen = cam != null ? cam.WorldToScreenPoint(head + Vector3.up * .45f) : new Vector3(-999f, -999f, -1f);
-                bool visible = screen.z > 0f;
-                mark.Rect.gameObject.SetActive(visible);
-                if (!visible) continue;
-                float scale = canvasRect.rect.width / Mathf.Max(1f, Screen.width);
-                float bob = Mathf.Sin(now * 4f) * 6f;
-                mark.Rect.anchoredPosition = new Vector2(screen.x * scale, screen.y * scale + bob);
-                float markAge = now - mark.Born;
-                mark.Rect.localScale = Vector3.one * (markAge < .15f ? Mathf.Lerp(1.6f, 1f, markAge / .15f) : 1f);
-                var c = mark.Label.color;
-                c.a = Mathf.Clamp01((mark.Until - now) / .6f);
-                mark.Label.color = c;
+
+                // Over the head; behind the camera or off screen it is held at the screen edge.
+                Vector3 screen = cam.WorldToScreenPoint(head + Vector3.up * .55f);
+                Vector2 pos = new Vector2(screen.x, screen.y) * scale;
+                if (screen.z < 0f) pos = new Vector2(area.width - pos.x, EdgeMargin);
+                pos.x = Mathf.Clamp(pos.x, EdgeMargin * 1.6f, area.width - EdgeMargin * 1.6f);
+                pos.y = Mathf.Clamp(pos.y, EdgeMargin * .5f, area.height - EdgeMargin * 1.8f);
+
+                float age = now - popup.Born;
+                float life = popup.Until - popup.Born;
+                float rise = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / life)) * RisePixels;
+                float shake = age < .35f ? Mathf.Sin(age * 70f) * 7f * (1f - age / .35f) : 0f;
+                popup.Rect.anchoredPosition = pos + new Vector2(shake, rise);
+                popup.Rect.localScale = Vector3.one * (age < PopSeconds ? Mathf.Lerp(1.5f, 1f, age / PopSeconds) : 1f);
+                popup.Group.alpha = Mathf.Clamp01((popup.Until - now) / FadeSeconds);
             }
         }
     }
