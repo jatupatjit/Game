@@ -172,8 +172,8 @@ namespace CoopGame.Network
             return new[]
             {
                 ("ยก / วางลัง", K(BindRole.Carry)),
-                ("รับลังที่เพื่อนโยน", "ค้าง " + K(BindRole.Carry)),
-                ("เล็ง / โยนลัง", "ค้าง " + K(BindRole.Throw) + " (ปล่อยเพื่อโยน)"),
+                ("รับลังที่เพื่อนโยน", K(BindRole.Carry) + " ค้าง"),
+                ("เล็ง / โยนลัง", K(BindRole.Throw) + " ค้าง (ปล่อยเพื่อโยน)"),
                 ("ใช้ / กด", K(BindRole.Interact)),
                 ("บอกเพื่อน", K(BindRole.PingHere) + " มานี่ / " + K(BindRole.PingHelp) + " ช่วยยก / " + K(BindRole.PingWarn) + " ระวัง"),
             };
