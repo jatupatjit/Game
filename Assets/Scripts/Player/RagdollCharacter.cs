@@ -1998,6 +1998,11 @@ namespace CoopGame.Player
             if (!any) return false;
             Vector3 center = bounds.center;
             Vector3 toPlayer = Flat(HipsPosition - center);
+            // Catching a high throw, the crate drops almost onto the catcher: the flat crate-to-player direction is
+            // then tiny and near random, and the grip could land on the far face (an odd, twisted hold). Close in,
+            // grip the face towards the way the catcher is facing.
+            if (cargo.InFlight && toPlayer.sqrMagnitude < .8f * .8f && Flat(transform.forward).sqrMagnitude > .01f)
+                toPlayer = -Flat(transform.forward);
             if (toPlayer.sqrMagnitude < 1e-4f) toPlayer = -transform.forward;
             Vector3 axisA = Flat(cargo.transform.right).normalized, axisB = Flat(cargo.transform.forward).normalized;
             if (axisA.sqrMagnitude < .5f) axisA = Vector3.right;
@@ -2090,7 +2095,10 @@ namespace CoopGame.Player
         {
             if (cargo == null || cargo.IsCarried) return;
             var body = cargo.GetComponent<Rigidbody>();
-            if (body == null || Vector3.Angle(cargo.transform.up, Vector3.up) < 25f) return;
+            // A caught crate is pulled straight into the hold pose, so even a small tilt shows as a crooked catch:
+            // stand it up past 10 deg (25 deg for a crate picked up off the ground).
+            float maxTilt = cargo.InFlight ? 10f : 25f;
+            if (body == null || Vector3.Angle(cargo.transform.up, Vector3.up) < maxTilt) return;
             Vector3 heading = Flat(cargo.transform.forward);
             if (heading.sqrMagnitude < .01f) heading = Flat(cargo.transform.up); // lying on its front or back
             Quaternion upright = heading.sqrMagnitude > .01f ? Quaternion.LookRotation(heading.normalized) : Quaternion.identity;

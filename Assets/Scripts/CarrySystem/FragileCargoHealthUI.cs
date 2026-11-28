@@ -90,6 +90,13 @@ namespace CoopGame.CarrySystem
             if (_camera != null)
                 _billboard.rotation = _camera.transform.rotation;
 
+            // A blamed hit shows the blame popup over the crate ("name ทำลังพัง -X HP"); hide the plain "-X" then so
+            // the number is not shown twice (the HP change and the blame RPC can arrive in either order).
+            if (_damageTimeLeft > 0f && Mathf.Abs(Time.unscaledTime - CoopGame.Network.BlamePopup.LastShownAt) < .6f)
+            {
+                _damageTimeLeft = 0f;
+                _damageText.enabled = false;
+            }
             if (_damageTimeLeft > 0f)
             {
                 _damageTimeLeft = Mathf.Max(0f, _damageTimeLeft - Time.deltaTime);

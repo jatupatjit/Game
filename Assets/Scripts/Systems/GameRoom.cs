@@ -172,7 +172,7 @@ namespace CoopGame.Network
         {
             foreach (var p in PlayerExpeditionState.Everyone)
                 if (p != null && p.IsSpawned && p.OwnerClientId == clientId) return LevelResults.NameOf(p);
-            return "P" + (clientId + 1);
+            return "Player " + (clientId + 1);
         }
     }
 }

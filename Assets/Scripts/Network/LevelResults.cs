@@ -261,8 +261,10 @@ namespace CoopGame.Network
 
         // Reading (every machine)
 
+        // Names only in notices and results (George 2026-11-28: no "P1".."P4" numbers); a player without a name yet
+        // falls back to "Player N".
         public static string NameOf(PlayerExpeditionState player) =>
-            "P" + (player.OwnerClientId + 1) + (player.DisplayName.Value.Length > 0 ? " " + player.DisplayName.Value : "");
+            player.DisplayName.Value.Length > 0 ? player.DisplayName.Value.ToString() : "Player " + (player.OwnerClientId + 1);
 
         public static List<PlayerExpeditionState> Players()
         {

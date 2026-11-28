@@ -6,7 +6,7 @@ namespace CoopGame.Network
 {
     /// <summary>
     /// End-of-delivery result card (cute kit mockup): 1-3 stars over a wooden plank title, a
-    /// beige card with cargo HP / time / coins rows, an optional shop row, then "เดินต่อ" and the host-only
+    /// beige card with cargo HP / time / coins rows, an optional shop row, then "ต่อไป" and the host-only
     /// "กลับ Lobby พร้อมกัน". Presentation only: <see cref="ExpeditionHUD"/> owns the data and the button actions.
     /// <see cref="ExtraContent"/> is an empty layout slot under the stat rows for per-player stats / awards.
     /// </summary>
@@ -163,7 +163,7 @@ namespace CoopGame.Network
             var buttonsRect = (RectTransform)buttons.transform;
             buttonsRect.anchorMin = buttonsRect.anchorMax = new Vector2(.5f, 0f);
             buttonsRect.sizeDelta = Vector2.zero;
-            _continue = UITheme.MakeButton(buttons.transform, "Continue", "เดินต่อ / ENTER", UIButtonStyle.White, new Vector2(350f, 92f), 32);
+            _continue = UITheme.MakeButton(buttons.transform, "Continue", "ต่อไป / ENTER", UIButtonStyle.White, new Vector2(350f, 92f), 32);
             _toLobby = UITheme.MakeButton(buttons.transform, "ToLobby", "กลับ Lobby พร้อมกัน", UIButtonStyle.White, new Vector2(350f, 92f), 30);
             _toLobbyLabel = _toLobby.GetComponentInChildren<Text>(true);
             ((RectTransform)_continue.transform).anchoredPosition = new Vector2(0f, ButtonY);

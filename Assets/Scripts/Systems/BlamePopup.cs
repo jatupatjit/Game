@@ -6,10 +6,11 @@ namespace CoopGame.Network
 {
     /// <summary>
     /// Blame pop-ups (rule A3, <see cref="MischiefSettings.BlamePopups"/>): when the host blames a player for crate
-    /// damage (<see cref="LevelResults"/>), a popup springs up over that player's head on every screen, like the
-    /// crate's own "-X" damage number: the player's face, "name ทำลังพัง" and a big red "-X HP". It pops in with a
-    /// shake, rises and fades out; more hits on the same player while it shows add up and restart it. A player
-    /// behind the camera gets the popup clamped to the screen edge, so everyone still sees who did it.
+    /// damage (<see cref="LevelResults"/>), a popup springs up over the crate on every screen, in place of the
+    /// crate's own "-X" damage number: the player's face, "name ทำลังพัง" and a big red "-X HP" (George 2026-11-28:
+    /// only at the crate, not over every blamed player). A hit blamed on two carriers is one popup with both names. It pops in with a
+    /// shake, rises and fades out; more hits while it shows add up and restart it. A crate behind the camera gets
+    /// the popup clamped to the screen edge, so everyone still sees who did it.
     /// (Was a banner at the top of the screen; George 2026-11-28 asked for a popup like the crate's HP drop.)
     /// Called on every machine through <see cref="PlayerExpeditionState.BlameRpc"/>.
     /// </summary>
@@ -24,6 +25,7 @@ namespace CoopGame.Network
         {
             public ulong Client;
             public int Damage;
+            public readonly List<string> Names = new();
             public float Born, Until;
             public RectTransform Rect;
             public CanvasGroup Group;
@@ -79,21 +81,35 @@ namespace CoopGame.Network
             _instance.Add(client, damage);
         }
 
+        /// <summary>When the last blame popup was raised (unscaled time). The crate hides its own plain "-X" then.</summary>
+        public static float LastShownAt { get; private set; } = -10f;
+
         private void Add(ulong client, int damage)
         {
             float now = Time.unscaledTime;
-            Popup popup = _popups.Find(p => p.Client == client && p.Rect != null);
-            if (popup == null)
+            string name = GameRoom.NameOfClient(client);
+            Popup popup = _popups.Count > 0 ? _popups[0] : null;
+            if (popup != null && popup.Rect != null && now < popup.Until)
             {
-                popup = MakePopup(client);
-                _popups.Add(popup);
+                // The same hit blamed on two carriers (RPCs ~together): one popup, both names, the hit once.
+                if (now - popup.Born < .3f && !popup.Names.Contains(name)) { popup.Names.Add(name); popup.Damage = Mathf.Max(popup.Damage, damage); }
+                else { if (!popup.Names.Contains(name)) popup.Names.Add(name); popup.Damage += damage; }
             }
-            popup.Damage += damage;
+            else
+            {
+                foreach (var old in _popups) if (old.Rect != null) Destroy(old.Rect.gameObject);
+                _popups.Clear();
+                popup = MakePopup(client);
+                popup.Names.Add(name);
+                popup.Damage = damage;
+                _popups.Add(popup);
+                StyleFace(popup.Face, client);
+            }
             popup.Born = now;
             popup.Until = now + Mathf.Max(2.4f, MischiefSettings.Current.BlameMarkSeconds);
-            popup.Name.text = GameRoom.NameOfClient(client) + " ทำลังพัง";
+            popup.Name.text = string.Join(" + ", popup.Names) + " ทำลังพัง";
             popup.Amount.text = "-" + popup.Damage + " HP";
-            StyleFace(popup.Face, client);
+            LastShownAt = now;
             GameplayFeedback.Play(GameplayFeedback.Cue.BodyThud, Camera.main != null ? Camera.main.transform.position : Vector3.zero, .7f);
         }
 
@@ -161,6 +177,29 @@ namespace CoopGame.Network
             image.color = Color.white;
         }
 
+        private static CoopGame.CarrySystem.FragileCargo _crate;
+
+        /// <summary>Above the level's crate: top of its drawn box + 1.6 m (clear of HP bar, compass and distance).</summary>
+        private static bool TryCrate(out Vector3 above)
+        {
+            above = default;
+            if (_crate == null || !_crate.isActiveAndEnabled)
+            {
+                var mission = FindAnyObjectByType<LevelMission>();
+                _crate = mission != null && mission.Cargo != null ? mission.Cargo : FindAnyObjectByType<CoopGame.CarrySystem.FragileCargo>();
+            }
+            if (_crate == null) return false;
+            Bounds b = new Bounds(_crate.transform.position, Vector3.zero);
+            bool any = false;
+            foreach (var r in _crate.GetComponentsInChildren<MeshRenderer>())
+            {
+                if (!r.enabled || !r.gameObject.activeInHierarchy) continue;
+                if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+            }
+            above = new Vector3(b.center.x, b.max.y + 1.6f, b.center.z);
+            return true;
+        }
+
         private static bool TryHead(ulong client, out Vector3 head)
         {
             foreach (var p in PlayerExpeditionState.Everyone)
@@ -185,15 +224,16 @@ namespace CoopGame.Network
             for (int i = _popups.Count - 1; i >= 0; i--)
             {
                 Popup popup = _popups[i];
-                if (popup.Rect == null || now > popup.Until || !TryHead(popup.Client, out Vector3 head) || cam == null)
+                if (popup.Rect == null || now > popup.Until || !TryCrate(out Vector3 head) || cam == null)
                 {
                     if (popup.Rect != null) Destroy(popup.Rect.gameObject);
                     _popups.RemoveAt(i);
                     continue;
                 }
 
-                // Over the head; behind the camera or off screen it is held at the screen edge.
-                Vector3 screen = cam.WorldToScreenPoint(head + Vector3.up * .55f);
+                // Over the crate (above its HP bar, compass and distance); behind the camera or off screen it is
+                // held at the screen edge.
+                Vector3 screen = cam.WorldToScreenPoint(head);
                 Vector2 pos = new Vector2(screen.x, screen.y) * scale;
                 if (screen.z < 0f) pos = new Vector2(area.width - pos.x, EdgeMargin);
                 pos.x = Mathf.Clamp(pos.x, EdgeMargin * 1.6f, area.width - EdgeMargin * 1.6f);

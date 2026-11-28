@@ -138,9 +138,9 @@ namespace CoopGame.Network
                 _sign.text = choice == 1 ? "เลือกทางหลักแล้ว" : choice == 2 ? "เลือกทางไปร้านช่างลังแล้ว" : "ทางแยก\n<- ซ้าย: ทางหลัก (ง่าย)\nขวา: ร้านช่างลัง ซ่อมฟรี (ยาก) ->\nพาลังเข้าทางไหน อีกทางจะหายไป";
             if (choice != 0)
             {
-                // The used-up plates sink with the branch they closed.
-                if (_mainPlate != null && choice == 2) _mainPlate.gameObject.SetActive(false);
-                if (_repairPlate != null && choice == 1) _repairPlate.gameObject.SetActive(false);
+                // The choice is made once: both plates sink (George 2026-11-28: the other plate stayed behind).
+                if (_mainPlate != null) SinkOrHide(_mainPlate.gameObject, instant);
+                if (_repairPlate != null) SinkOrHide(_repairPlate.gameObject, instant);
             }
             if (choice == 0) return;
             var losers = choice == 1 ? _repairObjects : _mainObjects;

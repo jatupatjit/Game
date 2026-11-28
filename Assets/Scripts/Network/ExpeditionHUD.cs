@@ -904,7 +904,7 @@ namespace CoopGame.Network
             _buy[0] = Button(_shop.transform, "Stamina Elixir — 40 เหรียญ\nฟื้น Stamina เต็ม 1 ครั้ง", new Vector2(-250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(1));
             _buy[1] = Button(_shop.transform, "Cargo Padding — 60 เหรียญ\nลดความเสียหายครั้งถัดไป 50%\nใช้ขณะจับลัง", new Vector2(250, -10), new Vector2(460, 120), () => _player?.BuyItemRpc(2));
             bool lastLevel = _mission != null && _mission.Portal == null;
-            Button(_shop.transform, "เดินต่อ / ENTER", new Vector2(lastLevel ? -200 : 0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.White);
+            Button(_shop.transform, "ต่อไป / ENTER", new Vector2(lastLevel ? -200 : 0, -170), new Vector2(360, 80), Dismiss, UIButtonStyle.White);
             if (lastLevel)
             {
                 _toLobby = Button(_shop.transform, "กลับ Lobby พร้อมกัน", new Vector2(200, -170), new Vector2(360, 80), ReturnToLobbyTogether);

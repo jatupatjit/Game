@@ -85,7 +85,24 @@ namespace CoopGame.Network
             var manager = NetworkManager.Singleton;
             if (manager == null || !manager.IsServer || clientId == NetworkManager.ServerClientId) return;
             bool midLevel = SceneManager.GetActiveScene().name != "Lobby";
-            GameRoom.ServerFeed($"P{clientId + 1} เข้าห้อง{(midLevel ? "กลางด่าน" : "")}", new Color(.5f, 1f, .7f));
+            StartCoroutine(FeedJoin(clientId, midLevel));
+        }
+
+        /// <summary>The joiner's name arrives a moment after the connection; wait for it (up to 4 s) so the notice
+        /// names them instead of a number.</summary>
+        private System.Collections.IEnumerator FeedJoin(ulong clientId, bool midLevel)
+        {
+            float until = Time.unscaledTime + 4f;
+            string name = null;
+            while (Time.unscaledTime < until)
+            {
+                foreach (var p in PlayerExpeditionState.Everyone)
+                    if (p != null && p.IsSpawned && p.OwnerClientId == clientId && p.DisplayName.Value.Length > 0)
+                        name = p.DisplayName.Value.ToString();
+                if (name != null) break;
+                yield return new WaitForSecondsRealtime(.2f);
+            }
+            GameRoom.ServerFeed((name ?? "ผู้เล่นใหม่") + " เข้าห้อง" + (midLevel ? "กลางด่าน" : ""), new Color(.5f, 1f, .7f));
         }
 
         private void OnDisconnected(ulong clientId)
